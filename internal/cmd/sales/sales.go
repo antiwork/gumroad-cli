@@ -8,9 +8,9 @@ func NewSalesCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "sales",
 		Short: "Manage your sales",
-		Example: `  gr sales list
-  gr sales view <id>
-  gr sales refund <id>`,
+		Example: `  gumroad sales list
+  gumroad sales view <id>
+  gumroad sales refund <id>`,
 	}
 
 	cmd.AddCommand(newListCmd())

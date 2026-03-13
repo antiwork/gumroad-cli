@@ -1,11 +1,11 @@
 ---
-name: gr-cli
-description: Use the `gr` CLI to look up and manage Gumroad data from the terminal. Trigger when the user asks about Gumroad products, sales, subscribers, licenses, payouts, offer codes, webhooks, or any Gumroad data lookup. Also trigger on "check my Gumroad", "look up a sale", "verify a license", "list my products", or any request to query or act on Gumroad data. Do NOT trigger for Gumroad web UI, Rails, or codebase questions.
+name: gumroad-cli
+description: Use the `gumroad` CLI to look up and manage Gumroad data from the terminal. Trigger when the user asks about Gumroad products, sales, subscribers, licenses, payouts, offer codes, webhooks, or any Gumroad data lookup. Also trigger on "check my Gumroad", "look up a sale", "verify a license", "list my products", or any request to query or act on Gumroad data. Do NOT trigger for Gumroad web UI, Rails, or codebase questions.
 ---
 
-# gr CLI
+# gumroad CLI
 
-Use `gr` (Gumroad CLI) to query and manage Gumroad data. Always use `--json` for programmatic access and `--no-input` to prevent interactive prompts from hanging.
+Use `gumroad` (Gumroad CLI) to query and manage Gumroad data. Always use `--json` for programmatic access and `--no-input` to prevent interactive prompts from hanging.
 
 ## Key flags
 
@@ -21,31 +21,31 @@ Use `gr` (Gumroad CLI) to query and manage Gumroad data. Always use `--json` for
 
 ```sh
 # Check auth status
-gr auth status --no-input
+gumroad auth status --no-input
 
 # List all products
-gr products list --json --no-input
+gumroad products list --json --no-input
 
 # Get a specific product
-gr products view <id> --json --no-input
+gumroad products view <id> --json --no-input
 
 # Find a sale by email
-gr sales list --json --jq '.sales[] | select(.email == "user@example.com")' --no-input
+gumroad sales list --json --jq '.sales[] | select(.email == "user@example.com")' --no-input
 
 # Get recent sales for a product
-gr sales list --product <id> --after 2026-01-01 --json --no-input
+gumroad sales list --product <id> --after 2026-01-01 --json --no-input
 
 # Extract a single field
-gr user --json --jq '.user.email' --no-input
+gumroad user --json --jq '.user.email' --no-input
 
 # Verify a license key
-gr licenses verify --product <id> --key <key> --no-increment --json --no-input
+gumroad licenses verify --product <id> --key <key> --no-increment --json --no-input
 
 # List subscribers
-gr subscribers list --product <id> --json --no-input
+gumroad subscribers list --product <id> --json --no-input
 
 # Check upcoming payouts
-gr payouts upcoming --json --no-input
+gumroad payouts upcoming --json --no-input
 ```
 
 ## Available commands
@@ -70,6 +70,6 @@ webhooks       list, create, delete
 - Always include `--no-input` to prevent the CLI from blocking on interactive prompts.
 - Use `--json --jq` together to extract exactly what you need without parsing.
 - The API does not support product create/update — only list, view, delete, enable, disable.
-- If `gr auth status` fails, the user needs to run `gr auth login` interactively.
+- If `gumroad auth status` fails, the user needs to run `gumroad auth login` interactively.
 - For destructive operations (delete, refund), add `--yes` to skip confirmation.
-- Run `gr <command> --help` for flag details on any specific command.
+- Run `gumroad <command> --help` for flag details on any specific command.

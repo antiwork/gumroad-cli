@@ -47,7 +47,7 @@ func TestSave_ReplacesExistingConfigWithoutTempFiles(t *testing.T) {
 		t.Fatalf("got token %q, want %q", loaded.AccessToken, "second-token")
 	}
 
-	entries, err := os.ReadDir(filepath.Join(tmp, "gr"))
+	entries, err := os.ReadDir(filepath.Join(tmp, "gumroad"))
 	if err != nil {
 		t.Fatalf("ReadDir failed: %v", err)
 	}
@@ -174,7 +174,7 @@ func TestFilePermissions(t *testing.T) {
 		t.Fatalf("Save failed: %v", err)
 	}
 
-	info, err := os.Stat(filepath.Join(tmp, "gr", "config.json"))
+	info, err := os.Stat(filepath.Join(tmp, "gumroad", "config.json"))
 	if err != nil {
 		t.Fatalf("Stat failed: %v", err)
 	}
@@ -192,7 +192,7 @@ func TestLoad_InsecurePermissions(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", tmp)
 
-	dir := filepath.Join(tmp, "gr")
+	dir := filepath.Join(tmp, "gumroad")
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		t.Fatalf("MkdirAll failed: %v", err)
 	}
@@ -234,7 +234,7 @@ func TestLoad_InvalidJSON(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", tmp)
 
-	dir := filepath.Join(tmp, "gr")
+	dir := filepath.Join(tmp, "gumroad")
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		t.Fatalf("MkdirAll failed: %v", err)
 	}
@@ -255,7 +255,7 @@ func TestLoad_Unreadable(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", tmp)
 
-	dir := filepath.Join(tmp, "gr")
+	dir := filepath.Join(tmp, "gumroad")
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		t.Fatalf("MkdirAll failed: %v", err)
 	}
@@ -355,7 +355,7 @@ func TestToken_EnvAccessTokenIgnoresBrokenConfig(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", tmp)
 	t.Setenv(EnvAccessToken, "env-token")
 
-	dir := filepath.Join(tmp, "gr")
+	dir := filepath.Join(tmp, "gumroad")
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		t.Fatalf("MkdirAll failed: %v", err)
 	}
@@ -408,8 +408,8 @@ func TestDirXDG(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Dir failed: %v", err)
 	}
-	if dir != "/tmp/test-xdg/gr" {
-		t.Errorf("got dir %q, want %q", dir, "/tmp/test-xdg/gr")
+	if dir != "/tmp/test-xdg/gumroad" {
+		t.Errorf("got dir %q, want %q", dir, "/tmp/test-xdg/gumroad")
 	}
 }
 
@@ -425,7 +425,7 @@ func TestDir_WindowsAppData(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Dir failed: %v", err)
 	}
-	want := filepath.Join(`C:\Users\test\AppData\Roaming`, "gr")
+	want := filepath.Join(`C:\Users\test\AppData\Roaming`, "gumroad")
 	if dir != want {
 		t.Errorf("got dir %q, want %q", dir, want)
 	}
@@ -442,7 +442,7 @@ func TestDir_Default(t *testing.T) {
 		t.Fatalf("Dir failed: %v", err)
 	}
 	home, _ := os.UserHomeDir()
-	want := filepath.Join(home, ".config", "gr")
+	want := filepath.Join(home, ".config", "gumroad")
 	if dir != want {
 		t.Errorf("got dir %q, want %q", dir, want)
 	}
@@ -454,7 +454,7 @@ func TestPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Path failed: %v", err)
 	}
-	want := "/tmp/test-path/gr/config.json"
+	want := "/tmp/test-path/gumroad/config.json"
 	if p != want {
 		t.Errorf("got %q, want %q", p, want)
 	}
@@ -468,7 +468,7 @@ func TestDirPermissions(t *testing.T) {
 		t.Fatalf("Save failed: %v", err)
 	}
 
-	info, err := os.Stat(filepath.Join(tmp, "gr"))
+	info, err := os.Stat(filepath.Join(tmp, "gumroad"))
 	if err != nil {
 		t.Fatalf("Stat failed: %v", err)
 	}
@@ -482,7 +482,7 @@ func TestSave_UnwritableDir(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", tmp)
 
-	dir := filepath.Join(tmp, "gr")
+	dir := filepath.Join(tmp, "gumroad")
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		t.Fatalf("MkdirAll failed: %v", err)
 	}
@@ -510,7 +510,7 @@ func TestSave_MkdirAllError(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", tmp)
 
 	// Create a file where the directory should be, blocking MkdirAll
-	blocker := filepath.Join(tmp, "gr")
+	blocker := filepath.Join(tmp, "gumroad")
 	if err := os.WriteFile(blocker, []byte("not a dir"), 0600); err != nil {
 		t.Fatalf("WriteFile failed: %v", err)
 	}
@@ -594,7 +594,7 @@ func TestDelete_PermissionDenied(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", tmp)
 
-	dir := filepath.Join(tmp, "gr")
+	dir := filepath.Join(tmp, "gumroad")
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		t.Fatalf("MkdirAll failed: %v", err)
 	}

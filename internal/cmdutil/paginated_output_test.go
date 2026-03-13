@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/antiwork/gr/internal/output"
+	"github.com/antiwork/gumroad-cli/internal/output"
 	"github.com/spf13/cobra"
 )
 

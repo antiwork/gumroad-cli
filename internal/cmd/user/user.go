@@ -3,8 +3,8 @@ package user
 import (
 	"net/url"
 
-	"github.com/antiwork/gr/internal/cmdutil"
-	"github.com/antiwork/gr/internal/output"
+	"github.com/antiwork/gumroad-cli/internal/cmdutil"
+	"github.com/antiwork/gumroad-cli/internal/output"
 	"github.com/spf13/cobra"
 )
 
@@ -25,9 +25,9 @@ func NewUserCmd() *cobra.Command {
 		Use:   "user",
 		Short: "Show your Gumroad account info",
 		Args:  cmdutil.ExactArgs(0),
-		Example: `  gr user
-  gr user --json
-  gr user --json --jq '.user.email'`,
+		Example: `  gumroad user
+  gumroad user --json
+  gumroad user --json --jq '.user.email'`,
 		RunE: func(c *cobra.Command, args []string) error {
 			opts := cmdutil.OptionsFrom(c)
 			return cmdutil.RunRequestDecoded[userResponse](opts, "Fetching user info...", "GET", "/user", url.Values{}, func(resp userResponse) error {

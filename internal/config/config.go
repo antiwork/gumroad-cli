@@ -19,7 +19,7 @@ var goos = runtime.GOOS
 
 var ErrNotAuthenticated = errors.New("not authenticated")
 
-const EnvAccessToken = "GR_ACCESS_TOKEN"
+const EnvAccessToken = "GUMROAD_ACCESS_TOKEN"
 
 type TokenSource string
 
@@ -35,18 +35,18 @@ type TokenInfo struct {
 
 func Dir() (string, error) {
 	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
-		return filepath.Join(xdg, "gr"), nil
+		return filepath.Join(xdg, "gumroad"), nil
 	}
 	if goos == "windows" {
 		if appData := os.Getenv("APPDATA"); appData != "" {
-			return filepath.Join(appData, "gr"), nil
+			return filepath.Join(appData, "gumroad"), nil
 		}
 	}
 	home, err := userHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("could not determine home directory: %w", err)
 	}
-	return filepath.Join(home, ".config", "gr"), nil
+	return filepath.Join(home, ".config", "gumroad"), nil
 }
 
 func Path() (string, error) {
@@ -172,7 +172,7 @@ func ResolveToken() (TokenInfo, error) {
 		return TokenInfo{}, err
 	}
 	if cfg.AccessToken == "" {
-		return TokenInfo{}, fmt.Errorf("%w. Run `gr auth login` first or set `%s`", ErrNotAuthenticated, EnvAccessToken)
+		return TokenInfo{}, fmt.Errorf("%w. Run `gumroad auth login` first or set `%s`", ErrNotAuthenticated, EnvAccessToken)
 	}
 	return TokenInfo{Value: cfg.AccessToken, Source: TokenSourceConfig}, nil
 }

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/antiwork/gr/internal/testutil"
+	"github.com/antiwork/gumroad-cli/internal/testutil"
 )
 
 func offerCodesHandler(t *testing.T) http.HandlerFunc {

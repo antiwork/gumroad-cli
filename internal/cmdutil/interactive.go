@@ -8,8 +8,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/antiwork/gr/internal/output"
-	"github.com/antiwork/gr/internal/prompt"
+	"github.com/antiwork/gumroad-cli/internal/output"
+	"github.com/antiwork/gumroad-cli/internal/prompt"
 )
 
 const dryRunLabel = "Dry run"

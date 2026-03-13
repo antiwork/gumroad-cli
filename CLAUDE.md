@@ -3,7 +3,7 @@
 ## Build & test
 
 ```sh
-make build        # Compile to ./gr
+make build        # Compile to ./gumroad
 make test         # Run all tests
 make test-cover   # Tests + coverage gates (85% cmd, 90% infra)
 make lint         # golangci-lint
@@ -11,10 +11,10 @@ make lint         # golangci-lint
 
 ## Project structure
 
-- `cmd/gr/main.go` — entry point, calls `cmd.Execute()`
+- `cmd/gumroad/main.go` — entry point, calls `cmd.Execute()`
 - `internal/cmd/` — one package per noun (products, sales, etc.), each with cobra commands
 - `internal/api/` — HTTP client (`client.go`) and error rewriting (`errors.go`)
-- `internal/config/` — XDG config at `~/.config/gr/config.json`, `0600` perms
+- `internal/config/` — XDG config at `~/.config/gumroad/config.json`, `0600` perms
 - `internal/output/` — table, JSON, plain, color, spinner, pager, image rendering
 - `internal/prompt/` — interactive token input and Y/N confirmations
 - `internal/cmdutil/` — per-command `Options` struct (JSON, quiet, dry-run, etc.) and request runners

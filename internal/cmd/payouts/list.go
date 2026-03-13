@@ -6,10 +6,10 @@ import (
 	"io"
 	"net/url"
 
-	"github.com/antiwork/gr/internal/api"
-	"github.com/antiwork/gr/internal/cmdutil"
-	"github.com/antiwork/gr/internal/config"
-	"github.com/antiwork/gr/internal/output"
+	"github.com/antiwork/gumroad-cli/internal/api"
+	"github.com/antiwork/gumroad-cli/internal/cmdutil"
+	"github.com/antiwork/gumroad-cli/internal/config"
+	"github.com/antiwork/gumroad-cli/internal/output"
 	"github.com/spf13/cobra"
 )
 
@@ -225,7 +225,7 @@ func renderEmptyPayoutsList(opts cmdutil.Options, before, after string, noUpcomi
 }
 
 func payoutPaginationHint(before, after string, noUpcoming bool, nextPageKey string) string {
-	return cmdutil.ReplayCommand("gr payouts list",
+	return cmdutil.ReplayCommand("gumroad payouts list",
 		cmdutil.CommandArg{Flag: "--before", Value: before},
 		cmdutil.CommandArg{Flag: "--after", Value: after},
 		cmdutil.CommandArg{Flag: "--no-upcoming", Boolean: noUpcoming},

@@ -4,10 +4,10 @@ import (
 	"io"
 	"net/url"
 
-	"github.com/antiwork/gr/internal/api"
-	"github.com/antiwork/gr/internal/cmdutil"
-	"github.com/antiwork/gr/internal/config"
-	"github.com/antiwork/gr/internal/output"
+	"github.com/antiwork/gumroad-cli/internal/api"
+	"github.com/antiwork/gumroad-cli/internal/cmdutil"
+	"github.com/antiwork/gumroad-cli/internal/config"
+	"github.com/antiwork/gumroad-cli/internal/output"
 	"github.com/spf13/cobra"
 )
 
@@ -179,7 +179,7 @@ func renderEmptySubscribersList(opts cmdutil.Options, product, email, nextPageKe
 }
 
 func subscriberPaginationHint(product, email, nextPageKey string) string {
-	return cmdutil.ReplayCommand("gr subscribers list",
+	return cmdutil.ReplayCommand("gumroad subscribers list",
 		cmdutil.CommandArg{Flag: "--product", Value: product},
 		cmdutil.CommandArg{Flag: "--email", Value: email},
 		cmdutil.CommandArg{Flag: "--page-key", Value: nextPageKey},

@@ -23,7 +23,7 @@ const (
 )
 
 func defaultBaseURL() string {
-	if v := os.Getenv("GR_API_BASE_URL"); v != "" {
+	if v := os.Getenv("GUMROAD_API_BASE_URL"); v != "" {
 		return v
 	}
 	return defaultAPIBaseURL
@@ -137,7 +137,7 @@ func (c *Client) do(method, path string, params url.Values) (json.RawMessage, er
 		}
 
 		req.Header.Set("Authorization", "Bearer "+c.token)
-		req.Header.Set("User-Agent", "gr/"+c.version)
+		req.Header.Set("User-Agent", "gumroad/"+c.version)
 		if body != nil {
 			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		}

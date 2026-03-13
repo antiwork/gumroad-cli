@@ -8,10 +8,10 @@ import (
 	"net/url"
 	"strconv"
 
-	"github.com/antiwork/gr/internal/api"
-	"github.com/antiwork/gr/internal/cmdutil"
-	"github.com/antiwork/gr/internal/config"
-	"github.com/antiwork/gr/internal/output"
+	"github.com/antiwork/gumroad-cli/internal/api"
+	"github.com/antiwork/gumroad-cli/internal/cmdutil"
+	"github.com/antiwork/gumroad-cli/internal/config"
+	"github.com/antiwork/gumroad-cli/internal/output"
 	"github.com/spf13/cobra"
 )
 
@@ -38,7 +38,7 @@ func newStatusCmd() *cobra.Command {
 		Use:     "status",
 		Short:   "Show current authentication status",
 		Args:    cmdutil.ExactArgs(0),
-		Example: "  gr auth status",
+		Example: "  gumroad auth status",
 		RunE: func(c *cobra.Command, args []string) error {
 			opts := cmdutil.OptionsFrom(c)
 			style := opts.Style()
@@ -54,7 +54,7 @@ func newStatusCmd() *cobra.Command {
 				if opts.PlainOutput {
 					return printStatusPlain(opts, status)
 				}
-				return output.Writeln(opts.Out(), "Not logged in. Run "+style.Bold("gr auth login")+" or set "+style.Bold(config.EnvAccessToken)+" to authenticate.")
+				return output.Writeln(opts.Out(), "Not logged in. Run "+style.Bold("gumroad auth login")+" or set "+style.Bold(config.EnvAccessToken)+" to authenticate.")
 			}
 
 			status, err := lookupStatus(opts, tokenInfo)
@@ -72,9 +72,9 @@ func newStatusCmd() *cobra.Command {
 			if !status.Authenticated {
 				switch status.Reason {
 				case statusReasonAccessDenied:
-					return output.Writeln(opts.Out(), authSourceMessage(status.Source, "Token was accepted but access is denied. Check that it has the required scope.", "GR_ACCESS_TOKEN was accepted but access is denied. Check that it has the required scope."))
+					return output.Writeln(opts.Out(), authSourceMessage(status.Source, "Token was accepted but access is denied. Check that it has the required scope.", "GUMROAD_ACCESS_TOKEN was accepted but access is denied. Check that it has the required scope."))
 				default:
-					return output.Writeln(opts.Out(), authSourceMessage(status.Source, "Token is invalid or expired. Run "+style.Bold("gr auth login")+" to re-authenticate.", "GR_ACCESS_TOKEN is invalid or expired. Update it in your shell and try again."))
+					return output.Writeln(opts.Out(), authSourceMessage(status.Source, "Token is invalid or expired. Run "+style.Bold("gumroad auth login")+" to re-authenticate.", "GUMROAD_ACCESS_TOKEN is invalid or expired. Update it in your shell and try again."))
 				}
 			}
 

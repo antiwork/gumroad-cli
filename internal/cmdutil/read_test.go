@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/antiwork/gr/internal/cmdutil"
-	"github.com/antiwork/gr/internal/testutil"
+	"github.com/antiwork/gumroad-cli/internal/cmdutil"
+	"github.com/antiwork/gumroad-cli/internal/testutil"
 )
 
 func TestRunRequest_RendersResponse(t *testing.T) {

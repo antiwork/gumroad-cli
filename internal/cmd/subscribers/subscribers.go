@@ -8,8 +8,8 @@ func NewSubscribersCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "subscribers",
 		Short: "Manage product subscribers",
-		Example: `  gr subscribers list --product <id>
-  gr subscribers view <id>`,
+		Example: `  gumroad subscribers list --product <id>
+  gumroad subscribers view <id>`,
 	}
 
 	cmd.AddCommand(newListCmd())

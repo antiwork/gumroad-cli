@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/antiwork/gr/internal/testutil"
+	"github.com/antiwork/gumroad-cli/internal/testutil"
 )
 
 type failingWriter struct{}
@@ -214,8 +214,8 @@ func TestUser_NotAuthenticated(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error without auth")
 	}
-	if !strings.Contains(err.Error(), "gr auth login") {
-		t.Errorf("error should mention gr auth login: %v", err)
+	if !strings.Contains(err.Error(), "gumroad auth login") {
+		t.Errorf("error should mention gumroad auth login: %v", err)
 	}
 }
 

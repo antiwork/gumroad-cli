@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/antiwork/gr/internal/cmd"
+	"github.com/antiwork/gumroad-cli/internal/cmd"
 	cobradoc "github.com/spf13/cobra/doc"
 )
 

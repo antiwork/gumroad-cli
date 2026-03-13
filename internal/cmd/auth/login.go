@@ -6,11 +6,11 @@ import (
 	"fmt"
 	"net/url"
 
-	"github.com/antiwork/gr/internal/api"
-	"github.com/antiwork/gr/internal/cmdutil"
-	"github.com/antiwork/gr/internal/config"
-	"github.com/antiwork/gr/internal/output"
-	"github.com/antiwork/gr/internal/prompt"
+	"github.com/antiwork/gumroad-cli/internal/api"
+	"github.com/antiwork/gumroad-cli/internal/cmdutil"
+	"github.com/antiwork/gumroad-cli/internal/config"
+	"github.com/antiwork/gumroad-cli/internal/output"
+	"github.com/antiwork/gumroad-cli/internal/prompt"
 	"github.com/spf13/cobra"
 )
 
@@ -25,10 +25,10 @@ func newLoginCmd() *cobra.Command {
 		Args:  cmdutil.ExactArgs(0),
 		Long:  "Store your Gumroad API token for future use.\nThe token is read interactively (or from stdin when piped).",
 		Example: `  # Interactive login
-  gr auth login
+  gumroad auth login
 
   # Pipe token from stdin
-  echo "your-token" | gr auth login`,
+  echo "your-token" | gumroad auth login`,
 		RunE: func(c *cobra.Command, args []string) error {
 			opts := cmdutil.OptionsFrom(c)
 			if opts.DryRun {

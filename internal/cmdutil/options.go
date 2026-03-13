@@ -6,13 +6,13 @@ import (
 	"os"
 	"time"
 
-	"github.com/antiwork/gr/internal/output"
+	"github.com/antiwork/gumroad-cli/internal/output"
 	"github.com/spf13/cobra"
 )
 
 type contextKey string
 
-const optionsContextKey contextKey = "gr-cmd-options"
+const optionsContextKey contextKey = "gumroad-cmd-options"
 
 type Options struct {
 	Context     context.Context
@@ -97,5 +97,5 @@ func (o Options) UsesJSONOutput() bool {
 
 // DebugEnabled reports whether debug logging should be enabled.
 func (o Options) DebugEnabled() bool {
-	return o.Debug || os.Getenv("GR_DEBUG") == "1"
+	return o.Debug || os.Getenv("GUMROAD_DEBUG") == "1"
 }

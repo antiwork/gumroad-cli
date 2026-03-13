@@ -8,9 +8,9 @@ func NewPayoutsCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "payouts",
 		Short: "View your payouts",
-		Example: `  gr payouts list
-  gr payouts view <id>
-  gr payouts upcoming`,
+		Example: `  gumroad payouts list
+  gumroad payouts view <id>
+  gumroad payouts upcoming`,
 	}
 
 	cmd.AddCommand(newListCmd())

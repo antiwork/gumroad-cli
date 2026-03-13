@@ -55,5 +55,5 @@ func SecretInput(promptLabel, noun string, in io.Reader, out io.Writer, noInput 
 }
 
 func TokenInput(in io.Reader, out io.Writer, noInput bool) (string, error) {
-	return SecretInput("your Gumroad API token", "token", in, out, noInput, "Pipe your token via stdin: echo $TOKEN | gr auth login")
+	return SecretInput("your Gumroad API token", "token", in, out, noInput, "Pipe your token via stdin: echo $TOKEN | gumroad auth login")
 }

@@ -4,10 +4,10 @@ import (
 	"io"
 	"net/url"
 
-	"github.com/antiwork/gr/internal/api"
-	"github.com/antiwork/gr/internal/cmdutil"
-	"github.com/antiwork/gr/internal/config"
-	"github.com/antiwork/gr/internal/output"
+	"github.com/antiwork/gumroad-cli/internal/api"
+	"github.com/antiwork/gumroad-cli/internal/cmdutil"
+	"github.com/antiwork/gumroad-cli/internal/config"
+	"github.com/antiwork/gumroad-cli/internal/output"
 	"github.com/spf13/cobra"
 )
 
@@ -34,10 +34,10 @@ func newListCmd() *cobra.Command {
 		Use:   "list",
 		Short: "List your sales",
 		Args:  cmdutil.ExactArgs(0),
-		Example: `  gr sales list
-  gr sales list --product <id> --after 2024-01-01
-  gr sales list --all
-  gr sales list --json --jq '.sales[0].id'`,
+		Example: `  gumroad sales list
+  gumroad sales list --product <id> --after 2024-01-01
+  gumroad sales list --all
+  gumroad sales list --json --jq '.sales[0].id'`,
 		RunE: func(c *cobra.Command, args []string) error {
 			opts := cmdutil.OptionsFrom(c)
 			if err := cmdutil.RequireDateFlag(c, "before", before); err != nil {
@@ -197,7 +197,7 @@ func renderEmptySalesList(opts cmdutil.Options, product, email, orderID, before,
 }
 
 func salesPaginationHint(product, email, orderID, before, after, nextPageKey string) string {
-	return cmdutil.ReplayCommand("gr sales list",
+	return cmdutil.ReplayCommand("gumroad sales list",
 		cmdutil.CommandArg{Flag: "--product", Value: product},
 		cmdutil.CommandArg{Flag: "--email", Value: email},
 		cmdutil.CommandArg{Flag: "--order", Value: orderID},

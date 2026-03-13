@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/antiwork/gr/internal/testutil"
+	"github.com/antiwork/gumroad-cli/internal/testutil"
 )
 
 func TestList_SendsPaginatedTrue(t *testing.T) {
@@ -280,7 +280,7 @@ func TestList_PaginationHintPreservesFilters(t *testing.T) {
 	cmd.SetArgs([]string{"--product", "p1", "--email", "buyer@example.com"})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
-	want := "gr subscribers list --product p1 --email buyer@example.com --page-key next123"
+	want := "gumroad subscribers list --product p1 --email buyer@example.com --page-key next123"
 	if !strings.Contains(out, want) {
 		t.Fatalf("expected replayable pagination hint %q in %q", want, out)
 	}
@@ -402,7 +402,7 @@ func TestList_EmptyPageStillShowsPaginationHint(t *testing.T) {
 	if !strings.Contains(out, "No subscribers found on this page.") {
 		t.Fatalf("expected empty-page message, got %q", out)
 	}
-	want := "gr subscribers list --product p1 --email buyer@example.com --page-key next123"
+	want := "gumroad subscribers list --product p1 --email buyer@example.com --page-key next123"
 	if !strings.Contains(out, want) {
 		t.Fatalf("expected pagination hint %q in %q", want, out)
 	}

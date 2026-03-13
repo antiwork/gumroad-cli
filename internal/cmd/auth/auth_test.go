@@ -10,25 +10,25 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/antiwork/gr/internal/config"
-	"github.com/antiwork/gr/internal/testutil"
+	"github.com/antiwork/gumroad-cli/internal/config"
+	"github.com/antiwork/gumroad-cli/internal/testutil"
 )
 
 func setupAuth(t *testing.T, handler http.HandlerFunc) {
 	t.Helper()
 
 	srv := httptest.NewServer(handler)
-	t.Setenv("GR_API_BASE_URL", srv.URL)
+	t.Setenv("GUMROAD_API_BASE_URL", srv.URL)
 	t.Cleanup(srv.Close)
 }
 
 func withConfig(t *testing.T, token string) {
 	t.Helper()
 	cfgDir := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(cfgDir, "gr"), 0700); err != nil {
+	if err := os.MkdirAll(filepath.Join(cfgDir, "gumroad"), 0700); err != nil {
 		t.Fatalf("MkdirAll failed: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(cfgDir, "gr", "config.json"), []byte(`{"access_token":"`+token+`"}`), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(cfgDir, "gumroad", "config.json"), []byte(`{"access_token":"`+token+`"}`), 0600); err != nil {
 		t.Fatalf("WriteFile failed: %v", err)
 	}
 	t.Setenv("XDG_CONFIG_HOME", cfgDir)
@@ -119,7 +119,7 @@ func TestLogin_SavesToken(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	data, readErr := os.ReadFile(filepath.Join(cfgDir, "gr", "config.json"))
+	data, readErr := os.ReadFile(filepath.Join(cfgDir, "gumroad", "config.json"))
 	if readErr != nil {
 		t.Fatalf("config not saved: %v", readErr)
 	}
@@ -140,7 +140,7 @@ func TestLogin_EmptyToken(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "token cannot be empty") {
 		t.Fatalf("expected empty token error, got: %v", err)
 	}
-	for _, want := range []string{"Usage:", "gr auth login", "Examples:"} {
+	for _, want := range []string{"Usage:", "gumroad auth login", "Examples:"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("missing %q in %q", want, err.Error())
 		}
@@ -235,7 +235,7 @@ func TestLogin_DoesNotSaveTokenWhenResponseIsInvalid(t *testing.T) {
 		t.Fatalf("expected parse error, got: %v", err)
 	}
 
-	if _, statErr := os.Stat(filepath.Join(cfgDir, "gr", "config.json")); !os.IsNotExist(statErr) {
+	if _, statErr := os.Stat(filepath.Join(cfgDir, "gumroad", "config.json")); !os.IsNotExist(statErr) {
 		t.Fatalf("config should not be written on parse failure, got err=%v", statErr)
 	}
 }
@@ -245,7 +245,7 @@ func TestLogin_DryRunSkipsVerificationAndSave(t *testing.T) {
 		t.Error("login dry-run should not reach API")
 	})
 	cfgDir := t.TempDir()
-	cfgPath := filepath.Join(cfgDir, "gr", "config.json")
+	cfgPath := filepath.Join(cfgDir, "gumroad", "config.json")
 	t.Setenv("XDG_CONFIG_HOME", cfgDir)
 
 	var out bytes.Buffer
@@ -270,10 +270,10 @@ func TestStatus_NotLoggedIn(t *testing.T) {
 	})
 
 	cfgDir := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(cfgDir, "gr"), 0700); err != nil {
+	if err := os.MkdirAll(filepath.Join(cfgDir, "gumroad"), 0700); err != nil {
 		t.Fatalf("MkdirAll failed: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(cfgDir, "gr", "config.json"), []byte(`{}`), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(cfgDir, "gumroad", "config.json"), []byte(`{}`), 0600); err != nil {
 		t.Fatalf("WriteFile failed: %v", err)
 	}
 	t.Setenv("XDG_CONFIG_HOME", cfgDir)
@@ -461,10 +461,10 @@ func TestStatus_JSONOutput_NotLoggedIn(t *testing.T) {
 	})
 
 	cfgDir := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(cfgDir, "gr"), 0700); err != nil {
+	if err := os.MkdirAll(filepath.Join(cfgDir, "gumroad"), 0700); err != nil {
 		t.Fatalf("MkdirAll failed: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(cfgDir, "gr", "config.json"), []byte(`{}`), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(cfgDir, "gumroad", "config.json"), []byte(`{}`), 0600); err != nil {
 		t.Fatalf("WriteFile failed: %v", err)
 	}
 	t.Setenv("XDG_CONFIG_HOME", cfgDir)
@@ -618,10 +618,10 @@ func TestStatus_EnvAccessTokenIgnoresBrokenConfig(t *testing.T) {
 		}
 	})
 	cfgDir := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(cfgDir, "gr"), 0700); err != nil {
+	if err := os.MkdirAll(filepath.Join(cfgDir, "gumroad"), 0700); err != nil {
 		t.Fatalf("MkdirAll failed: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(cfgDir, "gr", "config.json"), []byte("not json"), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(cfgDir, "gumroad", "config.json"), []byte("not json"), 0600); err != nil {
 		t.Fatalf("WriteFile failed: %v", err)
 	}
 	t.Setenv("XDG_CONFIG_HOME", cfgDir)
@@ -636,10 +636,10 @@ func TestStatus_PlainOutput_NotLoggedIn(t *testing.T) {
 	})
 
 	cfgDir := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(cfgDir, "gr"), 0700); err != nil {
+	if err := os.MkdirAll(filepath.Join(cfgDir, "gumroad"), 0700); err != nil {
 		t.Fatalf("MkdirAll failed: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(cfgDir, "gr", "config.json"), []byte(`{}`), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(cfgDir, "gumroad", "config.json"), []byte(`{}`), 0600); err != nil {
 		t.Fatalf("WriteFile failed: %v", err)
 	}
 	t.Setenv("XDG_CONFIG_HOME", cfgDir)
@@ -687,10 +687,10 @@ func TestLogout_WithYes(t *testing.T) {
 		t.Error("logout should not reach API")
 	})
 	cfgDir := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(cfgDir, "gr"), 0700); err != nil {
+	if err := os.MkdirAll(filepath.Join(cfgDir, "gumroad"), 0700); err != nil {
 		t.Fatalf("MkdirAll failed: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(cfgDir, "gr", "config.json"), []byte(`{"access_token":"tok"}`), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(cfgDir, "gumroad", "config.json"), []byte(`{"access_token":"tok"}`), 0600); err != nil {
 		t.Fatalf("WriteFile failed: %v", err)
 	}
 	t.Setenv("XDG_CONFIG_HOME", cfgDir)
@@ -701,7 +701,7 @@ func TestLogout_WithYes(t *testing.T) {
 	}
 
 	// Verify config was deleted
-	_, statErr := os.Stat(filepath.Join(cfgDir, "gr", "config.json"))
+	_, statErr := os.Stat(filepath.Join(cfgDir, "gumroad", "config.json"))
 	if statErr == nil {
 		t.Error("config file should be deleted after logout")
 	}
@@ -726,7 +726,7 @@ func TestLogout_DryRunSkipsConfirmationAndPreservesConfig(t *testing.T) {
 		t.Error("logout should not reach API")
 	})
 	cfgDir := t.TempDir()
-	cfgPath := filepath.Join(cfgDir, "gr", "config.json")
+	cfgPath := filepath.Join(cfgDir, "gumroad", "config.json")
 	if err := os.MkdirAll(filepath.Dir(cfgPath), 0700); err != nil {
 		t.Fatalf("MkdirAll failed: %v", err)
 	}
@@ -752,10 +752,10 @@ func TestLogout_DryRunSkipsConfirmationAndPreservesConfig(t *testing.T) {
 func TestLogout_ShowsMessage(t *testing.T) {
 	setupAuth(t, func(w http.ResponseWriter, r *http.Request) {})
 	cfgDir := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(cfgDir, "gr"), 0700); err != nil {
+	if err := os.MkdirAll(filepath.Join(cfgDir, "gumroad"), 0700); err != nil {
 		t.Fatalf("MkdirAll failed: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(cfgDir, "gr", "config.json"), []byte(`{"access_token":"tok"}`), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(cfgDir, "gumroad", "config.json"), []byte(`{"access_token":"tok"}`), 0600); err != nil {
 		t.Fatalf("WriteFile failed: %v", err)
 	}
 	t.Setenv("XDG_CONFIG_HOME", cfgDir)
@@ -773,10 +773,10 @@ func TestLogout_ShowsMessage(t *testing.T) {
 func TestLogout_ShowsEnvAccessTokenNotice(t *testing.T) {
 	setupAuth(t, func(w http.ResponseWriter, r *http.Request) {})
 	cfgDir := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(cfgDir, "gr"), 0700); err != nil {
+	if err := os.MkdirAll(filepath.Join(cfgDir, "gumroad"), 0700); err != nil {
 		t.Fatalf("MkdirAll failed: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(cfgDir, "gr", "config.json"), []byte(`{"access_token":"tok"}`), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(cfgDir, "gumroad", "config.json"), []byte(`{"access_token":"tok"}`), 0600); err != nil {
 		t.Fatalf("WriteFile failed: %v", err)
 	}
 	t.Setenv("XDG_CONFIG_HOME", cfgDir)
@@ -788,7 +788,7 @@ func TestLogout_ShowsEnvAccessTokenNotice(t *testing.T) {
 		t.Fatalf("RunE failed: %v", err)
 	}
 
-	if !strings.Contains(out.String(), config.EnvAccessToken) || !strings.Contains(out.String(), "still set") || !strings.Contains(out.String(), "gr auth status") {
+	if !strings.Contains(out.String(), config.EnvAccessToken) || !strings.Contains(out.String(), "still set") || !strings.Contains(out.String(), "gumroad auth status") {
 		t.Fatalf("expected env token notice, got %q", out.String())
 	}
 }
@@ -798,10 +798,10 @@ func TestLogout_JSONOutput(t *testing.T) {
 		t.Error("logout should not reach API")
 	})
 	cfgDir := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(cfgDir, "gr"), 0700); err != nil {
+	if err := os.MkdirAll(filepath.Join(cfgDir, "gumroad"), 0700); err != nil {
 		t.Fatalf("MkdirAll failed: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(cfgDir, "gr", "config.json"), []byte(`{"access_token":"tok"}`), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(cfgDir, "gumroad", "config.json"), []byte(`{"access_token":"tok"}`), 0600); err != nil {
 		t.Fatalf("WriteFile failed: %v", err)
 	}
 	t.Setenv("XDG_CONFIG_HOME", cfgDir)
@@ -832,10 +832,10 @@ func TestLogout_JSONOutput_EnvAccessTokenRemainsUnverified(t *testing.T) {
 		t.Error("logout should not reach API")
 	})
 	cfgDir := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(cfgDir, "gr"), 0700); err != nil {
+	if err := os.MkdirAll(filepath.Join(cfgDir, "gumroad"), 0700); err != nil {
 		t.Fatalf("MkdirAll failed: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(cfgDir, "gr", "config.json"), []byte(`{"access_token":"tok"}`), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(cfgDir, "gumroad", "config.json"), []byte(`{"access_token":"tok"}`), 0600); err != nil {
 		t.Fatalf("WriteFile failed: %v", err)
 	}
 	t.Setenv("XDG_CONFIG_HOME", cfgDir)
@@ -867,10 +867,10 @@ func TestLogout_PlainOutput(t *testing.T) {
 		t.Error("logout should not reach API")
 	})
 	cfgDir := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(cfgDir, "gr"), 0700); err != nil {
+	if err := os.MkdirAll(filepath.Join(cfgDir, "gumroad"), 0700); err != nil {
 		t.Fatalf("MkdirAll failed: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(cfgDir, "gr", "config.json"), []byte(`{"access_token":"tok"}`), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(cfgDir, "gumroad", "config.json"), []byte(`{"access_token":"tok"}`), 0600); err != nil {
 		t.Fatalf("WriteFile failed: %v", err)
 	}
 	t.Setenv("XDG_CONFIG_HOME", cfgDir)
@@ -890,10 +890,10 @@ func TestLogout_NonInteractiveRequiresYes(t *testing.T) {
 		t.Error("should not reach API")
 	})
 	cfgDir := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(cfgDir, "gr"), 0700); err != nil {
+	if err := os.MkdirAll(filepath.Join(cfgDir, "gumroad"), 0700); err != nil {
 		t.Fatalf("MkdirAll failed: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(cfgDir, "gr", "config.json"), []byte(`{"access_token":"tok"}`), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(cfgDir, "gumroad", "config.json"), []byte(`{"access_token":"tok"}`), 0600); err != nil {
 		t.Fatalf("WriteFile failed: %v", err)
 	}
 	t.Setenv("XDG_CONFIG_HOME", cfgDir)
@@ -908,7 +908,7 @@ func TestLogout_NonInteractiveRequiresYes(t *testing.T) {
 	}
 
 	// Config should still exist
-	if _, statErr := os.Stat(filepath.Join(cfgDir, "gr", "config.json")); statErr != nil {
+	if _, statErr := os.Stat(filepath.Join(cfgDir, "gumroad", "config.json")); statErr != nil {
 		t.Error("config should not be deleted when confirmation is blocked")
 	}
 }

@@ -107,8 +107,8 @@ func TestClient_UserAgent(t *testing.T) {
 	c := &Client{token: "tok", httpClient: srv.Client(), baseURL: srv.URL, version: "1.2.3"}
 
 	_, _ = c.Get("/user", nil)
-	if gotUA != "gr/1.2.3" {
-		t.Errorf("got User-Agent=%q, want %q", gotUA, "gr/1.2.3")
+	if gotUA != "gumroad/1.2.3" {
+		t.Errorf("got User-Agent=%q, want %q", gotUA, "gumroad/1.2.3")
 	}
 }
 
@@ -543,7 +543,7 @@ func TestClient_HTTP401Error(t *testing.T) {
 	if apiErr.StatusCode != 401 {
 		t.Errorf("got status %d, want 401", apiErr.StatusCode)
 	}
-	if apiErr.Message != "Not authenticated. Run `gr auth login` or set `GR_ACCESS_TOKEN`." {
+	if apiErr.Message != "Not authenticated. Run `gumroad auth login` or set `GUMROAD_ACCESS_TOKEN`." {
 		t.Errorf("got message %q", apiErr.Message)
 	}
 }
@@ -592,7 +592,7 @@ func TestClient_DeleteWithParams(t *testing.T) {
 }
 
 func TestNewClient_UsesEnvBaseURL(t *testing.T) {
-	t.Setenv("GR_API_BASE_URL", "http://custom.local")
+	t.Setenv("GUMROAD_API_BASE_URL", "http://custom.local")
 
 	c := NewClient("tok", "test", false)
 	if c.baseURL != "http://custom.local" {
@@ -601,7 +601,7 @@ func TestNewClient_UsesEnvBaseURL(t *testing.T) {
 }
 
 func TestDefaultBaseURL_WithEnv(t *testing.T) {
-	t.Setenv("GR_API_BASE_URL", "http://test.local")
+	t.Setenv("GUMROAD_API_BASE_URL", "http://test.local")
 	got := defaultBaseURL()
 	if got != "http://test.local" {
 		t.Errorf("got %q, want http://test.local", got)
@@ -609,7 +609,7 @@ func TestDefaultBaseURL_WithEnv(t *testing.T) {
 }
 
 func TestDefaultBaseURL_Default(t *testing.T) {
-	t.Setenv("GR_API_BASE_URL", "")
+	t.Setenv("GUMROAD_API_BASE_URL", "")
 	got := defaultBaseURL()
 	if got != "https://api.gumroad.com/v2" {
 		t.Errorf("got %q, want https://api.gumroad.com/v2", got)

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/antiwork/gr/internal/testutil"
+	"github.com/antiwork/gumroad-cli/internal/testutil"
 )
 
 func TestList_AllFilters(t *testing.T) {
@@ -273,7 +273,7 @@ func TestList_EmptyPageStillShowsPaginationHint(t *testing.T) {
 	if !strings.Contains(out, "No sales found on this page.") {
 		t.Fatalf("expected empty-page message, got %q", out)
 	}
-	want := "gr sales list --product p1 --email buyer@example.com --order ord_123 --before 2024-12-31 --after 2024-01-01 --page-key cursor123"
+	want := "gumroad sales list --product p1 --email buyer@example.com --order ord_123 --before 2024-12-31 --after 2024-01-01 --page-key cursor123"
 	if !strings.Contains(out, want) {
 		t.Fatalf("expected pagination hint %q in %q", want, out)
 	}
@@ -456,7 +456,7 @@ func TestList_PaginationHintPreservesFilters(t *testing.T) {
 	cmd.SetArgs([]string{"--product", "p1", "--email", "buyer@example.com", "--order", "ord_123", "--before", "2024-12-31", "--after", "2024-01-01"})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
-	want := "gr sales list --product p1 --email buyer@example.com --order ord_123 --before 2024-12-31 --after 2024-01-01 --page-key cursor123"
+	want := "gumroad sales list --product p1 --email buyer@example.com --order ord_123 --before 2024-12-31 --after 2024-01-01 --page-key cursor123"
 	if !strings.Contains(out, want) {
 		t.Fatalf("expected replayable pagination hint %q in %q", want, out)
 	}

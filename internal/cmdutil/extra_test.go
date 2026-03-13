@@ -242,11 +242,11 @@ func TestPrintCancelledAction_DefaultOutput(t *testing.T) {
 }
 
 func TestReplayCommandQuotesShellValues(t *testing.T) {
-	got := ReplayCommand("gr sales list",
+	got := ReplayCommand("gumroad sales list",
 		CommandArg{Flag: "--all", Boolean: true},
 		CommandArg{Flag: "--email", Value: "buyer name@example.com"},
 	)
-	want := "gr sales list --all --email 'buyer name@example.com'"
+	want := "gumroad sales list --all --email 'buyer name@example.com'"
 	if got != want {
 		t.Fatalf("got %q, want %q", got, want)
 	}

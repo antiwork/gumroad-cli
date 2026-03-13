@@ -1,7 +1,7 @@
 package completion
 
 import (
-	"github.com/antiwork/gr/internal/cmdutil"
+	"github.com/antiwork/gumroad-cli/internal/cmdutil"
 	"github.com/spf13/cobra"
 )
 
@@ -9,21 +9,21 @@ func NewCompletionCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "completion <bash|zsh|fish|powershell>",
 		Short: "Generate shell completion script",
-		Long: `Generate shell completion script for gr.
+		Long: `Generate shell completion script for gumroad.
 
   # Bash
-  source <(gr completion bash)
+  source <(gumroad completion bash)
 
   # Zsh
-  gr completion zsh > "${fpath[1]}/_gr"
+  gumroad completion zsh > "${fpath[1]}/_gumroad"
 
   # Fish
-  gr completion fish | source
+  gumroad completion fish | source
 
   # PowerShell
-  gr completion powershell | Out-String | Invoke-Expression`,
-		Example: `  gr completion bash
-  gr completion zsh`,
+  gumroad completion powershell | Out-String | Invoke-Expression`,
+		Example: `  gumroad completion bash
+  gumroad completion zsh`,
 		Args: func(cmd *cobra.Command, args []string) error {
 			if err := cmdutil.ExactArgs(1)(cmd, args); err != nil {
 				return err

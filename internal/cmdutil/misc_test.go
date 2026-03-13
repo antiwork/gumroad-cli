@@ -14,8 +14,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/antiwork/gr/internal/api"
-	"github.com/antiwork/gr/internal/output"
+	"github.com/antiwork/gumroad-cli/internal/api"
+	"github.com/antiwork/gumroad-cli/internal/output"
 	"github.com/spf13/cobra"
 )
 
@@ -113,10 +113,10 @@ func TestDebugEnabled(t *testing.T) {
 		t.Fatal("debug flag should enable debug mode")
 	}
 
-	t.Setenv("GR_DEBUG", "1")
+	t.Setenv("GUMROAD_DEBUG", "1")
 	opts.Debug = false
 	if !opts.DebugEnabled() {
-		t.Fatal("GR_DEBUG=1 should enable debug mode")
+		t.Fatal("GUMROAD_DEBUG=1 should enable debug mode")
 	}
 }
 
@@ -238,7 +238,7 @@ func TestExactArgs(t *testing.T) {
 }
 
 func TestPropagateExamplesFiltersToChildren(t *testing.T) {
-	root := &cobra.Command{Use: "gr", Example: "  gr products list\n  gr products view <id>\n  gr sales list"}
+	root := &cobra.Command{Use: "gumroad", Example: "  gumroad products list\n  gumroad products view <id>\n  gumroad sales list"}
 	products := &cobra.Command{Use: "products", Run: func(*cobra.Command, []string) {}}
 	view := &cobra.Command{Use: "view <id>", Run: func(*cobra.Command, []string) {}}
 	root.AddCommand(products)
@@ -246,19 +246,19 @@ func TestPropagateExamplesFiltersToChildren(t *testing.T) {
 
 	PropagateExamples(root)
 
-	if !strings.Contains(products.Example, "gr products list") {
+	if !strings.Contains(products.Example, "gumroad products list") {
 		t.Fatalf("products example missing inherited products example: %q", products.Example)
 	}
-	if strings.Contains(products.Example, "gr sales list") {
+	if strings.Contains(products.Example, "gumroad sales list") {
 		t.Fatalf("products example should not include sibling example: %q", products.Example)
 	}
-	if !strings.Contains(view.Example, "gr products view <id>") {
+	if !strings.Contains(view.Example, "gumroad products view <id>") {
 		t.Fatalf("view example missing filtered leaf example: %q", view.Example)
 	}
 }
 
 func TestPropagateExamplesGeneratesLeafFallback(t *testing.T) {
-	root := &cobra.Command{Use: "gr", Example: "  gr custom-fields list --product <id>\n  gr custom-fields create --product <id> --name \"Company\" --required"}
+	root := &cobra.Command{Use: "gumroad", Example: "  gumroad custom-fields list --product <id>\n  gumroad custom-fields create --product <id> --name \"Company\" --required"}
 	customFields := &cobra.Command{Use: "custom-fields", Run: func(*cobra.Command, []string) {}}
 	update := &cobra.Command{Use: "update", Run: func(*cobra.Command, []string) {}}
 	update.Flags().String("product", "", "Product ID (required)")
@@ -268,10 +268,10 @@ func TestPropagateExamplesGeneratesLeafFallback(t *testing.T) {
 
 	PropagateExamples(root)
 
-	if strings.Contains(update.Example, "gr custom-fields list") || strings.Contains(update.Example, "gr custom-fields create") {
+	if strings.Contains(update.Example, "gumroad custom-fields list") || strings.Contains(update.Example, "gumroad custom-fields create") {
 		t.Fatalf("update example should not inherit unrelated ancestor examples: %q", update.Example)
 	}
-	for _, want := range []string{"gr custom-fields update", "--name <value>", "--product <value>"} {
+	for _, want := range []string{"gumroad custom-fields update", "--name <value>", "--product <value>"} {
 		if !strings.Contains(update.Example, want) {
 			t.Fatalf("update example missing %q in %q", want, update.Example)
 		}
@@ -469,7 +469,7 @@ func setupAuthedAPI(t *testing.T, handler http.HandlerFunc) {
 	t.Helper()
 
 	cfgDir := t.TempDir()
-	configDir := filepath.Join(cfgDir, "gr")
+	configDir := filepath.Join(cfgDir, "gumroad")
 	configPath := filepath.Join(configDir, "config.json")
 	if err := os.MkdirAll(configDir, 0700); err != nil {
 		t.Fatalf("mkdir config dir: %v", err)
@@ -480,7 +480,7 @@ func setupAuthedAPI(t *testing.T, handler http.HandlerFunc) {
 	t.Setenv("XDG_CONFIG_HOME", cfgDir)
 
 	srv := httptest.NewServer(handler)
-	t.Setenv("GR_API_BASE_URL", srv.URL)
+	t.Setenv("GUMROAD_API_BASE_URL", srv.URL)
 	t.Cleanup(srv.Close)
 }
 

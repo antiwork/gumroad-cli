@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/antiwork/gr/internal/output"
+	"github.com/antiwork/gumroad-cli/internal/output"
 )
 
 func payoutPlainDetailColumns(noSales, includeTransactions bool, transactions json.RawMessage) []string {

@@ -9,11 +9,11 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/antiwork/gr/internal/api"
-	"github.com/antiwork/gr/internal/cmdutil"
-	"github.com/antiwork/gr/internal/config"
-	"github.com/antiwork/gr/internal/output"
-	"github.com/antiwork/gr/internal/prompt"
+	"github.com/antiwork/gumroad-cli/internal/api"
+	"github.com/antiwork/gumroad-cli/internal/cmdutil"
+	"github.com/antiwork/gumroad-cli/internal/config"
+	"github.com/antiwork/gumroad-cli/internal/output"
+	"github.com/antiwork/gumroad-cli/internal/prompt"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )

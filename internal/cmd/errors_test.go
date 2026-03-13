@@ -8,10 +8,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/antiwork/gr/internal/api"
-	"github.com/antiwork/gr/internal/cmdutil"
-	"github.com/antiwork/gr/internal/config"
-	"github.com/antiwork/gr/internal/prompt"
+	"github.com/antiwork/gumroad-cli/internal/api"
+	"github.com/antiwork/gumroad-cli/internal/cmdutil"
+	"github.com/antiwork/gumroad-cli/internal/config"
+	"github.com/antiwork/gumroad-cli/internal/prompt"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -43,7 +43,7 @@ func TestClassifyCommandError_Nil(t *testing.T) {
 }
 
 func TestClassifyCommandError_Usage(t *testing.T) {
-	cmd := &cobra.Command{Use: "gr user"}
+	cmd := &cobra.Command{Use: "gumroad user"}
 	detail := classifyCommandError(cmdutil.UsageErrorf(cmd, "bad input"))
 	if detail.Type != "usage_error" || detail.Code != "invalid_input" {
 		t.Fatalf("unexpected detail: %+v", detail)
@@ -72,7 +72,7 @@ func TestClassifyCommandError_JQ(t *testing.T) {
 }
 
 func TestClassifyCommandError_LikelyUsageError(t *testing.T) {
-	detail := classifyCommandError(errors.New("unknown command \"bad\" for \"gr\""))
+	detail := classifyCommandError(errors.New("unknown command \"bad\" for \"gumroad\""))
 	if detail.Type != "usage_error" || detail.Code != "invalid_input" {
 		t.Fatalf("unexpected detail: %+v", detail)
 	}

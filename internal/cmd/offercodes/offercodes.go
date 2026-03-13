@@ -9,8 +9,8 @@ func NewOfferCodesCmd() *cobra.Command {
 		Use:     "offer-codes",
 		Aliases: []string{"oc"},
 		Short:   "Manage product offer codes",
-		Example: `  gr offer-codes list --product <id>
-  gr offer-codes create --product <id> --name SAVE10 --percent-off 10`,
+		Example: `  gumroad offer-codes list --product <id>
+  gumroad offer-codes create --product <id> --name SAVE10 --percent-off 10`,
 	}
 
 	cmd.AddCommand(newListCmd())

@@ -4,7 +4,7 @@ import (
 	"net/url"
 	"strconv"
 
-	"github.com/antiwork/gr/internal/cmdutil"
+	"github.com/antiwork/gumroad-cli/internal/cmdutil"
 	"github.com/spf13/cobra"
 )
 

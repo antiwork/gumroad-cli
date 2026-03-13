@@ -8,9 +8,9 @@ func NewAuthCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "auth",
 		Short: "Manage authentication",
-		Example: `  gr auth login
-  gr auth status
-  gr auth logout`,
+		Example: `  gumroad auth login
+  gumroad auth status
+  gumroad auth logout`,
 	}
 
 	cmd.AddCommand(newLoginCmd())

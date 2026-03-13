@@ -10,8 +10,8 @@ func NewCustomFieldsCmd() *cobra.Command {
 		Aliases: []string{"cf"},
 		Short:   "Manage product custom fields",
 		Long:    "Manage custom fields for a product. Update and delete key by name, not ID.",
-		Example: `  gr custom-fields list --product <id>
-  gr custom-fields create --product <id> --name "Company" --required`,
+		Example: `  gumroad custom-fields list --product <id>
+  gumroad custom-fields create --product <id> --name "Company" --required`,
 	}
 
 	cmd.AddCommand(newListCmd())

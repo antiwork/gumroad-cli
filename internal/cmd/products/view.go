@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"net/url"
 
-	"github.com/antiwork/gr/internal/api"
-	"github.com/antiwork/gr/internal/cmdutil"
-	"github.com/antiwork/gr/internal/output"
+	"github.com/antiwork/gumroad-cli/internal/api"
+	"github.com/antiwork/gumroad-cli/internal/cmdutil"
+	"github.com/antiwork/gumroad-cli/internal/output"
 	"github.com/spf13/cobra"
 )
 
@@ -39,7 +39,7 @@ func newViewCmd() *cobra.Command {
 		Use:     "view <id>",
 		Short:   "View a product",
 		Args:    cmdutil.ExactArgs(1),
-		Example: `  gr products view <id>`,
+		Example: `  gumroad products view <id>`,
 		RunE: func(c *cobra.Command, args []string) error {
 			opts := cmdutil.OptionsFrom(c)
 			return cmdutil.RunRequest(opts, "Fetching product...", "GET", cmdutil.JoinPath("products", args[0]), url.Values{}, func(data json.RawMessage) error {

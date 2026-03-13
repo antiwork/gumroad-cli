@@ -12,8 +12,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/antiwork/gr/internal/cmdutil"
-	"github.com/antiwork/gr/internal/output"
+	"github.com/antiwork/gumroad-cli/internal/cmdutil"
+	"github.com/antiwork/gumroad-cli/internal/output"
 	"github.com/spf13/cobra"
 )
 
@@ -23,7 +23,7 @@ func Setup(t *testing.T, handler http.HandlerFunc) *httptest.Server {
 	t.Helper()
 
 	cfgDir := t.TempDir()
-	configDir := filepath.Join(cfgDir, "gr")
+	configDir := filepath.Join(cfgDir, "gumroad")
 	configPath := filepath.Join(configDir, "config.json")
 	if err := os.MkdirAll(configDir, 0700); err != nil {
 		t.Fatalf("MkdirAll failed: %v", err)
@@ -34,7 +34,7 @@ func Setup(t *testing.T, handler http.HandlerFunc) *httptest.Server {
 	t.Setenv("XDG_CONFIG_HOME", cfgDir)
 
 	srv := httptest.NewServer(handler)
-	t.Setenv("GR_API_BASE_URL", srv.URL)
+	t.Setenv("GUMROAD_API_BASE_URL", srv.URL)
 	t.Cleanup(srv.Close)
 	return srv
 }

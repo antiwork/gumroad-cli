@@ -53,7 +53,7 @@ func parseAPIError(statusCode int, body []byte) error {
 func rewriteError(statusCode int, msg string) string {
 	switch statusCode {
 	case 401:
-		return "Not authenticated. Run `gr auth login` or set `GR_ACCESS_TOKEN`."
+		return "Not authenticated. Run `gumroad auth login` or set `GUMROAD_ACCESS_TOKEN`."
 	case 403:
 		if msg != "" {
 			return fmt.Sprintf("Access denied: %s", msg)

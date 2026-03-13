@@ -11,8 +11,8 @@ func NewWebhooksCmd() *cobra.Command {
 		Long: `Manage webhook subscriptions for resource events.
 
 Note: delete only succeeds when the token's OAuth app matches the subscription's app.`,
-		Example: `  gr webhooks list --resource sale
-  gr webhooks create --resource sale --url https://example.com/hook`,
+		Example: `  gumroad webhooks list --resource sale
+  gumroad webhooks create --resource sale --url https://example.com/hook`,
 	}
 
 	cmd.AddCommand(newListCmd())

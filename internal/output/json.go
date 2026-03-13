@@ -82,7 +82,7 @@ func WriteJSONStreamTo(w io.Writer, key string, writeItems func(func(any) error)
 }
 
 // PrintJSONStreamWithJQ stages user-visible output before copying it to the
-// final writer. This is intentional: `gr ... --all --jq ...` must fail
+// final writer. This is intentional: `gumroad ... --all --jq ...` must fail
 // atomically so late pagination/jq errors never leave partial machine-readable
 // output on stdout. Do not switch this back to direct stdout streaming unless
 // the CLI contract changes.
@@ -91,7 +91,7 @@ func PrintJSONStreamWithJQ(w io.Writer, key, jqExpr string, writeItems func(func
 		return PrintJSONStream(w, key, writeItems)
 	}
 
-	return stageOutput(w, "gr-jq-stream-*", func(stage io.Writer) error {
+	return stageOutput(w, "gumroad-jq-stream-*", func(stage io.Writer) error {
 		return streamJSONWithJQ(stage, key, jqExpr, writeItems)
 	})
 }
@@ -99,7 +99,7 @@ func PrintJSONStreamWithJQ(w io.Writer, key, jqExpr string, writeItems func(func
 // PrintJSONStream keeps the same atomic-output contract as
 // PrintJSONStreamWithJQ for user-visible `--all --json` flows.
 func PrintJSONStream(w io.Writer, key string, writeItems func(func(any) error) error) error {
-	return stageOutput(w, "gr-json-stream-*", func(stage io.Writer) error {
+	return stageOutput(w, "gumroad-json-stream-*", func(stage io.Writer) error {
 		return StreamJSONArrayEnvelope(stage, key, writeItems)
 	})
 }

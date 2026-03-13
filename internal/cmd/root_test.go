@@ -10,14 +10,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/antiwork/gr/internal/cmdutil"
+	"github.com/antiwork/gumroad-cli/internal/cmdutil"
 	"github.com/spf13/cobra"
 )
 
 func usageTestCommand() *cobra.Command {
 	return &cobra.Command{
-		Use:     "gr user",
-		Example: "  gr user",
+		Use:     "gumroad user",
+		Example: "  gumroad user",
 	}
 }
 
@@ -31,7 +31,7 @@ func (w failingWriter) Write([]byte) (int, error) {
 
 func stubCommand(runErr error) *cobra.Command {
 	return &cobra.Command{
-		Use:           "gr",
+		Use:           "gumroad",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(*cobra.Command, []string) error {
@@ -170,7 +170,7 @@ func TestRootCmd_VersionFlag(t *testing.T) {
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !strings.Contains(out.String(), "gr version ") {
+	if !strings.Contains(out.String(), "gumroad version ") {
 		t.Fatalf("expected version output, got %q", out.String())
 	}
 }
@@ -412,13 +412,13 @@ func TestRootCmd_CustomFieldsUpdateHelpUsesRelevantExample(t *testing.T) {
 	}
 
 	text := out.String()
-	if strings.Contains(text, "gr custom-fields list") || strings.Contains(text, "gr custom-fields create") {
+	if strings.Contains(text, "gumroad custom-fields list") || strings.Contains(text, "gumroad custom-fields create") {
 		t.Fatalf("help should not include unrelated examples, got %q", text)
 	}
-	if strings.Contains(text, "gr custom-fields update --name <value> --product <value> --required") {
+	if strings.Contains(text, "gumroad custom-fields update --name <value> --product <value> --required") {
 		t.Fatalf("help example should not include optional flags, got %q", text)
 	}
-	for _, want := range []string{"Examples:", "gr custom-fields update", "--name <value>", "--product <value>"} {
+	for _, want := range []string{"Examples:", "gumroad custom-fields update", "--name <value>", "--product <value>"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("missing %q in help output %q", want, text)
 		}
@@ -515,7 +515,7 @@ func TestCommandContext_NilCommandUsesBackground(t *testing.T) {
 func TestCommandContext_PrefersCommandContext(t *testing.T) {
 	type contextKey string
 
-	cmd := &cobra.Command{Use: "gr"}
+	cmd := &cobra.Command{Use: "gumroad"}
 	ctx := context.WithValue(context.Background(), contextKey("trace"), "abc123")
 	cmd.SetContext(ctx)
 

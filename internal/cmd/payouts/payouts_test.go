@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/antiwork/gr/internal/testutil"
+	"github.com/antiwork/gumroad-cli/internal/testutil"
 )
 
 func TestList_JSON(t *testing.T) {
@@ -622,7 +622,7 @@ func TestList_NoUpcomingEmptyPageStillShowsPaginationHint(t *testing.T) {
 	if !strings.Contains(out, "No payouts found on this page.") {
 		t.Fatalf("expected empty-page message, got %q", out)
 	}
-	want := "gr payouts list --before 2024-06-01 --after 2024-01-01 --no-upcoming --page-key cursor456"
+	want := "gumroad payouts list --before 2024-06-01 --after 2024-01-01 --no-upcoming --page-key cursor456"
 	if !strings.Contains(out, want) {
 		t.Fatalf("expected pagination hint %q in %q", want, out)
 	}
@@ -642,7 +642,7 @@ func TestList_PaginationHintPreservesFilters(t *testing.T) {
 	cmd.SetArgs([]string{"--before", "2024-06-01", "--after", "2024-01-01", "--no-upcoming"})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
-	want := "gr payouts list --before 2024-06-01 --after 2024-01-01 --no-upcoming --page-key cursor456"
+	want := "gumroad payouts list --before 2024-06-01 --after 2024-01-01 --no-upcoming --page-key cursor456"
 	if !strings.Contains(out, want) {
 		t.Fatalf("expected replayable pagination hint %q in %q", want, out)
 	}

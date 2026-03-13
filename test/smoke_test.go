@@ -8,29 +8,29 @@ import (
 )
 
 func TestSmoke_UserAndAuthStatus(t *testing.T) {
-	if os.Getenv("GR_SMOKE") != "1" {
-		t.Skip("set GR_SMOKE=1 and GR_ACCESS_TOKEN to run live Gumroad smoke tests")
+	if os.Getenv("GUMROAD_SMOKE") != "1" {
+		t.Skip("set GUMROAD_SMOKE=1 and GUMROAD_ACCESS_TOKEN to run live Gumroad smoke tests")
 	}
 
-	token := os.Getenv("GR_ACCESS_TOKEN")
+	token := os.Getenv("GUMROAD_ACCESS_TOKEN")
 	if token == "" {
-		t.Fatal("GR_ACCESS_TOKEN is required when GR_SMOKE=1")
+		t.Fatal("GUMROAD_ACCESS_TOKEN is required when GUMROAD_SMOKE=1")
 	}
 
 	bin := buildBinary(t)
 	cfgDir := t.TempDir()
 	env := []string{"XDG_CONFIG_HOME=" + cfgDir}
-	if baseURL := os.Getenv("GR_API_BASE_URL"); baseURL != "" {
-		env = append(env, "GR_API_BASE_URL="+baseURL)
+	if baseURL := os.Getenv("GUMROAD_API_BASE_URL"); baseURL != "" {
+		env = append(env, "GUMROAD_API_BASE_URL="+baseURL)
 	}
 
 	loginOut, err := runGRWithInput(t, bin, env, token+"\n", "auth", "login", "--json")
 	if err != nil {
-		t.Fatalf("gr auth login --json failed: %v\n%s", err, loginOut)
+		t.Fatalf("gumroad auth login --json failed: %v\n%s", err, loginOut)
 	}
 	var loginPayload map[string]json.RawMessage
 	if err := json.Unmarshal([]byte(loginOut), &loginPayload); err != nil {
-		t.Fatalf("gr auth login --json output is not valid JSON: %v\n%s", err, loginOut)
+		t.Fatalf("gumroad auth login --json output is not valid JSON: %v\n%s", err, loginOut)
 	}
 	var loginResp struct {
 		Authenticated bool `json:"authenticated"`
@@ -125,7 +125,7 @@ func TestSmoke_UserAndAuthStatus(t *testing.T) {
 func assertSmokeJSON(t *testing.T, bin string, env []string, args []string, assert func(map[string]json.RawMessage)) map[string]json.RawMessage {
 	t.Helper()
 
-	command := "gr " + strings.Join(args, " ")
+	command := "gumroad " + strings.Join(args, " ")
 	out, err := runGR(t, bin, env, args...)
 	if err != nil {
 		t.Fatalf("%s failed: %v\n%s", command, err, out)
@@ -151,7 +151,7 @@ func assertSmokeJSONWithKeys(t *testing.T, bin string, env []string, args []stri
 func assertSmokeJSONValue[T any](t *testing.T, bin string, env []string, args []string) T {
 	t.Helper()
 
-	command := "gr " + strings.Join(args, " ")
+	command := "gumroad " + strings.Join(args, " ")
 	out, err := runGR(t, bin, env, args...)
 	if err != nil {
 		t.Fatalf("%s failed: %v\n%s", command, err, out)
@@ -167,7 +167,7 @@ func assertSmokeJSONValue[T any](t *testing.T, bin string, env []string, args []
 func assertSmokePlainNonEmpty(t *testing.T, bin string, env []string, args []string) string {
 	t.Helper()
 
-	command := "gr " + strings.Join(args, " ")
+	command := "gumroad " + strings.Join(args, " ")
 	out, err := runGR(t, bin, env, args...)
 	if err != nil {
 		t.Fatalf("%s failed: %v\n%s", command, err, out)

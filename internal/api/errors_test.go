@@ -37,7 +37,7 @@ func TestParseAPIError_401(t *testing.T) {
 	body := []byte(`{"success":false}`)
 	err := parseAPIError(401, body)
 	apiErr := mustAPIError(t, err)
-	if apiErr.Message != "Not authenticated. Run `gr auth login` or set `GR_ACCESS_TOKEN`." {
+	if apiErr.Message != "Not authenticated. Run `gumroad auth login` or set `GUMROAD_ACCESS_TOKEN`." {
 		t.Errorf("got message %q", apiErr.Message)
 	}
 	if !errors.Is(err, ErrNotAuthenticated) {

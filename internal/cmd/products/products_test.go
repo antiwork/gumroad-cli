@@ -12,7 +12,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/antiwork/gr/internal/testutil"
+	"github.com/antiwork/gumroad-cli/internal/testutil"
 )
 
 func TestList_JSON(t *testing.T) {
@@ -529,7 +529,7 @@ func TestNewProductsCmd_HelpIncludesSKUs(t *testing.T) {
 	})
 
 	for _, want := range []string{
-		"gr products skus <id>",
+		"gumroad products skus <id>",
 		"skus        List SKUs for a product",
 	} {
 		if !strings.Contains(out, want) {

@@ -8,21 +8,21 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/antiwork/gr/internal/cmd/auth"
-	"github.com/antiwork/gr/internal/cmd/categories"
-	"github.com/antiwork/gr/internal/cmd/completion"
-	"github.com/antiwork/gr/internal/cmd/customfields"
-	"github.com/antiwork/gr/internal/cmd/licenses"
-	"github.com/antiwork/gr/internal/cmd/offercodes"
-	"github.com/antiwork/gr/internal/cmd/payouts"
-	"github.com/antiwork/gr/internal/cmd/products"
-	"github.com/antiwork/gr/internal/cmd/sales"
-	"github.com/antiwork/gr/internal/cmd/subscribers"
-	"github.com/antiwork/gr/internal/cmd/user"
-	"github.com/antiwork/gr/internal/cmd/variants"
-	"github.com/antiwork/gr/internal/cmd/webhooks"
-	"github.com/antiwork/gr/internal/cmdutil"
-	"github.com/antiwork/gr/internal/output"
+	"github.com/antiwork/gumroad-cli/internal/cmd/auth"
+	"github.com/antiwork/gumroad-cli/internal/cmd/categories"
+	"github.com/antiwork/gumroad-cli/internal/cmd/completion"
+	"github.com/antiwork/gumroad-cli/internal/cmd/customfields"
+	"github.com/antiwork/gumroad-cli/internal/cmd/licenses"
+	"github.com/antiwork/gumroad-cli/internal/cmd/offercodes"
+	"github.com/antiwork/gumroad-cli/internal/cmd/payouts"
+	"github.com/antiwork/gumroad-cli/internal/cmd/products"
+	"github.com/antiwork/gumroad-cli/internal/cmd/sales"
+	"github.com/antiwork/gumroad-cli/internal/cmd/subscribers"
+	"github.com/antiwork/gumroad-cli/internal/cmd/user"
+	"github.com/antiwork/gumroad-cli/internal/cmd/variants"
+	"github.com/antiwork/gumroad-cli/internal/cmd/webhooks"
+	"github.com/antiwork/gumroad-cli/internal/cmdutil"
+	"github.com/antiwork/gumroad-cli/internal/output"
 	"github.com/spf13/cobra"
 )
 
@@ -36,21 +36,21 @@ func NewRootCmd() *cobra.Command {
 	opts := cmdutil.DefaultOptions()
 
 	cmd := &cobra.Command{
-		Use:   "gr",
+		Use:   "gumroad",
 		Short: "CLI for the Gumroad API",
-		Long:  "A command-line interface for the Gumroad API.\nDesigned for humans and AI agents alike.\n\nDocumentation: https://github.com/antiwork/gr\nMan pages:     available locally as `man gr` after `make install`\nReport issues: https://github.com/antiwork/gr/issues",
+		Long:  "A command-line interface for the Gumroad API.\nDesigned for humans and AI agents alike.\n\nDocumentation: https://github.com/antiwork/gumroad\nMan pages:     available locally as `man gumroad` after `make install`\nReport issues: https://github.com/antiwork/gumroad-cli/issues",
 		Example: `  # Log in with your API token
-  gr auth login
+  gumroad auth login
 
   # View your account
-  gr user --json --jq '.user.email'
+  gumroad user --json --jq '.user.email'
 
   # List products and sales
-  gr products list
-  gr sales list --json --jq '.sales[0].id'
+  gumroad products list
+  gumroad sales list --json --jq '.sales[0].id'
 
   # Verify a license without incrementing uses
-  echo "$LICENSE_KEY" | gr licenses verify --product <id> --no-increment`,
+  echo "$LICENSE_KEY" | gumroad licenses verify --product <id> --no-increment`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
@@ -72,7 +72,7 @@ func NewRootCmd() *cobra.Command {
 		Version: Version,
 	}
 
-	cmd.SetVersionTemplate(fmt.Sprintf("gr version %s\n", Version))
+	cmd.SetVersionTemplate(fmt.Sprintf("gumroad version %s\n", Version))
 	cmd.SetFlagErrorFunc(func(c *cobra.Command, err error) error {
 		if err == nil {
 			return nil

@@ -1,4 +1,4 @@
-module github.com/antiwork/gr
+module github.com/antiwork/gumroad-cli
 
 go 1.25.4
 

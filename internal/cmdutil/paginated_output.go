@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/antiwork/gr/internal/output"
+	"github.com/antiwork/gumroad-cli/internal/output"
 )
 
 // PaginatedPageOutputConfig describes how a paginated command should render

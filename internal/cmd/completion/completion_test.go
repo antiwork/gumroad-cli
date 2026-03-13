@@ -4,12 +4,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/antiwork/gr/internal/testutil"
+	"github.com/antiwork/gumroad-cli/internal/testutil"
 	"github.com/spf13/cobra"
 )
 
 func rootWithCompletion() *cobra.Command {
-	root := &cobra.Command{Use: "gr"}
+	root := &cobra.Command{Use: "gumroad"}
 	root.AddCommand(NewCompletionCmd())
 	return root
 }
@@ -82,7 +82,7 @@ func TestCompletion_NoArgs(t *testing.T) {
 		"Usage:",
 		"completion <bash|zsh|fish|powershell>",
 		"Examples:",
-		"Run \"gr completion --help\" for more information.",
+		"Run \"gumroad completion --help\" for more information.",
 	} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("missing %q in %q", want, err.Error())
@@ -102,7 +102,7 @@ func TestCompletion_InvalidShell(t *testing.T) {
 		"Usage:",
 		"completion <bash|zsh|fish|powershell>",
 		"Examples:",
-		"Run \"gr completion --help\" for more information.",
+		"Run \"gumroad completion --help\" for more information.",
 	} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("missing %q in %q", want, err.Error())

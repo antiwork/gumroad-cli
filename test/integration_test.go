@@ -22,13 +22,13 @@ var (
 func buildBinary(t *testing.T) string {
 	t.Helper()
 	buildBinaryOnce.Do(func() {
-		dir, err := os.MkdirTemp("", "gr-test-bin-*")
+		dir, err := os.MkdirTemp("", "gumroad-test-bin-*")
 		if err != nil {
 			buildBinaryErr = err
 			return
 		}
-		buildBinaryPath = filepath.Join(dir, "gr")
-		cmd := exec.Command("go", "build", "-o", buildBinaryPath, "./cmd/gr")
+		buildBinaryPath = filepath.Join(dir, "gumroad")
+		cmd := exec.Command("go", "build", "-o", buildBinaryPath, "./cmd/gumroad")
 		cmd.Dir = getRootDir(t)
 		out, err := cmd.CombinedOutput()
 		if err != nil {
@@ -62,7 +62,7 @@ func getRootDir(t *testing.T) string {
 func setupConfig(t *testing.T) string {
 	t.Helper()
 	cfgDir := t.TempDir()
-	cfgPath := filepath.Join(cfgDir, "gr", "config.json")
+	cfgPath := filepath.Join(cfgDir, "gumroad", "config.json")
 	if err := os.MkdirAll(filepath.Dir(cfgPath), 0700); err != nil {
 		t.Fatalf("MkdirAll failed: %v", err)
 	}
@@ -150,7 +150,7 @@ func TestVersion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("version failed: %v\n%s", err, out)
 	}
-	if !strings.Contains(out, "gr version") {
+	if !strings.Contains(out, "gumroad version") {
 		t.Errorf("expected version string, got %q", out)
 	}
 }
@@ -185,7 +185,7 @@ func TestTopLevelSKUsCommandIsUnavailable(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected top-level skus command to be unavailable")
 	}
-	if !strings.Contains(out, "unknown command \"skus\" for \"gr\"") {
+	if !strings.Contains(out, "unknown command \"skus\" for \"gumroad\"") {
 		t.Fatalf("unexpected output: %q", out)
 	}
 }
@@ -199,9 +199,9 @@ func TestProductsViewMissingIDShowsUsage(t *testing.T) {
 	for _, want := range []string{
 		"missing required argument: <id>",
 		"Usage:",
-		"gr products view <id>",
+		"gumroad products view <id>",
 		"Examples:",
-		"Run \"gr products view --help\" for more information.",
+		"Run \"gumroad products view --help\" for more information.",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("missing %q in %q", want, out)
@@ -218,10 +218,10 @@ func TestWebhooksListMissingResourceShowsUsage(t *testing.T) {
 	for _, want := range []string{
 		"missing required flag: --resource",
 		"Usage:",
-		"gr webhooks list",
+		"gumroad webhooks list",
 		"Examples:",
-		"gr webhooks list --resource sale",
-		"Run \"gr webhooks list --help\" for more information.",
+		"gumroad webhooks list --resource sale",
+		"Run \"gumroad webhooks list --help\" for more information.",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("missing %q in %q", want, out)
@@ -237,15 +237,15 @@ func TestLeafHelpIncludesExamples(t *testing.T) {
 	}
 	for _, want := range []string{
 		"Examples:",
-		"gr products view <id>",
+		"gumroad products view <id>",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("missing %q in %q", want, out)
 		}
 	}
 	for _, unwanted := range []string{
-		"gr products list",
-		"gr products delete <id>",
+		"gumroad products list",
+		"gumroad products delete <id>",
 	} {
 		if strings.Contains(out, unwanted) {
 			t.Fatalf("unexpected sibling example %q in %q", unwanted, out)
@@ -262,10 +262,10 @@ func TestNoArgCommandRejectsUnexpectedArgument(t *testing.T) {
 	for _, want := range []string{
 		"unexpected argument: extra",
 		"Usage:",
-		"gr auth status",
+		"gumroad auth status",
 		"Examples:",
-		"gr auth status",
-		"Run \"gr auth status --help\" for more information.",
+		"gumroad auth status",
+		"Run \"gumroad auth status --help\" for more information.",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("missing %q in %q", want, out)
@@ -355,7 +355,7 @@ func TestUserJSON(t *testing.T) {
 
 	bin := buildBinary(t)
 	cfgDir := setupConfig(t)
-	env := []string{"XDG_CONFIG_HOME=" + cfgDir, "GR_API_BASE_URL=" + srv.URL}
+	env := []string{"XDG_CONFIG_HOME=" + cfgDir, "GUMROAD_API_BASE_URL=" + srv.URL}
 
 	out, err := runGR(t, bin, env, "user", "--json")
 	if err != nil {
@@ -387,7 +387,7 @@ func TestUserJQ(t *testing.T) {
 
 	bin := buildBinary(t)
 	cfgDir := setupConfig(t)
-	env := []string{"XDG_CONFIG_HOME=" + cfgDir, "GR_API_BASE_URL=" + srv.URL}
+	env := []string{"XDG_CONFIG_HOME=" + cfgDir, "GUMROAD_API_BASE_URL=" + srv.URL}
 
 	out, err := runGR(t, bin, env, "user", "--jq", ".user.email")
 	if err != nil {
@@ -421,7 +421,7 @@ func TestProductsList(t *testing.T) {
 
 	bin := buildBinary(t)
 	cfgDir := setupConfig(t)
-	env := []string{"XDG_CONFIG_HOME=" + cfgDir, "GR_API_BASE_URL=" + srv.URL}
+	env := []string{"XDG_CONFIG_HOME=" + cfgDir, "GUMROAD_API_BASE_URL=" + srv.URL}
 
 	// JSON mode
 	out, err := runGR(t, bin, env, "products", "list", "--json")
@@ -464,7 +464,7 @@ func TestSalesListWithFilters(t *testing.T) {
 
 	bin := buildBinary(t)
 	cfgDir := setupConfig(t)
-	env := []string{"XDG_CONFIG_HOME=" + cfgDir, "GR_API_BASE_URL=" + srv.URL}
+	env := []string{"XDG_CONFIG_HOME=" + cfgDir, "GUMROAD_API_BASE_URL=" + srv.URL}
 
 	out, err := runGR(t, bin, env, "sales", "list", "--product", "p1", "--after", "2024-01-01", "--json")
 	if err != nil {
@@ -485,7 +485,7 @@ func TestSalesListAllJSONFailureDoesNotLeakPartialOutput(t *testing.T) {
 
 	bin := buildBinary(t)
 	cfgDir := setupConfig(t)
-	env := []string{"XDG_CONFIG_HOME=" + cfgDir, "GR_API_BASE_URL=" + srv.URL}
+	env := []string{"XDG_CONFIG_HOME=" + cfgDir, "GUMROAD_API_BASE_URL=" + srv.URL}
 
 	out, err := runGR(t, bin, env, "sales", "list", "--all", "--json")
 	if err == nil {
@@ -510,7 +510,7 @@ func TestSalesListAllJQFailureDoesNotLeakPartialOutput(t *testing.T) {
 
 	bin := buildBinary(t)
 	cfgDir := setupConfig(t)
-	env := []string{"XDG_CONFIG_HOME=" + cfgDir, "GR_API_BASE_URL=" + srv.URL}
+	env := []string{"XDG_CONFIG_HOME=" + cfgDir, "GUMROAD_API_BASE_URL=" + srv.URL}
 
 	out, err := runGR(t, bin, env, "sales", "list", "--all", "--jq", ".sales[] | .email")
 	if err == nil {
@@ -543,7 +543,7 @@ func TestInvalidJQReturnsStructuredJSONError(t *testing.T) {
 
 	bin := buildBinary(t)
 	cfgDir := setupConfig(t)
-	env := []string{"XDG_CONFIG_HOME=" + cfgDir, "GR_API_BASE_URL=" + srv.URL}
+	env := []string{"XDG_CONFIG_HOME=" + cfgDir, "GUMROAD_API_BASE_URL=" + srv.URL}
 
 	out, err := runGR(t, bin, env, "user", "--jq", ".user[")
 	if err == nil {
@@ -586,7 +586,7 @@ func TestLicenseVerifyUsesTopLevel(t *testing.T) {
 
 	bin := buildBinary(t)
 	cfgDir := setupConfig(t)
-	env := []string{"XDG_CONFIG_HOME=" + cfgDir, "GR_API_BASE_URL=" + srv.URL}
+	env := []string{"XDG_CONFIG_HOME=" + cfgDir, "GUMROAD_API_BASE_URL=" + srv.URL}
 
 	// Test formatted output shows correct use count
 	out, err := runGR(t, bin, env, "licenses", "verify", "--product", "prod1", "--key", "ABC-123", "--no-increment", "--no-color")
@@ -623,7 +623,7 @@ func TestLoginDistinguishesAuthVsTransportErrors(t *testing.T) {
 
 	bin := buildBinary(t)
 	cfgDir := t.TempDir()
-	env := []string{"XDG_CONFIG_HOME=" + cfgDir, "GR_API_BASE_URL=" + srv.URL}
+	env := []string{"XDG_CONFIG_HOME=" + cfgDir, "GUMROAD_API_BASE_URL=" + srv.URL}
 
 	// Pipe a token via stdin
 	cmd := exec.Command(bin, "auth", "login", "--no-color")
@@ -654,7 +654,7 @@ func TestLoginReportsInvalidToken(t *testing.T) {
 
 	bin := buildBinary(t)
 	cfgDir := t.TempDir()
-	env := []string{"XDG_CONFIG_HOME=" + cfgDir, "GR_API_BASE_URL=" + srv.URL}
+	env := []string{"XDG_CONFIG_HOME=" + cfgDir, "GUMROAD_API_BASE_URL=" + srv.URL}
 
 	cmd := exec.Command(bin, "auth", "login", "--no-color")
 	cmd.Env = append(os.Environ(), env...)
@@ -783,13 +783,13 @@ func TestDebugEnv(t *testing.T) {
 	cfgDir := setupConfig(t)
 	env := []string{
 		"XDG_CONFIG_HOME=" + cfgDir,
-		"GR_API_BASE_URL=" + srv.URL,
-		"GR_DEBUG=1",
+		"GUMROAD_API_BASE_URL=" + srv.URL,
+		"GUMROAD_DEBUG=1",
 	}
 
 	out, err := runGR(t, bin, env, "user")
 	if err != nil {
-		t.Fatalf("user with GR_DEBUG failed: %v\n%s", err, out)
+		t.Fatalf("user with GUMROAD_DEBUG failed: %v\n%s", err, out)
 	}
 	if !strings.Contains(out, "DEBUG request method=GET") || !strings.Contains(out, "status=200") {
 		t.Fatalf("expected debug output in combined streams, got: %q", out)

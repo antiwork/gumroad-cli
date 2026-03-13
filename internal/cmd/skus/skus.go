@@ -6,9 +6,9 @@ import (
 	"io"
 	"net/url"
 
-	"github.com/antiwork/gr/internal/api"
-	"github.com/antiwork/gr/internal/cmdutil"
-	"github.com/antiwork/gr/internal/output"
+	"github.com/antiwork/gumroad-cli/internal/api"
+	"github.com/antiwork/gumroad-cli/internal/cmdutil"
+	"github.com/antiwork/gumroad-cli/internal/output"
 	"github.com/spf13/cobra"
 )
 
@@ -17,7 +17,7 @@ func NewProductSKUsCmd() *cobra.Command {
 		Use:     "skus <id>",
 		Short:   "List SKUs for a product",
 		Args:    cmdutil.ExactArgs(1),
-		Example: "  gr products skus <id>",
+		Example: "  gumroad products skus <id>",
 		RunE: func(c *cobra.Command, args []string) error {
 			return runList(c, args[0])
 		},

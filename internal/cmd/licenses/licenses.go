@@ -8,9 +8,9 @@ func NewLicensesCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "licenses",
 		Short: "Manage product licenses",
-		Example: `  echo "$LICENSE_KEY" | gr licenses verify --product <id> --no-increment
-  echo "$LICENSE_KEY" | gr licenses enable --product <id>
-  echo "$LICENSE_KEY" | gr licenses disable --product <id>`,
+		Example: `  echo "$LICENSE_KEY" | gumroad licenses verify --product <id> --no-increment
+  echo "$LICENSE_KEY" | gumroad licenses enable --product <id>
+  echo "$LICENSE_KEY" | gumroad licenses disable --product <id>`,
 	}
 
 	cmd.AddCommand(newVerifyCmd())

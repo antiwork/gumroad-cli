@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/antiwork/gr/internal/api"
+	"github.com/antiwork/gumroad-cli/internal/api"
 )
 
 type testUserResponse struct {
@@ -39,6 +39,7 @@ func TestFetchPage_NilClient(t *testing.T) {
 }
 
 func TestRunDecoded_RendersTypedResponse(t *testing.T) {
+	t.Setenv("GUMROAD_ACCESS_TOKEN", "test-token")
 	var rendered string
 	err := RunDecoded[testUserResponse](DefaultOptions(), "", func(*api.Client) (json.RawMessage, error) {
 		return json.RawMessage(`{"user":{"email":"decoded@example.com"}}`), nil
@@ -55,6 +56,7 @@ func TestRunDecoded_RendersTypedResponse(t *testing.T) {
 }
 
 func TestRunDecoded_JSONOutputSkipsTypedRender(t *testing.T) {
+	t.Setenv("GUMROAD_ACCESS_TOKEN", "test-token")
 	opts := DefaultOptions()
 	opts.JSONOutput = true
 	var out bytes.Buffer
@@ -75,6 +77,7 @@ func TestRunDecoded_JSONOutputSkipsTypedRender(t *testing.T) {
 }
 
 func TestRunDecoded_InvalidJSONReturnsParseError(t *testing.T) {
+	t.Setenv("GUMROAD_ACCESS_TOKEN", "test-token")
 	err := RunDecoded[testPage](DefaultOptions(), "", func(*api.Client) (json.RawMessage, error) {
 		return json.RawMessage(`not-json`), nil
 	}, func(testPage) error {
@@ -166,7 +169,7 @@ func TestRunAuthenticatedData_UsesStoredToken(t *testing.T) {
 
 func TestRunAuthenticatedData_MissingTokenReturnsError(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	t.Setenv("GR_ACCESS_TOKEN", "")
+	t.Setenv("GUMROAD_ACCESS_TOKEN", "")
 
 	_, err := runAuthenticatedData(DefaultOptions(), "Fetching...", func(*api.Client) (json.RawMessage, error) {
 		t.Fatal("request should not run without auth")
@@ -208,7 +211,7 @@ func TestPrintCancelledAction_QuietNoOutput(t *testing.T) {
 }
 
 func TestUsageHelperEdgeCases(t *testing.T) {
-	if got := filteredExample("  gr products list\n\n  gr sales list", "gr users"); got != "" {
+	if got := filteredExample("  gumroad products list\n\n  gumroad sales list", "gumroad users"); got != "" {
 		t.Fatalf("expected no matching examples, got %q", got)
 	}
 

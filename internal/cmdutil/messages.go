@@ -1,6 +1,6 @@
 package cmdutil
 
-import "github.com/antiwork/gr/internal/output"
+import "github.com/antiwork/gumroad-cli/internal/output"
 
 // PrintInfo writes a non-essential informational message unless quiet mode is enabled.
 func PrintInfo(opts Options, message string) error {

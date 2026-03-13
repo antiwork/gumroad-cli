@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/antiwork/gr/internal/api"
+	"github.com/antiwork/gumroad-cli/internal/api"
 	"github.com/spf13/cobra"
 )
 
@@ -89,7 +89,7 @@ func TestWalkPagesFollowsNextPageKey(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	t.Setenv("GR_API_BASE_URL", srv.URL)
+	t.Setenv("GUMROAD_API_BASE_URL", srv.URL)
 	client := api.NewClient("test-token", "test", false)
 
 	var seen []string
@@ -120,7 +120,7 @@ func TestWalkPagesStopsEarly(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	t.Setenv("GR_API_BASE_URL", srv.URL)
+	t.Setenv("GUMROAD_API_BASE_URL", srv.URL)
 	client := api.NewClient("test-token", "test", false)
 
 	err := WalkPages[testPage](client, "/items", nil, func(page testPage) string {
@@ -167,7 +167,7 @@ func TestWalkPagesWithDelay_SleepsBetweenPages(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	t.Setenv("GR_API_BASE_URL", srv.URL)
+	t.Setenv("GUMROAD_API_BASE_URL", srv.URL)
 	client := api.NewClient("test-token", "test", false)
 
 	err := WalkPagesWithDelay[testPage](context.Background(), 250*time.Millisecond, client, "/items", nil, func(page testPage) string {
@@ -204,7 +204,7 @@ func TestWalkPagesWithDelay_StopsOnCancelledContext(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	t.Setenv("GR_API_BASE_URL", srv.URL)
+	t.Setenv("GUMROAD_API_BASE_URL", srv.URL)
 	client := api.NewClient("test-token", "test", false)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -249,7 +249,7 @@ func TestWalkPages_PropagatesSecondPageAPIError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	t.Setenv("GR_API_BASE_URL", srv.URL)
+	t.Setenv("GUMROAD_API_BASE_URL", srv.URL)
 	client := api.NewClient("test-token", "test", false)
 
 	var seen []string
@@ -295,7 +295,7 @@ func TestWalkPages_DetectsRepeatedPageKey(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	t.Setenv("GR_API_BASE_URL", srv.URL)
+	t.Setenv("GUMROAD_API_BASE_URL", srv.URL)
 	client := api.NewClient("test-token", "test", false)
 
 	err := WalkPages[testPage](client, "/items", nil, func(page testPage) string {

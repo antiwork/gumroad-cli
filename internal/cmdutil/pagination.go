@@ -6,7 +6,7 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/antiwork/gr/internal/api"
+	"github.com/antiwork/gumroad-cli/internal/api"
 )
 
 type PageVisitor[T any] func(T) (stop bool, err error)

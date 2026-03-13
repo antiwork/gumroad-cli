@@ -10,7 +10,7 @@ import (
 
 func TestRunRemovesStaleManPagesAndGeneratesCurrentTree(t *testing.T) {
 	outputDir := t.TempDir()
-	stalePath := filepath.Join(outputDir, "gr-skus.1")
+	stalePath := filepath.Join(outputDir, "gumroad-skus.1")
 	if err := os.WriteFile(stalePath, []byte("stale"), 0600); err != nil {
 		t.Fatalf("write stale man page: %v", err)
 	}
@@ -24,20 +24,20 @@ func TestRunRemovesStaleManPagesAndGeneratesCurrentTree(t *testing.T) {
 		t.Fatalf("expected stale man page to be removed, got err=%v", err)
 	}
 
-	productSKUsPath := filepath.Join(outputDir, "gr-products-skus.1")
+	productSKUsPath := filepath.Join(outputDir, "gumroad-products-skus.1")
 	if _, err := os.Stat(productSKUsPath); err != nil {
 		t.Fatalf("expected nested sku man page, got err=%v", err)
 	}
 
-	productPageData, err := os.ReadFile(filepath.Join(outputDir, "gr-products.1"))
+	productPageData, err := os.ReadFile(filepath.Join(outputDir, "gumroad-products.1"))
 	if err != nil {
 		t.Fatalf("read product man page: %v", err)
 	}
 	productPageText := string(productPageData)
-	if !strings.Contains(productPageText, "gr-products-skus(1)") {
+	if !strings.Contains(productPageText, "gumroad-products-skus(1)") {
 		t.Fatalf("product man page missing skus see-also entry: %q", productPageText)
 	}
-	if !strings.Contains(productPageText, "gr products skus <id>") {
+	if !strings.Contains(productPageText, "gumroad products skus <id>") {
 		t.Fatalf("product man page missing skus example: %q", productPageText)
 	}
 
