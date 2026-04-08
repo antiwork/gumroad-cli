@@ -56,7 +56,7 @@ func newLogoutCmd() *cobra.Command {
 			}
 			if opts.PlainOutput {
 				return output.PrintPlain(opts.Out(), [][]string{
-					{strconv.FormatBool(status.Authenticated), "true"},
+					{strconv.FormatBool(status.Authenticated), strconv.FormatBool(status.LoggedOut), string(status.Source)},
 				})
 			}
 			if opts.Quiet {

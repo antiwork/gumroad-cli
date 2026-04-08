@@ -880,8 +880,32 @@ func TestLogout_PlainOutput(t *testing.T) {
 	if err := cmd.RunE(cmd, []string{}); err != nil {
 		t.Fatalf("RunE failed: %v", err)
 	}
-	if strings.TrimSpace(out.String()) != "false\ttrue" {
-		t.Fatalf("unexpected plain output: %q", out.String())
+	if got := strings.TrimRight(out.String(), "\n"); got != "false\ttrue\t" {
+		t.Fatalf("unexpected plain output: %q", got)
+	}
+}
+
+func TestLogout_PlainOutput_WithEnvToken(t *testing.T) {
+	setupAuth(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Error("logout should not reach API")
+	})
+	cfgDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(cfgDir, "gumroad"), 0700); err != nil {
+		t.Fatalf("MkdirAll failed: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(cfgDir, "gumroad", "config.json"), []byte(`{"access_token":"tok"}`), 0600); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+	t.Setenv("XDG_CONFIG_HOME", cfgDir)
+	withEnvAccessToken(t, "env-token")
+
+	var out bytes.Buffer
+	cmd := testutil.Command(newLogoutCmd(), testutil.Yes(true), testutil.PlainOutput(), testutil.Stdout(&out))
+	if err := cmd.RunE(cmd, []string{}); err != nil {
+		t.Fatalf("RunE failed: %v", err)
+	}
+	if strings.TrimSpace(out.String()) != "false\ttrue\tenv" {
+		t.Fatalf("unexpected plain output: %q, want %q", out.String(), "false\ttrue\tenv")
 	}
 }
 
