@@ -61,7 +61,7 @@ gumroad sales list --all
 gumroad sales view abc123 --json --jq '.sale.email'
 
 # Preview a refund without executing it
-gumroad sales refund abc123 --amount-cents 500 --dry-run
+gumroad sales refund abc123 --amount 5.00 --dry-run
 ```
 
 ## Commands

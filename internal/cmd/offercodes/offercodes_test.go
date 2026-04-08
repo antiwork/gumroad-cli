@@ -2,10 +2,12 @@ package offercodes
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"testing"
 
+	"github.com/antiwork/gumroad-cli/internal/cmdutil"
 	"github.com/antiwork/gumroad-cli/internal/testutil"
 )
 
@@ -323,7 +325,7 @@ func TestCreate_MutualExclusion(t *testing.T) {
 	})
 
 	cmd := newCreateCmd()
-	cmd.SetArgs([]string{"--product", "p1", "--name", "X", "--amount-cents", "500", "--percent-off", "10"})
+	cmd.SetArgs([]string{"--product", "p1", "--name", "X", "--amount", "5", "--percent-off", "10"})
 	err := cmd.Execute()
 	if err == nil || !strings.Contains(err.Error(), "cannot be used together") {
 		t.Fatalf("expected mutual exclusion error, got: %v", err)
@@ -346,18 +348,6 @@ func TestCreate_RequiresDiscount(t *testing.T) {
 	}
 }
 
-func TestCreate_RejectsNegativeAmountCents(t *testing.T) {
-	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
-		t.Error("should not reach API")
-	})
-
-	cmd := newCreateCmd()
-	cmd.SetArgs([]string{"--product", "p1", "--name", "X", "--amount-cents", "-5"})
-	err := cmd.Execute()
-	if err == nil || !strings.Contains(err.Error(), "--amount-cents must be greater than 0") {
-		t.Fatalf("expected amount validation error, got: %v", err)
-	}
-}
 
 func TestCreate_RejectsNegativePercentOff(t *testing.T) {
 	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
@@ -451,7 +441,7 @@ func TestCreate_PercentOff(t *testing.T) {
 	}
 }
 
-func TestCreate_AmountCents(t *testing.T) {
+func TestCreate_Amount(t *testing.T) {
 	var gotAmountOff string
 	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
 		if err := r.ParseForm(); err != nil {
@@ -462,7 +452,7 @@ func TestCreate_AmountCents(t *testing.T) {
 	})
 
 	cmd := newCreateCmd()
-	cmd.SetArgs([]string{"--product", "p1", "--name", "FLAT5", "--amount-cents", "500"})
+	cmd.SetArgs([]string{"--product", "p1", "--name", "FLAT5", "--amount", "5.00"})
 	testutil.CaptureStdout(func() {
 		if err := cmd.Execute(); err != nil {
 			t.Fatalf("Execute failed: %v", err)
@@ -471,6 +461,72 @@ func TestCreate_AmountCents(t *testing.T) {
 
 	if gotAmountOff != "500" {
 		t.Errorf("got amount_off=%q, want 500", gotAmountOff)
+	}
+}
+
+func TestCreate_AmountWholeNumber(t *testing.T) {
+	var gotAmountOff string
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			t.Fatalf("ParseForm failed: %v", err)
+		}
+		gotAmountOff = r.PostForm.Get("amount_off")
+		testutil.JSON(t, w, map[string]any{})
+	})
+
+	cmd := newCreateCmd()
+	cmd.SetArgs([]string{"--product", "p1", "--name", "FLAT5", "--amount", "5"})
+	testutil.CaptureStdout(func() {
+		if err := cmd.Execute(); err != nil {
+			t.Fatalf("Execute failed: %v", err)
+		}
+	})
+
+	if gotAmountOff != "500" {
+		t.Errorf("got amount_off=%q, want 500", gotAmountOff)
+	}
+}
+
+func TestCreate_AmountAndPercentOffConflict(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Error("should not reach API")
+	})
+
+	cmd := newCreateCmd()
+	cmd.SetArgs([]string{"--product", "p1", "--name", "X", "--amount", "5", "--percent-off", "10"})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "cannot be used together") {
+		t.Fatalf("expected mutual exclusion error, got: %v", err)
+	}
+}
+
+func TestCreate_AmountInvalidInput(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Error("should not reach API")
+	})
+
+	cmd := newCreateCmd()
+	cmd.SetArgs([]string{"--product", "p1", "--name", "X", "--amount", "abc"})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "not a valid amount") {
+		t.Fatalf("expected validation error, got: %v", err)
+	}
+	var usageErr *cmdutil.UsageError
+	if !errors.As(err, &usageErr) {
+		t.Fatalf("expected *cmdutil.UsageError, got %T", err)
+	}
+}
+
+func TestCreate_AmountZeroRejected(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Error("should not reach API")
+	})
+
+	cmd := newCreateCmd()
+	cmd.SetArgs([]string{"--product", "p1", "--name", "X", "--amount", "0"})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "--amount must be greater than 0") {
+		t.Fatalf("expected amount validation error, got: %v", err)
 	}
 }
 

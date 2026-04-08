@@ -10,7 +10,7 @@ import (
 )
 
 func newRefundCmd() *cobra.Command {
-	var amountCents int
+	var amount string
 
 	cmd := &cobra.Command{
 		Use:   "refund <id>",
@@ -18,13 +18,26 @@ func newRefundCmd() *cobra.Command {
 		Args:  cmdutil.ExactArgs(1),
 		RunE: func(c *cobra.Command, args []string) error {
 			opts := cmdutil.OptionsFrom(c)
-			if err := cmdutil.RequirePositiveIntFlag(c, "amount-cents", amountCents); err != nil {
-				return err
+
+			var cents int
+			hasAmount := c.Flags().Changed("amount")
+			if hasAmount {
+				parsed, err := cmdutil.ParseMoney("amount", amount, "amount", "")
+				if err != nil {
+					return cmdutil.UsageErrorf(c, "%s", err.Error())
+				}
+				if parsed <= 0 {
+					return cmdutil.UsageErrorf(c, "--amount must be greater than 0")
+				}
+				cents = parsed
 			}
 
+			isPartial := cents > 0
+			amountDesc := cmdutil.FormatMoney(cents, "")
+
 			msg := "Refund sale " + args[0] + "?"
-			if amountCents > 0 {
-				msg = fmt.Sprintf("Refund %d cents on sale %s?", amountCents, args[0])
+			if isPartial {
+				msg = fmt.Sprintf("Refund %s on sale %s?", amountDesc, args[0])
 			}
 
 			ok, err := cmdutil.ConfirmAction(opts, msg)
@@ -33,24 +46,24 @@ func newRefundCmd() *cobra.Command {
 			}
 			if !ok {
 				action := "refund sale " + args[0]
-				if amountCents > 0 {
-					action = fmt.Sprintf("refund %d cents on sale %s", amountCents, args[0])
+				if isPartial {
+					action = fmt.Sprintf("refund %s on sale %s", amountDesc, args[0])
 				}
 				return cmdutil.PrintCancelledAction(opts, action)
 			}
 
 			params := url.Values{}
 			successMessage := "Sale " + args[0] + " refunded."
-			if amountCents > 0 {
-				params.Set("amount_cents", strconv.Itoa(amountCents))
-				successMessage = fmt.Sprintf("Refunded %d cents on sale %s.", amountCents, args[0])
+			if isPartial {
+				params.Set("amount_cents", strconv.Itoa(cents))
+				successMessage = fmt.Sprintf("Refunded %s on sale %s.", amountDesc, args[0])
 			}
 
 			return cmdutil.RunRequestWithSuccess(opts, "Refunding sale...", "PUT", cmdutil.JoinPath("sales", args[0], "refund"), params, successMessage)
 		},
 	}
 
-	cmd.Flags().IntVar(&amountCents, "amount-cents", 0, "Partial refund amount in cents")
+	cmd.Flags().StringVar(&amount, "amount", "", "Partial refund amount (e.g. 5, 5.00)")
 
 	return cmd
 }

@@ -2,10 +2,12 @@ package variants
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"testing"
 
+	"github.com/antiwork/gumroad-cli/internal/cmdutil"
 	"github.com/antiwork/gumroad-cli/internal/testutil"
 )
 
@@ -311,7 +313,7 @@ func TestCreate_Flags(t *testing.T) {
 	})
 
 	cmd := newCreateCmd()
-	cmd.SetArgs([]string{"--product", "p1", "--category", "vc1", "--name", "XL", "--description", "Extra large", "--price-difference-cents", "300"})
+	cmd.SetArgs([]string{"--product", "p1", "--category", "vc1", "--name", "XL", "--description", "Extra large", "--price-difference", "3.00"})
 	testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
 	if gotName != "XL" {
@@ -322,6 +324,61 @@ func TestCreate_Flags(t *testing.T) {
 	}
 	if gotPriceDiff != "300" {
 		t.Errorf("got price_difference_cents=%q, want 300", gotPriceDiff)
+	}
+}
+
+func TestCreate_PriceDifference(t *testing.T) {
+	var gotPriceDiff string
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			t.Fatalf("ParseForm failed: %v", err)
+		}
+		gotPriceDiff = r.PostForm.Get("price_difference_cents")
+		testutil.JSON(t, w, map[string]any{})
+	})
+
+	cmd := newCreateCmd()
+	cmd.SetArgs([]string{"--product", "p1", "--category", "vc1", "--name", "XL", "--price-difference", "5.00"})
+	testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	if gotPriceDiff != "500" {
+		t.Errorf("got price_difference_cents=%q, want 500", gotPriceDiff)
+	}
+}
+
+func TestCreate_PriceDifferenceNegative(t *testing.T) {
+	var gotPriceDiff string
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			t.Fatalf("ParseForm failed: %v", err)
+		}
+		gotPriceDiff = r.PostForm.Get("price_difference_cents")
+		testutil.JSON(t, w, map[string]any{})
+	})
+
+	cmd := newCreateCmd()
+	cmd.SetArgs([]string{"--product", "p1", "--category", "vc1", "--name", "SM", "--price-difference", "-1.50"})
+	testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	if gotPriceDiff != "-150" {
+		t.Errorf("got price_difference_cents=%q, want -150", gotPriceDiff)
+	}
+}
+
+func TestCreate_PriceDifferenceInvalidInput(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Error("should not reach API")
+	})
+
+	cmd := newCreateCmd()
+	cmd.SetArgs([]string{"--product", "p1", "--category", "vc1", "--name", "XL", "--price-difference", "abc"})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "not a valid price") {
+		t.Fatalf("expected validation error, got: %v", err)
+	}
+	var usageErr *cmdutil.UsageError
+	if !errors.As(err, &usageErr) {
+		t.Fatalf("expected *cmdutil.UsageError, got %T", err)
 	}
 }
 
@@ -458,7 +515,7 @@ func TestUpdate_Flags(t *testing.T) {
 	})
 
 	cmd := newUpdateCmd()
-	cmd.SetArgs([]string{"v1", "--product", "p1", "--category", "vc1", "--name", "XXL", "--price-difference-cents", "700"})
+	cmd.SetArgs([]string{"v1", "--product", "p1", "--category", "vc1", "--name", "XXL", "--price-difference", "7.00"})
 	testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
 	if gotName != "XXL" {
@@ -467,6 +524,71 @@ func TestUpdate_Flags(t *testing.T) {
 	if gotPriceDiff != "700" {
 		t.Errorf("got price_difference_cents=%q, want 700", gotPriceDiff)
 	}
+}
+
+func TestUpdate_PriceDifference(t *testing.T) {
+	var gotPriceDiff string
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			t.Fatalf("ParseForm failed: %v", err)
+		}
+		gotPriceDiff = r.PostForm.Get("price_difference_cents")
+		testutil.JSON(t, w, map[string]any{})
+	})
+
+	cmd := newUpdateCmd()
+	cmd.SetArgs([]string{"v1", "--product", "p1", "--category", "vc1", "--price-difference", "7.00"})
+	testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	if gotPriceDiff != "700" {
+		t.Errorf("got price_difference_cents=%q, want 700", gotPriceDiff)
+	}
+}
+
+func TestUpdate_PriceDifferenceNegative(t *testing.T) {
+	var gotPriceDiff string
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			t.Fatalf("ParseForm failed: %v", err)
+		}
+		gotPriceDiff = r.PostForm.Get("price_difference_cents")
+		testutil.JSON(t, w, map[string]any{})
+	})
+
+	cmd := newUpdateCmd()
+	cmd.SetArgs([]string{"v1", "--product", "p1", "--category", "vc1", "--price-difference", "-2.50"})
+	testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	if gotPriceDiff != "-250" {
+		t.Errorf("got price_difference_cents=%q, want -250", gotPriceDiff)
+	}
+}
+
+func TestUpdate_PriceDifferenceInvalidInput(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Error("should not reach API")
+	})
+
+	cmd := newUpdateCmd()
+	cmd.SetArgs([]string{"v1", "--product", "p1", "--category", "vc1", "--price-difference", "$5"})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "not a valid price") {
+		t.Fatalf("expected validation error, got: %v", err)
+	}
+	var usageErr *cmdutil.UsageError
+	if !errors.As(err, &usageErr) {
+		t.Fatalf("expected *cmdutil.UsageError, got %T", err)
+	}
+}
+
+func TestUpdate_PriceDifferenceSatisfiesRequireAnyFlag(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{})
+	})
+
+	cmd := newUpdateCmd()
+	cmd.SetArgs([]string{"v1", "--product", "p1", "--category", "vc1", "--price-difference", "3.00"})
+	testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 }
 
 func TestUpdate_ProductRequired(t *testing.T) {
