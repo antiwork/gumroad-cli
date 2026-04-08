@@ -48,3 +48,30 @@ func TestRunRemovesStaleManPagesAndGeneratesCurrentTree(t *testing.T) {
 		t.Fatalf("expected empty stderr, got %q", stderr.String())
 	}
 }
+
+func TestRemoveExistingManPages_PreservesNonGumroadFiles(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create gumroad man pages and an unrelated one
+	for _, name := range []string{"gumroad.1", "gumroad-products.1", "other-tool.1"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("content"), 0600); err != nil {
+			t.Fatalf("WriteFile %s: %v", name, err)
+		}
+	}
+
+	if err := removeExistingManPages(dir); err != nil {
+		t.Fatalf("removeExistingManPages failed: %v", err)
+	}
+
+	// Gumroad files should be removed
+	for _, name := range []string{"gumroad.1", "gumroad-products.1"} {
+		if _, err := os.Stat(filepath.Join(dir, name)); !os.IsNotExist(err) {
+			t.Fatalf("expected %s to be removed", name)
+		}
+	}
+
+	// Non-gumroad file should survive
+	if _, err := os.Stat(filepath.Join(dir, "other-tool.1")); err != nil {
+		t.Fatalf("expected other-tool.1 to survive: %v", err)
+	}
+}

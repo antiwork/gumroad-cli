@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/antiwork/gumroad-cli/internal/cmd"
 	cobradoc "github.com/spf13/cobra/doc"
@@ -51,7 +52,7 @@ func removeExistingManPages(outputDir string) error {
 	}
 
 	for _, entry := range entries {
-		if entry.IsDir() || filepath.Ext(entry.Name()) != ".1" {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".1" || !strings.HasPrefix(entry.Name(), "gumroad") {
 			continue
 		}
 
