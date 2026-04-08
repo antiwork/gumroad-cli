@@ -297,6 +297,45 @@ func TestRenderImage_OversizedDimensions(t *testing.T) {
 	}
 }
 
+func TestFetchAndDecode_RejectsFileScheme(t *testing.T) {
+	_, err := fetchAndDecode(context.Background(), "file:///etc/passwd")
+	if err == nil {
+		t.Fatal("expected error for file:// scheme")
+	}
+	if !strings.Contains(err.Error(), "unsupported scheme") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestFetchAndDecode_RejectsFTPScheme(t *testing.T) {
+	_, err := fetchAndDecode(context.Background(), "ftp://example.com/image.png")
+	if err == nil {
+		t.Fatal("expected error for ftp:// scheme")
+	}
+	if !strings.Contains(err.Error(), "unsupported scheme") {
+		t.Fatalf("expected validateImageURL rejection, got: %v", err)
+	}
+}
+
+func TestFetchAndDecode_LimitsRedirects(t *testing.T) {
+	var hits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		http.Redirect(w, r, r.URL.Path, http.StatusFound)
+	}))
+	defer srv.Close()
+
+	_, err := fetchAndDecode(context.Background(), srv.URL+"/loop.png")
+	if err == nil {
+		t.Fatal("expected error for redirect loop")
+	}
+	// 1 initial + (maxRedirects-1) followed redirects = maxRedirects total hits
+	// (the last redirect is rejected before being sent)
+	if got := hits.Load(); got != int32(maxRedirects) {
+		t.Fatalf("expected %d requests, got %d", maxRedirects, got)
+	}
+}
+
 func TestImageEnabled_FollowsColor(t *testing.T) {
 	setColorEnabledForTest(t, true)
 	if !ImageEnabled() {
