@@ -62,6 +62,7 @@ func newListCmd() *cobra.Command {
 	cmd.Flags().StringVar(&email, "email", "", "Filter by email")
 	cmd.Flags().StringVar(&pageKey, "page-key", "", "Pagination cursor")
 	cmd.Flags().BoolVar(&all, "all", false, "Fetch all pages")
+	cmd.MarkFlagsMutuallyExclusive("all", "page-key")
 
 	return cmd
 }

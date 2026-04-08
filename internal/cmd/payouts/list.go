@@ -72,6 +72,7 @@ func newListCmd() *cobra.Command {
 	cmd.Flags().StringVar(&pageKey, "page-key", "", "Pagination cursor")
 	cmd.Flags().BoolVar(&noUpcoming, "no-upcoming", false, "Exclude upcoming payouts")
 	cmd.Flags().BoolVar(&all, "all", false, "Fetch all pages")
+	cmd.MarkFlagsMutuallyExclusive("all", "page-key")
 
 	return cmd
 }

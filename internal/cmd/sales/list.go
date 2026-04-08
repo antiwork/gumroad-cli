@@ -83,6 +83,7 @@ func newListCmd() *cobra.Command {
 	cmd.Flags().StringVar(&after, "after", "", "Filter sales after date (YYYY-MM-DD)")
 	cmd.Flags().StringVar(&pageKey, "page-key", "", "Pagination cursor")
 	cmd.Flags().BoolVar(&all, "all", false, "Fetch all pages")
+	cmd.MarkFlagsMutuallyExclusive("all", "page-key")
 
 	return cmd
 }

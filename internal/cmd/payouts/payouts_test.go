@@ -713,3 +713,19 @@ func TestList_PaginationHintPreservesFilters(t *testing.T) {
 		t.Fatalf("expected replayable pagination hint %q in %q", want, out)
 	}
 }
+
+func TestList_AllAndPageKeyConflict(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Error("should not reach API with conflicting flags")
+	})
+
+	cmd := newListCmd()
+	cmd.SetArgs([]string{"--all", "--page-key", "cursor123"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for --all and --page-key together")
+	}
+	if !strings.Contains(err.Error(), "none of the others can be") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
