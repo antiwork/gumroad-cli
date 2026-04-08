@@ -86,6 +86,100 @@ func TestReplaceFile_WindowsReplacesExistingDestination(t *testing.T) {
 	if _, err := os.Stat(tmp); !os.IsNotExist(err) {
 		t.Fatalf("expected temp file to be removed, got err=%v", err)
 	}
+	if _, err := os.Stat(dst + ".bak"); !os.IsNotExist(err) {
+		t.Fatalf("expected backup file to be cleaned up, got err=%v", err)
+	}
+}
+
+func TestReplaceFile_WindowsCleansStaleBackup(t *testing.T) {
+	oldGoos := goos
+	goos = "windows"
+	t.Cleanup(func() { goos = oldGoos })
+
+	dir := t.TempDir()
+	dst := filepath.Join(dir, "config.json")
+	tmp := filepath.Join(dir, "config.json.tmp")
+
+	if err := os.WriteFile(dst, []byte(`{"access_token":"current"}`), 0600); err != nil {
+		t.Fatalf("WriteFile dst failed: %v", err)
+	}
+	if err := os.WriteFile(dst+".bak", []byte(`{"access_token":"stale"}`), 0600); err != nil {
+		t.Fatalf("WriteFile bak failed: %v", err)
+	}
+	if err := os.WriteFile(tmp, []byte(`{"access_token":"new"}`), 0600); err != nil {
+		t.Fatalf("WriteFile tmp failed: %v", err)
+	}
+
+	if err := replaceFile(tmp, dst); err != nil {
+		t.Fatalf("replaceFile failed: %v", err)
+	}
+
+	data, err := os.ReadFile(dst)
+	if err != nil {
+		t.Fatalf("ReadFile failed: %v", err)
+	}
+	if string(data) != `{"access_token":"new"}` {
+		t.Fatalf("got %q, want new contents", string(data))
+	}
+}
+
+func TestLoad_WindowsRecoversDotBak(t *testing.T) {
+	oldGoos := goos
+	goos = "windows"
+	t.Cleanup(func() { goos = oldGoos })
+
+	tmp := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", tmp)
+
+	dir := filepath.Join(tmp, "gumroad")
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		t.Fatalf("MkdirAll failed: %v", err)
+	}
+	// Simulate crash: only .bak exists, no config.json
+	if err := os.WriteFile(filepath.Join(dir, "config.json.bak"), []byte(`{"access_token":"recovered"}`), 0600); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if cfg.AccessToken != "recovered" {
+		t.Fatalf("got token %q, want recovered", cfg.AccessToken)
+	}
+
+	// .bak should be gone, config.json should exist
+	if _, err := os.Stat(filepath.Join(dir, "config.json.bak")); !os.IsNotExist(err) {
+		t.Fatalf("expected .bak to be removed after recovery")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "config.json")); err != nil {
+		t.Fatalf("expected config.json to exist after recovery: %v", err)
+	}
+}
+
+func TestLoad_NonWindowsIgnoresDotBak(t *testing.T) {
+	oldGoos := goos
+	goos = "darwin"
+	t.Cleanup(func() { goos = oldGoos })
+
+	tmp := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", tmp)
+
+	dir := filepath.Join(tmp, "gumroad")
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		t.Fatalf("MkdirAll failed: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "config.json.bak"), []byte(`{"access_token":"ignored"}`), 0600); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if cfg.AccessToken != "" {
+		t.Fatalf("non-Windows Load should ignore .bak, got token %q", cfg.AccessToken)
+	}
 }
 
 func TestReplaceFile_NonWindowsRenamesIntoPlace(t *testing.T) {
@@ -114,24 +208,31 @@ func TestReplaceFile_NonWindowsRenamesIntoPlace(t *testing.T) {
 	}
 }
 
-func TestReplaceFile_WindowsRemoveError(t *testing.T) {
+func TestReplaceFile_WindowsRestoresBackupOnFailure(t *testing.T) {
 	oldGoos := goos
 	goos = "windows"
 	t.Cleanup(func() { goos = oldGoos })
 
 	dir := t.TempDir()
-	dst := filepath.Join(dir, "config-dir")
-	tmp := filepath.Join(dir, "config.json.tmp")
+	dst := filepath.Join(dir, "config.json")
+	tmp := filepath.Join(dir, "nonexistent.tmp")
 
-	if err := os.MkdirAll(filepath.Join(dst, "child"), 0700); err != nil {
-		t.Fatalf("MkdirAll failed: %v", err)
-	}
-	if err := os.WriteFile(tmp, []byte(`{"access_token":"new"}`), 0600); err != nil {
-		t.Fatalf("WriteFile tmp failed: %v", err)
+	if err := os.WriteFile(dst, []byte(`{"access_token":"original"}`), 0600); err != nil {
+		t.Fatalf("WriteFile dst failed: %v", err)
 	}
 
+	// tmp file doesn't exist, so final rename will fail
 	if err := replaceFile(tmp, dst); err == nil {
-		t.Fatal("expected replaceFile to fail when os.Remove(path) fails")
+		t.Fatal("expected replaceFile to fail when tmp file is missing")
+	}
+
+	// Original file should be restored from backup
+	data, err := os.ReadFile(dst)
+	if err != nil {
+		t.Fatalf("ReadFile failed: %v", err)
+	}
+	if string(data) != `{"access_token":"original"}` {
+		t.Fatalf("expected original content restored, got %q", string(data))
 	}
 }
 
@@ -389,6 +490,33 @@ func TestDeleteConfig(t *testing.T) {
 	}
 	if cfg.AccessToken != "" {
 		t.Errorf("expected empty token after delete, got %q", cfg.AccessToken)
+	}
+}
+
+func TestDelete_CleansUpBackupFile(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", tmp)
+
+	dir := filepath.Join(tmp, "gumroad")
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		t.Fatalf("MkdirAll failed: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(`{"access_token":"tok"}`), 0600); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "config.json.bak"), []byte(`{"access_token":"old"}`), 0600); err != nil {
+		t.Fatalf("WriteFile .bak failed: %v", err)
+	}
+
+	if err := Delete(); err != nil {
+		t.Fatalf("Delete failed: %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(dir, "config.json")); !os.IsNotExist(err) {
+		t.Fatalf("expected config.json to be removed")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "config.json.bak")); !os.IsNotExist(err) {
+		t.Fatalf("expected config.json.bak to be removed")
 	}
 }
 

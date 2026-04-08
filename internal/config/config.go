@@ -65,9 +65,17 @@ func Load() (*Config, error) {
 	info, err := os.Stat(p)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return &Config{}, nil
+			if goos == "windows" {
+				if recoverErr := recoverBackup(p); recoverErr == nil {
+					info, err = os.Stat(p)
+				}
+			}
+			if err != nil {
+				return &Config{}, nil
+			}
+		} else {
+			return nil, fmt.Errorf("could not read config: %w", err)
 		}
-		return nil, fmt.Errorf("could not read config: %w", err)
 	}
 	if err := validateConfigPermissions(p, info.Mode()); err != nil {
 		return nil, err
@@ -133,10 +141,23 @@ func replaceFile(tmpPath, path string) error {
 	if goos != "windows" {
 		return os.Rename(tmpPath, path)
 	}
-	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+	backupPath := path + ".bak"
+	_ = os.Remove(backupPath)
+	if err := os.Rename(path, backupPath); err != nil && !os.IsNotExist(err) {
 		return err
 	}
-	return os.Rename(tmpPath, path)
+	if err := os.Rename(tmpPath, path); err != nil {
+		_ = os.Rename(backupPath, path)
+		return err
+	}
+	_ = os.Remove(backupPath)
+	return nil
+}
+
+// recoverBackup attempts to restore config.json from a .bak file left by an
+// interrupted Windows save. Returns nil if recovery succeeded.
+func recoverBackup(path string) error {
+	return os.Rename(path+".bak", path)
 }
 
 func validateConfigPermissions(path string, mode os.FileMode) error {
@@ -158,6 +179,10 @@ func Delete() error {
 	}
 	if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("could not delete config: %w", err)
+	}
+	// Clean up any backup left by an interrupted Windows save.
+	if err := os.Remove(p + ".bak"); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("could not delete config backup: %w", err)
 	}
 	return nil
 }
