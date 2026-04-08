@@ -10,6 +10,7 @@ import (
 	_ "image/png"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -126,9 +127,39 @@ func columnsEnvWidth() (int, bool) {
 	return width, true
 }
 
+func validateImageURL(rawURL string) error {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return err
+	}
+	switch u.Scheme {
+	case "https", "http":
+		return nil
+	default:
+		return fmt.Errorf("unsupported scheme %q", u.Scheme)
+	}
+}
+
+const maxRedirects = 3
+
+var imageClient = &http.Client{
+	CheckRedirect: func(req *http.Request, via []*http.Request) error {
+		if len(via) >= maxRedirects {
+			return fmt.Errorf("too many redirects")
+		}
+		if err := validateImageURL(req.URL.String()); err != nil {
+			return err
+		}
+		return nil
+	},
+}
+
 func fetchAndDecode(ctx context.Context, imageURL string) (image.Image, error) {
 	if ctx == nil {
 		ctx = context.Background()
+	}
+	if err := validateImageURL(imageURL); err != nil {
+		return nil, err
 	}
 	ctx, cancel := context.WithTimeout(ctx, fetchTimeout)
 	defer cancel()
@@ -137,7 +168,7 @@ func fetchAndDecode(ctx context.Context, imageURL string) (image.Image, error) {
 	if err != nil {
 		return nil, err
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := imageClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
