@@ -25,7 +25,7 @@ Note: This only succeeds when the token's OAuth app matches the subscription's a
 				return cmdutil.PrintCancelledAction(opts, "delete webhook "+args[0])
 			}
 
-			return cmdutil.RunRequestWithSuccess(opts, "Deleting webhook...", "DELETE", cmdutil.JoinPath("resource_subscriptions", args[0]), url.Values{}, "Webhook deleted.")
+			return cmdutil.RunRequestWithSuccess(opts, "Deleting webhook...", "DELETE", cmdutil.JoinPath("resource_subscriptions", args[0]), url.Values{}, "Webhook "+args[0]+" deleted.")
 		},
 	}
 }

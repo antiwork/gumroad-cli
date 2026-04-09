@@ -28,7 +28,7 @@ func newDisableCmd() *cobra.Command {
 			params.Set("product_id", product)
 			params.Set("license_key", key)
 
-			return cmdutil.RunRequestWithSuccess(opts, "Disabling license...", "PUT", "/licenses/disable", params, "License disabled.")
+			return cmdutil.RunRequestWithSuccess(opts, "Disabling license...", "PUT", "/licenses/disable", params, "License disabled for product "+product+".")
 		},
 	}
 

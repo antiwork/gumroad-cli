@@ -36,7 +36,7 @@ func newUpdateCmd() *cobra.Command {
 				}
 			}
 
-			return cmdutil.RunRequestWithSuccess(opts, "Updating custom field...", "PUT", cmdutil.JoinPath("products", product, "custom_fields", name), params, "Custom field updated.")
+			return cmdutil.RunRequestWithSuccess(opts, "Updating custom field...", "PUT", cmdutil.JoinPath("products", product, "custom_fields", name), params, "Custom field "+name+" updated.")
 		},
 	}
 

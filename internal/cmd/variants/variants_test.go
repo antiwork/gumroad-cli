@@ -309,7 +309,7 @@ func TestCreate_Flags(t *testing.T) {
 		gotName = r.PostForm.Get("name")
 		gotDesc = r.PostForm.Get("description")
 		gotPriceDiff = r.PostForm.Get("price_difference_cents")
-		testutil.JSON(t, w, map[string]any{})
+		testutil.JSON(t, w, map[string]any{"variant": map[string]any{"id": "v1", "name": r.PostForm.Get("name")}})
 	})
 
 	cmd := newCreateCmd()
@@ -334,7 +334,7 @@ func TestCreate_PriceDifference(t *testing.T) {
 			t.Fatalf("ParseForm failed: %v", err)
 		}
 		gotPriceDiff = r.PostForm.Get("price_difference_cents")
-		testutil.JSON(t, w, map[string]any{})
+		testutil.JSON(t, w, map[string]any{"variant": map[string]any{"id": "v1", "name": "XL"}})
 	})
 
 	cmd := newCreateCmd()
@@ -353,7 +353,7 @@ func TestCreate_PriceDifferenceNegative(t *testing.T) {
 			t.Fatalf("ParseForm failed: %v", err)
 		}
 		gotPriceDiff = r.PostForm.Get("price_difference_cents")
-		testutil.JSON(t, w, map[string]any{})
+		testutil.JSON(t, w, map[string]any{"variant": map[string]any{"id": "v1", "name": "SM"}})
 	})
 
 	cmd := newCreateCmd()
@@ -433,6 +433,38 @@ func TestCreate_JSON(t *testing.T) {
 	var resp map[string]any
 	if err := json.Unmarshal([]byte(out), &resp); err != nil {
 		t.Fatalf("not valid JSON: %v", err)
+	}
+}
+
+func TestCreate_Output(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{"variant": map[string]any{"id": "v1", "name": "XL"}})
+	})
+
+	cmd := testutil.Command(newCreateCmd(), testutil.Quiet(false))
+	cmd.SetArgs([]string{"--product", "p1", "--category", "vc1", "--name", "XL"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+	if !strings.Contains(out, "Created variant:") {
+		t.Errorf("expected created message, got: %q", out)
+	}
+	if !strings.Contains(out, "v1") {
+		t.Errorf("expected variant ID in output, got: %q", out)
+	}
+	if !strings.Contains(out, "XL") {
+		t.Errorf("expected variant name in output, got: %q", out)
+	}
+}
+
+func TestCreate_Plain(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{"variant": map[string]any{"id": "v1", "name": "XL"}})
+	})
+
+	cmd := testutil.Command(newCreateCmd(), testutil.PlainOutput())
+	cmd.SetArgs([]string{"--product", "p1", "--category", "vc1", "--name", "XL"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+	if !strings.Contains(out, "v1\tXL") {
+		t.Errorf("expected plain tab-separated output, got: %q", out)
 	}
 }
 

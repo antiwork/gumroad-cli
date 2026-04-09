@@ -5,8 +5,16 @@ import (
 	"strconv"
 
 	"github.com/antiwork/gumroad-cli/internal/cmdutil"
+	"github.com/antiwork/gumroad-cli/internal/output"
 	"github.com/spf13/cobra"
 )
+
+type createVariantResponse struct {
+	Variant struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	} `json:"variant"`
+}
 
 func newCreateCmd() *cobra.Command {
 	var product, category, name, description, priceDifference string
@@ -50,8 +58,22 @@ func newCreateCmd() *cobra.Command {
 				params.Set("max_purchase_count", strconv.Itoa(maxPurchaseCount))
 			}
 
+			opts := cmdutil.OptionsFrom(c)
 			path := cmdutil.JoinPath("products", product, "variant_categories", category, "variants")
-			return cmdutil.RunRequestWithSuccess(cmdutil.OptionsFrom(c), "Creating variant...", "POST", path, params, "Variant created.")
+			return cmdutil.RunRequestDecoded[createVariantResponse](opts,
+				"Creating variant...", "POST", path, params,
+				func(resp createVariantResponse) error {
+					v := resp.Variant
+					if opts.PlainOutput {
+						return output.PrintPlain(opts.Out(), [][]string{{v.ID, v.Name}})
+					}
+					if opts.Quiet {
+						return nil
+					}
+					s := opts.Style()
+					return output.Writef(opts.Out(), "%s %s (%s)\n",
+						s.Bold("Created variant:"), v.Name, s.Dim(v.ID))
+				})
 		},
 	}
 

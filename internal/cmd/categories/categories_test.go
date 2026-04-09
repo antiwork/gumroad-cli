@@ -246,7 +246,7 @@ func TestCreate_SendsTitle(t *testing.T) {
 			t.Fatalf("ParseForm failed: %v", err)
 		}
 		gotTitle = r.PostForm.Get("title")
-		testutil.JSON(t, w, map[string]any{})
+		testutil.JSON(t, w, map[string]any{"variant_category": map[string]any{"id": "vc1", "title": "Size"}})
 	})
 
 	cmd := newCreateCmd()
@@ -300,6 +300,38 @@ func TestCreate_JSON(t *testing.T) {
 	var resp map[string]any
 	if err := json.Unmarshal([]byte(out), &resp); err != nil {
 		t.Fatalf("not valid JSON: %v", err)
+	}
+}
+
+func TestCreate_Output(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{"variant_category": map[string]any{"id": "vc1", "title": "Size"}})
+	})
+
+	cmd := testutil.Command(newCreateCmd(), testutil.Quiet(false))
+	cmd.SetArgs([]string{"--product", "p1", "--title", "Size"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+	if !strings.Contains(out, "Created variant category:") {
+		t.Errorf("expected created message, got: %q", out)
+	}
+	if !strings.Contains(out, "vc1") {
+		t.Errorf("expected category ID in output, got: %q", out)
+	}
+	if !strings.Contains(out, "Size") {
+		t.Errorf("expected category title in output, got: %q", out)
+	}
+}
+
+func TestCreate_Plain(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{"variant_category": map[string]any{"id": "vc1", "title": "Size"}})
+	})
+
+	cmd := testutil.Command(newCreateCmd(), testutil.PlainOutput())
+	cmd.SetArgs([]string{"--product", "p1", "--title", "Size"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+	if !strings.Contains(out, "vc1\tSize") {
+		t.Errorf("expected plain tab-separated output, got: %q", out)
 	}
 }
 

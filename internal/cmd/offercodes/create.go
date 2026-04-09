@@ -5,8 +5,16 @@ import (
 	"strconv"
 
 	"github.com/antiwork/gumroad-cli/internal/cmdutil"
+	"github.com/antiwork/gumroad-cli/internal/output"
 	"github.com/spf13/cobra"
 )
+
+type createOfferCodeResponse struct {
+	OfferCode struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	} `json:"offer_code"`
+}
 
 func newCreateCmd() *cobra.Command {
 	var product, name, amount string
@@ -69,7 +77,20 @@ Use either --amount (flat discount) or --percent-off (percentage discount), not 
 			}
 
 			opts := cmdutil.OptionsFrom(c)
-			return cmdutil.RunRequestWithSuccess(opts, "Creating offer code...", "POST", cmdutil.JoinPath("products", product, "offer_codes"), params, "Offer code "+name+" created.")
+			return cmdutil.RunRequestDecoded[createOfferCodeResponse](opts,
+				"Creating offer code...", "POST", cmdutil.JoinPath("products", product, "offer_codes"), params,
+				func(resp createOfferCodeResponse) error {
+					oc := resp.OfferCode
+					if opts.PlainOutput {
+						return output.PrintPlain(opts.Out(), [][]string{{oc.ID, oc.Name}})
+					}
+					if opts.Quiet {
+						return nil
+					}
+					s := opts.Style()
+					return output.Writef(opts.Out(), "%s %s (%s)\n",
+						s.Bold("Created offer code:"), oc.Name, s.Dim(oc.ID))
+				})
 		},
 	}
 

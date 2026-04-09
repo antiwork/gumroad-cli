@@ -28,7 +28,7 @@ func newDecrementCmd() *cobra.Command {
 			params.Set("product_id", product)
 			params.Set("license_key", key)
 
-			return cmdutil.RunRequestWithSuccess(opts, "Decrementing license uses...", "PUT", "/licenses/decrement_uses_count", params, "License use count decremented.")
+			return cmdutil.RunRequestWithSuccess(opts, "Decrementing license uses...", "PUT", "/licenses/decrement_uses_count", params, "License use count decremented for product "+product+".")
 		},
 	}
 

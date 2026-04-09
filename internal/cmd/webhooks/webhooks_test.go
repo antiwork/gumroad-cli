@@ -273,14 +273,48 @@ func TestList_APIError(t *testing.T) {
 
 func TestCreate_Output(t *testing.T) {
 	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
-		testutil.JSON(t, w, map[string]any{})
+		testutil.JSON(t, w, map[string]any{
+			"resource_subscription": map[string]any{
+				"id":            "rs1",
+				"resource_name": "sale",
+				"post_url":      "https://example.com",
+			},
+		})
 	})
 
 	cmd := testutil.Command(newCreateCmd(), testutil.Quiet(false))
 	cmd.SetArgs([]string{"--resource", "sale", "--url", "https://example.com"})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
-	if !strings.Contains(out, "Webhook created") {
+	if !strings.Contains(out, "Created webhook:") {
 		t.Errorf("expected created message, got: %q", out)
+	}
+	if !strings.Contains(out, "rs1") {
+		t.Errorf("expected webhook ID in output, got: %q", out)
+	}
+	if !strings.Contains(out, "sale") {
+		t.Errorf("expected resource name in output, got: %q", out)
+	}
+	if !strings.Contains(out, "https://example.com") {
+		t.Errorf("expected post URL in output, got: %q", out)
+	}
+}
+
+func TestCreate_Plain(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{
+			"resource_subscription": map[string]any{
+				"id":            "rs1",
+				"resource_name": "sale",
+				"post_url":      "https://example.com",
+			},
+		})
+	})
+
+	cmd := testutil.Command(newCreateCmd(), testutil.PlainOutput())
+	cmd.SetArgs([]string{"--resource", "sale", "--url", "https://example.com"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+	if !strings.Contains(out, "rs1\tsale\thttps://example.com") {
+		t.Errorf("expected plain tab-separated output, got: %q", out)
 	}
 }
 

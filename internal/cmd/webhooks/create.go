@@ -4,8 +4,17 @@ import (
 	"net/url"
 
 	"github.com/antiwork/gumroad-cli/internal/cmdutil"
+	"github.com/antiwork/gumroad-cli/internal/output"
 	"github.com/spf13/cobra"
 )
+
+type createWebhookResponse struct {
+	ResourceSubscription struct {
+		ID           string `json:"id"`
+		ResourceName string `json:"resource_name"`
+		PostURL      string `json:"post_url"`
+	} `json:"resource_subscription"`
+}
 
 func newCreateCmd() *cobra.Command {
 	var resource, postURL string
@@ -30,7 +39,20 @@ func newCreateCmd() *cobra.Command {
 			params.Set("resource_name", resource)
 			params.Set("post_url", postURL)
 
-			return cmdutil.RunRequestWithSuccess(opts, "Creating webhook...", "PUT", "/resource_subscriptions", params, "Webhook created for "+resource+".")
+			return cmdutil.RunRequestDecoded[createWebhookResponse](opts,
+				"Creating webhook...", "PUT", "/resource_subscriptions", params,
+				func(resp createWebhookResponse) error {
+					ws := resp.ResourceSubscription
+					if opts.PlainOutput {
+						return output.PrintPlain(opts.Out(), [][]string{{ws.ID, ws.ResourceName, ws.PostURL}})
+					}
+					if opts.Quiet {
+						return nil
+					}
+					s := opts.Style()
+					return output.Writef(opts.Out(), "%s %s → %s (%s)\n",
+						s.Bold("Created webhook:"), ws.ResourceName, ws.PostURL, s.Dim(ws.ID))
+				})
 		},
 	}
 

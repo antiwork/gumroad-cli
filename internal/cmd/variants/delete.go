@@ -32,7 +32,7 @@ func newDeleteCmd() *cobra.Command {
 			}
 
 			path := cmdutil.JoinPath("products", product, "variant_categories", category, "variants", args[0])
-			return cmdutil.RunRequestWithSuccess(opts, "Deleting variant...", "DELETE", path, url.Values{}, "Variant deleted.")
+			return cmdutil.RunRequestWithSuccess(opts, "Deleting variant...", "DELETE", path, url.Values{}, "Variant "+args[0]+" deleted.")
 		},
 	}
 

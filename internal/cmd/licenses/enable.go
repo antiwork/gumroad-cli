@@ -28,7 +28,7 @@ func newEnableCmd() *cobra.Command {
 			params.Set("product_id", product)
 			params.Set("license_key", key)
 
-			return cmdutil.RunRequestWithSuccess(opts, "Enabling license...", "PUT", "/licenses/enable", params, "License enabled.")
+			return cmdutil.RunRequestWithSuccess(opts, "Enabling license...", "PUT", "/licenses/enable", params, "License enabled for product "+product+".")
 		},
 	}
 

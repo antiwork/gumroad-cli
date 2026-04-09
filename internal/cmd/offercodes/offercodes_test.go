@@ -438,7 +438,7 @@ func TestCreate_PercentOff(t *testing.T) {
 		}
 		gotPercentOff = r.PostForm.Get("percent_off")
 		gotAmountOff = r.PostForm.Get("amount_off")
-		testutil.JSON(t, w, map[string]any{})
+		testutil.JSON(t, w, map[string]any{"offer_code": map[string]any{"id": "oc1", "name": r.PostForm.Get("name")}})
 	})
 
 	cmd := newCreateCmd()
@@ -464,7 +464,7 @@ func TestCreate_Amount(t *testing.T) {
 			t.Fatalf("ParseForm failed: %v", err)
 		}
 		gotAmountOff = r.PostForm.Get("amount_off")
-		testutil.JSON(t, w, map[string]any{})
+		testutil.JSON(t, w, map[string]any{"offer_code": map[string]any{"id": "oc1", "name": "FLAT5"}})
 	})
 
 	cmd := newCreateCmd()
@@ -487,7 +487,7 @@ func TestCreate_AmountWholeNumber(t *testing.T) {
 			t.Fatalf("ParseForm failed: %v", err)
 		}
 		gotAmountOff = r.PostForm.Get("amount_off")
-		testutil.JSON(t, w, map[string]any{})
+		testutil.JSON(t, w, map[string]any{"offer_code": map[string]any{"id": "oc1", "name": "FLAT5"}})
 	})
 
 	cmd := newCreateCmd()
@@ -554,7 +554,7 @@ func TestCreate_Universal(t *testing.T) {
 		}
 		gotUniversal = r.PostForm.Get("universal")
 		gotMaxPurchase = r.PostForm.Get("max_purchase_count")
-		testutil.JSON(t, w, map[string]any{})
+		testutil.JSON(t, w, map[string]any{"offer_code": map[string]any{"id": "oc1", "name": "UNI"}})
 	})
 
 	cmd := newCreateCmd()
@@ -576,7 +576,7 @@ func TestCreate_MaxPurchaseCountZero(t *testing.T) {
 			t.Fatalf("ParseForm failed: %v", err)
 		}
 		gotMaxPurchase = r.PostForm.Get("max_purchase_count")
-		testutil.JSON(t, w, map[string]any{})
+		testutil.JSON(t, w, map[string]any{"offer_code": map[string]any{"id": "oc1", "name": "ZERO"}})
 	})
 
 	cmd := newCreateCmd()
@@ -600,6 +600,38 @@ func TestCreate_JSON(t *testing.T) {
 	var resp map[string]any
 	if err := json.Unmarshal([]byte(out), &resp); err != nil {
 		t.Fatalf("not valid JSON: %v", err)
+	}
+}
+
+func TestCreate_Output(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{"offer_code": map[string]any{"id": "oc1", "name": "SAVE10"}})
+	})
+
+	cmd := testutil.Command(newCreateCmd(), testutil.Quiet(false))
+	cmd.SetArgs([]string{"--product", "p1", "--name", "SAVE10", "--percent-off", "10"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+	if !strings.Contains(out, "Created offer code:") {
+		t.Errorf("expected created message, got: %q", out)
+	}
+	if !strings.Contains(out, "oc1") {
+		t.Errorf("expected offer code ID in output, got: %q", out)
+	}
+	if !strings.Contains(out, "SAVE10") {
+		t.Errorf("expected offer code name in output, got: %q", out)
+	}
+}
+
+func TestCreate_Plain(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{"offer_code": map[string]any{"id": "oc1", "name": "SAVE10"}})
+	})
+
+	cmd := testutil.Command(newCreateCmd(), testutil.PlainOutput())
+	cmd.SetArgs([]string{"--product", "p1", "--name", "SAVE10", "--percent-off", "10"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+	if !strings.Contains(out, "oc1\tSAVE10") {
+		t.Errorf("expected plain tab-separated output, got: %q", out)
 	}
 }
 

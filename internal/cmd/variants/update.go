@@ -53,7 +53,7 @@ func newUpdateCmd() *cobra.Command {
 			}
 
 			path := cmdutil.JoinPath("products", product, "variant_categories", category, "variants", args[0])
-			return cmdutil.RunRequestWithSuccess(cmdutil.OptionsFrom(c), "Updating variant...", "PUT", path, params, "Variant updated.")
+			return cmdutil.RunRequestWithSuccess(cmdutil.OptionsFrom(c), "Updating variant...", "PUT", path, params, "Variant "+args[0]+" updated.")
 		},
 	}
 

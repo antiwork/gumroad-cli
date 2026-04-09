@@ -33,7 +33,7 @@ func newUpdateCmd() *cobra.Command {
 				params.Set("max_purchase_count", strconv.Itoa(maxPurchaseCount))
 			}
 
-			return cmdutil.RunRequestWithSuccess(opts, "Updating offer code...", "PUT", cmdutil.JoinPath("products", product, "offer_codes", args[0]), params, "Offer code updated.")
+			return cmdutil.RunRequestWithSuccess(opts, "Updating offer code...", "PUT", cmdutil.JoinPath("products", product, "offer_codes", args[0]), params, "Offer code "+args[0]+" updated.")
 		},
 	}
 

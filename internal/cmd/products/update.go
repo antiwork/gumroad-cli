@@ -94,7 +94,7 @@ func newUpdateCmd() *cobra.Command {
 			path := cmdutil.JoinPath("products", args[0])
 			return cmdutil.RunRequestWithSuccess(opts,
 				"Updating product...", "PUT", path, params,
-				"Product updated.")
+				"Product "+args[0]+" updated.")
 		},
 	}
 

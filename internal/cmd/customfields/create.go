@@ -39,7 +39,7 @@ func newCreateCmd() *cobra.Command {
 			}
 			params.Set("type", normalizedType)
 
-			return cmdutil.RunRequestWithSuccess(opts, "Creating custom field...", "POST", cmdutil.JoinPath("products", product, "custom_fields"), params, "Custom field created.")
+			return cmdutil.RunRequestWithSuccess(opts, "Creating custom field...", "POST", cmdutil.JoinPath("products", product, "custom_fields"), params, "Custom field "+name+" created.")
 		},
 	}
 

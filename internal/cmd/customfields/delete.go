@@ -29,7 +29,7 @@ func newDeleteCmd() *cobra.Command {
 				return cmdutil.PrintCancelledAction(opts, "delete custom field \""+name+"\"")
 			}
 
-			return cmdutil.RunRequestWithSuccess(opts, "Deleting custom field...", "DELETE", cmdutil.JoinPath("products", product, "custom_fields", name), nil, "Custom field deleted.")
+			return cmdutil.RunRequestWithSuccess(opts, "Deleting custom field...", "DELETE", cmdutil.JoinPath("products", product, "custom_fields", name), nil, "Custom field "+name+" deleted.")
 		},
 	}
 
