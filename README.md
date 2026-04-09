@@ -207,7 +207,6 @@ GUMROAD_ACCESS_TOKEN=your-token make test-smoke
 
 `make test-smoke` runs a small live, read-only sanity check against the real API only when `GUMROAD_SMOKE=1`; the make target sets that flag for you. It covers auth, representative list/view commands, and machine-readable output modes. Destructive flows still rely on mocked integration tests. You can optionally point it at another base URL with `GUMROAD_API_BASE_URL`.
 
-In GitHub Actions, the same smoke suite runs automatically on non-PR workflows when the repository secret `GUMROAD_SMOKE_ACCESS_TOKEN` is configured.
 
 Built with Go, [cobra](https://github.com/spf13/cobra), and [gojq](https://github.com/itchyny/gojq).
 

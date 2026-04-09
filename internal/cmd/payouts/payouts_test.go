@@ -714,6 +714,108 @@ func TestList_PaginationHintPreservesFilters(t *testing.T) {
 	}
 }
 
+func TestNewPayoutsCmd(t *testing.T) {
+	cmd := NewPayoutsCmd()
+	if cmd.Use != "payouts" {
+		t.Fatalf("unexpected Use: %q", cmd.Use)
+	}
+	if !cmd.HasSubCommands() {
+		t.Fatal("expected subcommands")
+	}
+}
+
+func TestView_TransactionsOnly(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{
+			"payout": map[string]any{
+				"id": "pay1", "display_payout_period": "Jan 2024", "formatted_amount": "$100",
+				"transactions": []map[string]any{{"id": "txn1"}},
+			},
+		})
+	})
+
+	cmd := newViewCmd()
+	cmd.SetArgs([]string{"pay1", "--include-transactions"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+	if !strings.Contains(out, "Transactions: 1 included") {
+		t.Fatalf("expected transaction summary, got %q", out)
+	}
+	if strings.Contains(out, "omitted") {
+		t.Fatalf("should not show omitted when --no-sales not set: %q", out)
+	}
+}
+
+func TestView_TransactionsNonArray(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.RawJSON(t, w, `{
+			"success": true,
+			"payout": {
+				"id": "pay1", "display_payout_period": "Jan 2024", "formatted_amount": "$100",
+				"transactions": "not-an-array"
+			}
+		}`)
+	})
+
+	cmd := newViewCmd()
+	cmd.SetArgs([]string{"pay1", "--include-transactions"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+	if !strings.Contains(out, "Transactions: included") {
+		t.Fatalf("expected fallback 'included', got %q", out)
+	}
+}
+
+func TestView_PlainTransactionsNonArray(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.RawJSON(t, w, `{
+			"success": true,
+			"payout": {
+				"id": "pay1", "display_payout_period": "Jan 2024", "formatted_amount": "$100",
+				"transactions": "not-an-array"
+			}
+		}`)
+	})
+
+	cmd := testutil.Command(newViewCmd(), testutil.PlainOutput())
+	cmd.SetArgs([]string{"pay1", "--include-transactions"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+	if !strings.Contains(out, "included") {
+		t.Fatalf("expected fallback 'included' in plain, got %q", out)
+	}
+}
+
+func TestList_AllNoUpcomingFiltersInStream(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Query().Get("page_key") {
+		case "":
+			testutil.JSON(t, w, map[string]any{
+				"payouts": []map[string]any{
+					{"id": "pay1", "display_payout_period": "Jan 2024", "formatted_amount": "$100", "is_upcoming": false},
+					{"id": "pay2", "display_payout_period": "Feb 2024", "formatted_amount": "$50", "is_upcoming": true},
+				},
+				"next_page_key": "cursor456",
+			})
+		case "cursor456":
+			testutil.JSON(t, w, map[string]any{
+				"payouts": []map[string]any{
+					{"id": "pay3", "display_payout_period": "Mar 2024", "formatted_amount": "$75", "is_upcoming": false},
+				},
+			})
+		default:
+			t.Fatalf("unexpected page_key %q", r.URL.Query().Get("page_key"))
+		}
+	})
+
+	cmd := testutil.Command(newListCmd(), testutil.PlainOutput())
+	cmd.SetArgs([]string{"--all", "--no-upcoming"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+	if strings.Contains(out, "pay2") {
+		t.Fatalf("--no-upcoming should filter upcoming in stream: %q", out)
+	}
+	if !strings.Contains(out, "pay1") || !strings.Contains(out, "pay3") {
+		t.Fatalf("should contain non-upcoming payouts: %q", out)
+	}
+}
+
 func TestList_AllAndPageKeyConflict(t *testing.T) {
 	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
 		t.Error("should not reach API with conflicting flags")
