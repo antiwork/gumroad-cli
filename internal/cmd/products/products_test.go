@@ -264,6 +264,9 @@ func TestNewProductsCmd_HelpMentionsDraftWorkflow(t *testing.T) {
 	if !strings.Contains(cmd.Long, "created as drafts") {
 		t.Fatalf("expected products help to mention draft workflow, got %q", cmd.Long)
 	}
+	if !strings.Contains(cmd.Long, "gumroad products publish <id>") {
+		t.Fatalf("expected products help to mention publish command, got %q", cmd.Long)
+	}
 }
 
 func TestDelete_WithYes(t *testing.T) {
@@ -287,7 +290,7 @@ func TestDelete_WithYes(t *testing.T) {
 	}
 }
 
-func TestEnable_CorrectEndpoint(t *testing.T) {
+func TestPublish_CorrectEndpoint(t *testing.T) {
 	var gotMethod, gotPath string
 	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
 		gotMethod = r.Method
@@ -295,7 +298,7 @@ func TestEnable_CorrectEndpoint(t *testing.T) {
 		testutil.JSON(t, w, map[string]any{})
 	})
 
-	cmd := newEnableCmd()
+	cmd := newPublishCmd()
 	testutil.CaptureStdout(func() { _ = cmd.RunE(cmd, []string{"p1"}) })
 	if gotMethod != "PUT" {
 		t.Errorf("got method %q, want PUT", gotMethod)
@@ -305,7 +308,7 @@ func TestEnable_CorrectEndpoint(t *testing.T) {
 	}
 }
 
-func TestDisable_CorrectEndpoint(t *testing.T) {
+func TestUnpublish_CorrectEndpoint(t *testing.T) {
 	var gotMethod, gotPath string
 	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
 		gotMethod = r.Method
@@ -313,7 +316,7 @@ func TestDisable_CorrectEndpoint(t *testing.T) {
 		testutil.JSON(t, w, map[string]any{})
 	})
 
-	cmd := newDisableCmd()
+	cmd := newUnpublishCmd()
 	testutil.CaptureStdout(func() { _ = cmd.RunE(cmd, []string{"p1"}) })
 	if gotMethod != "PUT" {
 		t.Errorf("got method %q, want PUT", gotMethod)
@@ -364,8 +367,8 @@ func TestCreate_Success(t *testing.T) {
 	if !strings.Contains(out, "Created draft product:") || !strings.Contains(out, "newprod1") {
 		t.Errorf("expected create confirmation, got: %q", out)
 	}
-	if !strings.Contains(out, "Publish with:") {
-		t.Errorf("expected publish tip, got: %q", out)
+	if !strings.Contains(out, "Publish with:") || !strings.Contains(out, "gumroad products publish") {
+		t.Errorf("expected publish tip with publish command, got: %q", out)
 	}
 }
 
@@ -708,27 +711,27 @@ func TestView_Plain(t *testing.T) {
 	}
 }
 
-func TestEnable_Output(t *testing.T) {
+func TestPublish_Output(t *testing.T) {
 	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
 		testutil.JSON(t, w, map[string]any{})
 	})
 
-	cmd := testutil.Command(newEnableCmd(), testutil.Quiet(false))
+	cmd := testutil.Command(newPublishCmd(), testutil.Quiet(false))
 	out := testutil.CaptureStdout(func() { _ = cmd.RunE(cmd, []string{"p1"}) })
-	if !strings.Contains(out, "enabled") {
-		t.Errorf("expected enabled message, got: %q", out)
+	if !strings.Contains(out, "published") {
+		t.Errorf("expected published message, got: %q", out)
 	}
 }
 
-func TestDisable_Output(t *testing.T) {
+func TestUnpublish_Output(t *testing.T) {
 	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
 		testutil.JSON(t, w, map[string]any{})
 	})
 
-	cmd := testutil.Command(newDisableCmd(), testutil.Quiet(false))
+	cmd := testutil.Command(newUnpublishCmd(), testutil.Quiet(false))
 	out := testutil.CaptureStdout(func() { _ = cmd.RunE(cmd, []string{"p1"}) })
-	if !strings.Contains(out, "disabled") {
-		t.Errorf("expected disabled message, got: %q", out)
+	if !strings.Contains(out, "unpublished") {
+		t.Errorf("expected unpublished message, got: %q", out)
 	}
 }
 
@@ -844,26 +847,26 @@ func TestDelete_APIError(t *testing.T) {
 	}
 }
 
-func TestEnable_APIError(t *testing.T) {
+func TestPublish_APIError(t *testing.T) {
 	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(500)
 		testutil.JSON(t, w, map[string]any{"message": "Error"})
 	})
 
-	cmd := newEnableCmd()
+	cmd := newPublishCmd()
 	err := cmd.RunE(cmd, []string{"p1"})
 	if err == nil {
 		t.Fatal("expected error")
 	}
 }
 
-func TestDisable_APIError(t *testing.T) {
+func TestUnpublish_APIError(t *testing.T) {
 	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(500)
 		testutil.JSON(t, w, map[string]any{"message": "Error"})
 	})
 
-	cmd := newDisableCmd()
+	cmd := newUnpublishCmd()
 	err := cmd.RunE(cmd, []string{"p1"})
 	if err == nil {
 		t.Fatal("expected error")
@@ -879,7 +882,7 @@ func TestNewProductsCmd(t *testing.T) {
 	for _, c := range cmd.Commands() {
 		subs[c.Use] = true
 	}
-	for _, name := range []string{"create", "list", "view <id>", "delete <id>", "enable <id>", "disable <id>", "skus <id>"} {
+	for _, name := range []string{"create", "list", "view <id>", "delete <id>", "publish <id>", "unpublish <id>", "skus <id>"} {
 		if !subs[name] {
 			t.Errorf("missing subcommand %q", name)
 		}

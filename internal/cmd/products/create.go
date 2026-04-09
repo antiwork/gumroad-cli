@@ -145,7 +145,7 @@ func newCreateCmd() *cobra.Command {
 						s.Bold("Created draft product:"), p.Name, s.Dim(p.ID)); err != nil {
 						return err
 					}
-					return output.Writef(opts.Out(), "\n%s gumroad products enable %s\n",
+					return output.Writef(opts.Out(), "\n%s gumroad products publish %s\n",
 						s.Dim("Publish with:"), p.ID)
 				})
 		},
