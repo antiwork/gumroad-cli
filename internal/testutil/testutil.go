@@ -178,13 +178,16 @@ func CaptureStdout(fn func()) string {
 		os.Stdout = old
 	}()
 
+	var buf bytes.Buffer
+	done := make(chan struct{})
+	go func() {
+		_, _ = io.Copy(&buf, r)
+		close(done)
+	}()
+
 	fn()
 	_ = w.Close()
-
-	var buf bytes.Buffer
-	if _, err := io.Copy(&buf, r); err != nil {
-		panic(err)
-	}
+	<-done
 	_ = r.Close()
 	return buf.String()
 }
@@ -206,18 +209,19 @@ func CaptureOutput(fn func()) (string, string) {
 		os.Stderr = oldStderr
 	}()
 
+	var stdoutBuf, stderrBuf bytes.Buffer
+	done := make(chan struct{})
+	go func() {
+		_, _ = io.Copy(&stdoutBuf, stdoutR)
+		_, _ = io.Copy(&stderrBuf, stderrR)
+		close(done)
+	}()
+
 	fn()
 
 	_ = stdoutW.Close()
 	_ = stderrW.Close()
-
-	var stdoutBuf, stderrBuf bytes.Buffer
-	if _, err := io.Copy(&stdoutBuf, stdoutR); err != nil {
-		panic(err)
-	}
-	if _, err := io.Copy(&stderrBuf, stderrR); err != nil {
-		panic(err)
-	}
+	<-done
 	_ = stdoutR.Close()
 	_ = stderrR.Close()
 

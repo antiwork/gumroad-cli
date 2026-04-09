@@ -247,6 +247,9 @@ func TestWriteConfigAtomically_CreateTempError(t *testing.T) {
 }
 
 func TestWriteConfigAtomically_CleansUpTempFileOnReplaceError(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("os.Rename over a directory behaves differently on Windows")
+	}
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config-dir")
 	if err := os.MkdirAll(path, 0700); err != nil {
@@ -268,6 +271,9 @@ func TestWriteConfigAtomically_CleansUpTempFileOnReplaceError(t *testing.T) {
 }
 
 func TestFilePermissions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix file permissions not supported on Windows")
+	}
 	tmp := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", tmp)
 
@@ -353,6 +359,9 @@ func TestLoad_InvalidJSON(t *testing.T) {
 }
 
 func TestLoad_Unreadable(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix file permissions not supported on Windows")
+	}
 	tmp := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", tmp)
 
@@ -531,13 +540,15 @@ func TestDelete_NonExistent(t *testing.T) {
 }
 
 func TestDirXDG(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", "/tmp/test-xdg")
+	xdg := filepath.Join(t.TempDir(), "test-xdg")
+	t.Setenv("XDG_CONFIG_HOME", xdg)
 	dir, err := Dir()
 	if err != nil {
 		t.Fatalf("Dir failed: %v", err)
 	}
-	if dir != "/tmp/test-xdg/gumroad" {
-		t.Errorf("got dir %q, want %q", dir, "/tmp/test-xdg/gumroad")
+	want := filepath.Join(xdg, "gumroad")
+	if dir != want {
+		t.Errorf("got dir %q, want %q", dir, want)
 	}
 }
 
@@ -577,18 +588,22 @@ func TestDir_Default(t *testing.T) {
 }
 
 func TestPath(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", "/tmp/test-path")
+	xdg := filepath.Join(t.TempDir(), "test-path")
+	t.Setenv("XDG_CONFIG_HOME", xdg)
 	p, err := Path()
 	if err != nil {
 		t.Fatalf("Path failed: %v", err)
 	}
-	want := "/tmp/test-path/gumroad/config.json"
+	want := filepath.Join(xdg, "gumroad", "config.json")
 	if p != want {
 		t.Errorf("got %q, want %q", p, want)
 	}
 }
 
 func TestDirPermissions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix file permissions not supported on Windows")
+	}
 	tmp := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", tmp)
 
@@ -607,6 +622,9 @@ func TestDirPermissions(t *testing.T) {
 }
 
 func TestSave_UnwritableDir(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix file permissions not supported on Windows")
+	}
 	tmp := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", tmp)
 
@@ -660,6 +678,7 @@ func TestSave_MkdirAllError(t *testing.T) {
 func withBrokenHomeDir(t *testing.T) {
 	t.Helper()
 	t.Setenv("XDG_CONFIG_HOME", "")
+	t.Setenv("APPDATA", "")
 	orig := userHomeDir
 	userHomeDir = func() (string, error) {
 		return "", fmt.Errorf("no home directory")
@@ -719,6 +738,9 @@ func TestToken_LoadError(t *testing.T) {
 }
 
 func TestDelete_PermissionDenied(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix file permissions not supported on Windows")
+	}
 	tmp := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", tmp)
 
