@@ -150,11 +150,13 @@ func parseDigits(s string) (int, bool) {
 	if s == "" {
 		return 0, false
 	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return 0, false
+		}
+	}
 	n, err := strconv.Atoi(s)
 	if err != nil {
-		return 0, false
-	}
-	if n < 0 {
 		return 0, false
 	}
 	return n, true

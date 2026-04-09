@@ -348,6 +348,22 @@ func TestCreate_RequiresDiscount(t *testing.T) {
 	}
 }
 
+func TestCreate_AmountNegativeRejected(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Error("should not reach API")
+	})
+
+	cmd := newCreateCmd()
+	cmd.SetArgs([]string{"--product", "p1", "--name", "X", "--amount", "-1"})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "--amount cannot be negative") {
+		t.Fatalf("expected negative amount error, got: %v", err)
+	}
+	var usageErr *cmdutil.UsageError
+	if !errors.As(err, &usageErr) {
+		t.Fatalf("expected *cmdutil.UsageError, got %T", err)
+	}
+}
 
 func TestCreate_RejectsNegativePercentOff(t *testing.T) {
 	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
