@@ -29,6 +29,8 @@ func TestParseMoney(t *testing.T) {
 		{name: "dollar sign", flag: "price", value: "$10", noun: "price", wantErr: "not a valid price"},
 		{name: "comma", flag: "price", value: "1,000", noun: "price", wantErr: "not a valid price"},
 		{name: "just dot", flag: "price", value: "10.", noun: "price", wantErr: "not a valid price"},
+		{name: "leading plus", flag: "price", value: "+5.00", noun: "price", wantErr: "not a valid price"},
+		{name: "leading plus whole", flag: "price", value: "+5", noun: "price", wantErr: "not a valid price"},
 
 		// Currency-aware tests
 		{name: "usd explicit", flag: "price", value: "10", noun: "price", currency: "usd", want: 1000},
