@@ -10,10 +10,11 @@ func NewProductsCmd() *cobra.Command {
 		Use:   "products",
 		Short: "Manage your Gumroad products",
 		Long: "Manage your Gumroad products.\n\n" +
-			"Create, list, view, delete, publish, and unpublish products. " +
+			"Create, update, list, view, delete, publish, and unpublish products. " +
 			"New products are created as drafts; use `gumroad products publish <id>` to publish.",
 		Example: `  gumroad products list
   gumroad products create --name "Art Pack" --price 10.00
+  gumroad products update <product_id> --name "New Name"
   gumroad products view <id>
   gumroad products publish <id>
   gumroad products unpublish <id>
@@ -22,6 +23,7 @@ func NewProductsCmd() *cobra.Command {
 	}
 
 	cmd.AddCommand(newCreateCmd())
+	cmd.AddCommand(newUpdateCmd())
 	cmd.AddCommand(newListCmd())
 	cmd.AddCommand(newViewCmd())
 	cmd.AddCommand(newDeleteCmd())

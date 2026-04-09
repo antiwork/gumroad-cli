@@ -56,7 +56,7 @@ gumroad payouts upcoming --json --no-input
 ```
 auth           login, status, logout
 user           Account info
-products       create, list, view, delete, publish, unpublish, skus
+products       create, update, list, view, delete, publish, unpublish, skus
 sales          list, view, refund, ship, resend-receipt
 payouts        list, view, upcoming
 subscribers    list, view

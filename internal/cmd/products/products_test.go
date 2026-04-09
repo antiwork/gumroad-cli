@@ -693,6 +693,238 @@ func TestCreate_APIError(t *testing.T) {
 	}
 }
 
+func TestUpdate_SingleFlag(t *testing.T) {
+	var gotMethod, gotPath string
+	var gotForm url.Values
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
+		gotPath = r.URL.Path
+		_ = r.ParseForm()
+		gotForm = r.PostForm
+		testutil.JSON(t, w, map[string]any{})
+	})
+
+	cmd := testutil.Command(newUpdateCmd(), testutil.Quiet(false))
+	cmd.SetArgs([]string{"prod1", "--name", "New Name"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+	if gotMethod != "PUT" {
+		t.Errorf("got method %q, want PUT", gotMethod)
+	}
+	if gotPath != "/products/prod1" {
+		t.Errorf("got path %q, want /products/prod1", gotPath)
+	}
+	if gotForm.Get("name") != "New Name" {
+		t.Errorf("got name=%q, want New Name", gotForm.Get("name"))
+	}
+	if gotForm.Get("price") != "" {
+		t.Errorf("price should not be sent, got %q", gotForm.Get("price"))
+	}
+	if !strings.Contains(out, "updated") {
+		t.Errorf("expected updated message, got: %q", out)
+	}
+}
+
+func TestUpdate_MultipleFlags(t *testing.T) {
+	var gotForm url.Values
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		gotForm = r.PostForm
+		testutil.JSON(t, w, map[string]any{})
+	})
+
+	cmd := newUpdateCmd()
+	cmd.SetArgs([]string{"prod1",
+		"--name", "Updated",
+		"--price", "20.00",
+		"--currency", "eur",
+		"--description", "<p>New</p>",
+		"--custom-permalink", "updated-slug",
+		"--custom-summary", "New summary",
+		"--custom-receipt", "Thanks!",
+		"--pay-what-you-want",
+		"--suggested-price", "10.00",
+		"--max-purchase-count", "50",
+		"--taxonomy-id", "tax1",
+	})
+	testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	checks := map[string]string{
+		"name":                  "Updated",
+		"price":                 "2000",
+		"price_currency_type":   "eur",
+		"description":           "<p>New</p>",
+		"custom_permalink":      "updated-slug",
+		"custom_summary":        "New summary",
+		"custom_receipt":        "Thanks!",
+		"customizable_price":    "true",
+		"suggested_price_cents": "1000",
+		"max_purchase_count":    "50",
+		"taxonomy_id":           "tax1",
+	}
+	for param, want := range checks {
+		if got := gotForm.Get(param); got != want {
+			t.Errorf("param %s: got %q, want %q", param, got, want)
+		}
+	}
+}
+
+func TestUpdate_NoFlags(t *testing.T) {
+	cmd := newUpdateCmd()
+	cmd.SetArgs([]string{"prod1"})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "at least one") {
+		t.Errorf("expected 'at least one' error, got: %v", err)
+	}
+}
+
+func TestUpdate_EmptyName(t *testing.T) {
+	cmd := newUpdateCmd()
+	cmd.SetArgs([]string{"prod1", "--name", ""})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "--name cannot be empty") {
+		t.Errorf("expected empty name error, got: %v", err)
+	}
+}
+
+func TestUpdate_NegativePrice(t *testing.T) {
+	cmd := newUpdateCmd()
+	cmd.SetArgs([]string{"prod1", "--price", "-10.00"})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "--price cannot be negative") {
+		t.Errorf("expected negative price error, got: %v", err)
+	}
+}
+
+func TestUpdate_NegativeSuggestedPrice(t *testing.T) {
+	cmd := newUpdateCmd()
+	cmd.SetArgs([]string{"prod1", "--suggested-price", "-5.00"})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "--suggested-price cannot be negative") {
+		t.Errorf("expected negative suggested-price error, got: %v", err)
+	}
+}
+
+func TestUpdate_NegativeMaxPurchaseCount(t *testing.T) {
+	cmd := newUpdateCmd()
+	cmd.SetArgs([]string{"prod1", "--max-purchase-count", "-1"})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "--max-purchase-count") {
+		t.Errorf("expected negative max-purchase-count error, got: %v", err)
+	}
+}
+
+func TestUpdate_InvalidPrice(t *testing.T) {
+	cmd := newUpdateCmd()
+	cmd.SetArgs([]string{"prod1", "--price", "abc"})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "not a valid price") {
+		t.Errorf("expected invalid price error, got: %v", err)
+	}
+}
+
+func TestUpdate_TooManyDecimals(t *testing.T) {
+	cmd := newUpdateCmd()
+	cmd.SetArgs([]string{"prod1", "--price", "10.999"})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "too many decimal places") {
+		t.Errorf("expected too many decimals error, got: %v", err)
+	}
+}
+
+func TestUpdate_InvalidSuggestedPrice(t *testing.T) {
+	cmd := newUpdateCmd()
+	cmd.SetArgs([]string{"prod1", "--suggested-price", "abc"})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "not a valid suggested price") {
+		t.Errorf("expected invalid suggested-price error, got: %v", err)
+	}
+}
+
+func TestUpdate_JPYRejectsDecimals(t *testing.T) {
+	cmd := newUpdateCmd()
+	cmd.SetArgs([]string{"prod1", "--price", "10.99", "--currency", "jpy"})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "JPY amounts cannot have decimal places") {
+		t.Errorf("expected JPY decimal error, got: %v", err)
+	}
+}
+
+func TestUpdate_JSON(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{})
+	})
+
+	cmd := testutil.Command(newUpdateCmd(), testutil.JSONOutput())
+	cmd.SetArgs([]string{"prod1", "--name", "X"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+	if !strings.Contains(out, "true") {
+		t.Errorf("expected JSON with success, got: %q", out)
+	}
+}
+
+func TestUpdate_DryRun(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Error("should not reach API in dry-run mode")
+	})
+
+	cmd := testutil.Command(newUpdateCmd(), testutil.DryRun(true))
+	cmd.SetArgs([]string{"prod1", "--name", "X"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+	if !strings.Contains(out, "PUT") || !strings.Contains(out, "/products/prod1") {
+		t.Errorf("expected dry-run output, got: %q", out)
+	}
+}
+
+func TestUpdate_Tags(t *testing.T) {
+	var gotForm url.Values
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		gotForm = r.PostForm
+		testutil.JSON(t, w, map[string]any{})
+	})
+
+	cmd := newUpdateCmd()
+	cmd.SetArgs([]string{"prod1", "--tag", "ruby", "--tag", "rails"})
+	testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+	tags := gotForm["tags[]"]
+	if len(tags) != 2 || tags[0] != "ruby" || tags[1] != "rails" {
+		t.Errorf("got tags=%v, want [ruby rails]", tags)
+	}
+}
+
+func TestUpdate_NameOnlyDoesNotTouchTags(t *testing.T) {
+	var gotForm url.Values
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		gotForm = r.PostForm
+		testutil.JSON(t, w, map[string]any{})
+	})
+
+	cmd := newUpdateCmd()
+	cmd.SetArgs([]string{"prod1", "--name", "New Name"})
+	testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+	if gotForm.Get("name") != "New Name" {
+		t.Errorf("got name=%q, want New Name", gotForm.Get("name"))
+	}
+	if _, ok := gotForm["tags[]"]; ok {
+		t.Errorf("tags should not be sent when --tag not provided, got %v", gotForm["tags[]"])
+	}
+}
+
+func TestUpdate_APIError(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(422)
+		testutil.JSON(t, w, map[string]any{"message": "Price cannot be updated for tiered membership"})
+	})
+
+	cmd := newUpdateCmd()
+	cmd.SetArgs([]string{"prod1", "--price", "10.00"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error from API")
+	}
+}
+
 func TestView_Plain(t *testing.T) {
 	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
 		testutil.JSON(t, w, map[string]any{
@@ -885,7 +1117,7 @@ func TestNewProductsCmd(t *testing.T) {
 	for _, c := range cmd.Commands() {
 		subs[c.Use] = true
 	}
-	for _, name := range []string{"create", "list", "view <id>", "delete <id>", "publish <id>", "unpublish <id>", "skus <id>"} {
+	for _, name := range []string{"create", "update <product_id>", "list", "view <id>", "delete <id>", "publish <id>", "unpublish <id>", "skus <id>"} {
 		if !subs[name] {
 			t.Errorf("missing subcommand %q", name)
 		}
