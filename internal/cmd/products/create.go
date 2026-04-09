@@ -109,7 +109,7 @@ func newCreateCmd() *cobra.Command {
 				params.Set("customizable_price", strconv.FormatBool(payWhatYouWant))
 			}
 			if flags.Changed("suggested-price") {
-				cents, err := cmdutil.ParseMoney("suggested-price", suggestedPrice, "price", currency)
+				cents, err := cmdutil.ParseMoney("suggested-price", suggestedPrice, "suggested price", currency)
 				if err != nil {
 					return cmdutil.UsageErrorf(c, "%s", err.Error())
 				}
@@ -164,7 +164,7 @@ func newCreateCmd() *cobra.Command {
 	cmd.Flags().IntVar(&maxPurchaseCount, "max-purchase-count", 0, "Maximum number of purchases (inventory limit)")
 	cmd.Flags().StringVar(&taxonomyID, "taxonomy-id", "", "Taxonomy/category ID")
 	cmd.Flags().StringVar(&subscriptionDuration, "subscription-duration", "", "Subscription duration (membership only: monthly, quarterly, biannually, yearly, every_two_years)")
-	cmd.Flags().StringSliceVar(&tags, "tag", nil, "Tag (repeatable)")
+	cmd.Flags().StringArrayVar(&tags, "tag", nil, "Tag (repeatable)")
 
 	return cmd
 }

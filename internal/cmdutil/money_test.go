@@ -35,8 +35,8 @@ func TestParseMoney(t *testing.T) {
 		{name: "eur with cents", flag: "price", value: "10.99", noun: "price", currency: "eur", want: 1099},
 		{name: "jpy whole", flag: "price", value: "1000", noun: "price", currency: "jpy", want: 1000},
 		{name: "jpy uppercase", flag: "price", value: "1000", noun: "price", currency: "JPY", want: 1000},
-		{name: "jpy rejects decimals", flag: "price", value: "10.99", noun: "price", currency: "jpy", wantErr: "JPY prices cannot have decimal places"},
-		{name: "jpy rejects single decimal", flag: "price", value: "10.5", noun: "price", currency: "jpy", wantErr: "JPY prices cannot have decimal places"},
+		{name: "jpy rejects decimals", flag: "price", value: "10.99", noun: "price", currency: "jpy", wantErr: "JPY amounts cannot have decimal places"},
+		{name: "jpy rejects single decimal", flag: "price", value: "10.5", noun: "price", currency: "jpy", wantErr: "JPY amounts cannot have decimal places"},
 		{name: "empty currency defaults x100", flag: "price", value: "10", noun: "price", currency: "", want: 1000},
 
 		// Overflow protection
@@ -90,7 +90,7 @@ func TestParseSignedMoney(t *testing.T) {
 		// JPY signed
 		{name: "jpy positive", flag: "price-difference", value: "500", noun: "price", currency: "jpy", want: 500},
 		{name: "jpy negative", flag: "price-difference", value: "-500", noun: "price", currency: "jpy", want: -500},
-		{name: "jpy rejects decimals", flag: "price-difference", value: "-10.5", noun: "price", currency: "jpy", wantErr: "JPY prices cannot have decimal places"},
+		{name: "jpy rejects decimals", flag: "price-difference", value: "-10.5", noun: "price", currency: "jpy", wantErr: "JPY amounts cannot have decimal places"},
 	}
 
 	for _, tt := range tests {

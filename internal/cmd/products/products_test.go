@@ -520,11 +520,41 @@ func TestCreate_NegativeSuggestedPrice(t *testing.T) {
 	}
 }
 
+func TestCreate_InvalidSuggestedPrice(t *testing.T) {
+	cmd := newCreateCmd()
+	cmd.SetArgs([]string{"--name", "X", "--suggested-price", "abc"})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "not a valid suggested price") {
+		t.Errorf("expected invalid suggested-price error, got: %v", err)
+	}
+}
+
+func TestCreate_CommaInTag(t *testing.T) {
+	var gotForm url.Values
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		gotForm = r.PostForm
+		testutil.JSON(t, w, map[string]any{
+			"product": map[string]any{
+				"id": "p1", "name": "X", "formatted_price": "$0",
+			},
+		})
+	})
+
+	cmd := newCreateCmd()
+	cmd.SetArgs([]string{"--name", "X", "--tag", "art,digital"})
+	testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+	tags := gotForm["tags[]"]
+	if len(tags) != 1 || tags[0] != "art,digital" {
+		t.Errorf("expected single tag \"art,digital\", got %v", tags)
+	}
+}
+
 func TestCreate_JPYRejectsDecimals(t *testing.T) {
 	cmd := newCreateCmd()
 	cmd.SetArgs([]string{"--name", "X", "--price", "10.99", "--currency", "jpy"})
 	err := cmd.Execute()
-	if err == nil || !strings.Contains(err.Error(), "JPY prices cannot have decimal places") {
+	if err == nil || !strings.Contains(err.Error(), "JPY amounts cannot have decimal places") {
 		t.Errorf("expected JPY decimal error, got: %v", err)
 	}
 }
