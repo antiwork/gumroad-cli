@@ -718,8 +718,11 @@ func TestPublish_Output(t *testing.T) {
 
 	cmd := testutil.Command(newPublishCmd(), testutil.Quiet(false))
 	out := testutil.CaptureStdout(func() { _ = cmd.RunE(cmd, []string{"p1"}) })
-	if !strings.Contains(out, "published") {
+	if !strings.Contains(out, " published.") {
 		t.Errorf("expected published message, got: %q", out)
+	}
+	if strings.Contains(out, "unpublished") {
+		t.Errorf("publish output should not contain unpublished, got: %q", out)
 	}
 }
 
