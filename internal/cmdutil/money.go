@@ -108,7 +108,7 @@ func parseMoney(flag, value, noun, currency string) (int, error) {
 	}
 
 	if singleUnit {
-		return 0, fmt.Errorf("JPY prices cannot have decimal places")
+		return 0, fmt.Errorf("--%s: JPY amounts cannot have decimal places", flag)
 	}
 
 	wholePart := parts[0]

@@ -168,14 +168,14 @@ func TestHelp(t *testing.T) {
 	}
 }
 
-func TestProductsHelpMentionsCreateUpdateLimitation(t *testing.T) {
+func TestProductsHelpMentionsDraftWorkflow(t *testing.T) {
 	bin := buildBinary(t)
 	out, err := runGR(t, bin, nil, "products", "--help")
 	if err != nil {
 		t.Fatalf("products --help failed: %v\n%s", err, out)
 	}
-	if !strings.Contains(out, "does not support creating or updating products") {
-		t.Fatalf("products help should mention API limitation, got %q", out)
+	if !strings.Contains(out, "created as drafts") {
+		t.Fatalf("products help should mention draft workflow, got %q", out)
 	}
 }
 

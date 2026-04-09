@@ -10,14 +10,16 @@ func NewProductsCmd() *cobra.Command {
 		Use:   "products",
 		Short: "Manage your Gumroad products",
 		Long: "Manage your Gumroad products.\n\n" +
-			"Gumroad's API does not support creating or updating products. " +
-			"Use the web UI to create or edit products; `gumroad` supports listing, viewing, deleting, enabling, and disabling them.",
+			"Create, list, view, delete, enable, and disable products. " +
+			"New products are created as drafts; use `gumroad products enable <id>` to publish.",
 		Example: `  gumroad products list
+  gumroad products create --name "Art Pack" --price 10.00
   gumroad products view <id>
   gumroad products delete <id>
   gumroad products skus <id>`,
 	}
 
+	cmd.AddCommand(newCreateCmd())
 	cmd.AddCommand(newListCmd())
 	cmd.AddCommand(newViewCmd())
 	cmd.AddCommand(newDeleteCmd())

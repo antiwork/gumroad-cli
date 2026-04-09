@@ -26,6 +26,9 @@ gumroad auth status --no-input
 # List all products
 gumroad products list --json --no-input
 
+# Create a product (created as draft)
+gumroad products create --name "Art Pack" --price 10.00 --json --no-input
+
 # Get a specific product
 gumroad products view <id> --json --no-input
 
@@ -53,7 +56,7 @@ gumroad payouts upcoming --json --no-input
 ```
 auth           login, status, logout
 user           Account info
-products       list, view, delete, enable, disable, skus
+products       create, list, view, delete, enable, disable, skus
 sales          list, view, refund, ship, resend-receipt
 payouts        list, view, upcoming
 subscribers    list, view
@@ -69,7 +72,7 @@ webhooks       list, create, delete
 
 - Always include `--no-input` to prevent the CLI from blocking on interactive prompts.
 - Use `--json --jq` together to extract exactly what you need without parsing.
-- The API does not support product create/update — only list, view, delete, enable, disable.
+- Products are created as drafts — use `gumroad products enable <id>` to publish.
 - If `gumroad auth status` fails, the user needs to run `gumroad auth login` interactively.
 - For destructive operations (delete, refund), add `--yes` to skip confirmation.
 - Run `gumroad <command> --help` for flag details on any specific command.

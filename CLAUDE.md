@@ -72,5 +72,4 @@ These are non-obvious behaviors in the Gumroad API v2 that directly affect how y
 - **200 OK with `success: false`** — the API returns HTTP 200 for many errors. Always check the `success` field in the response body, not just the status code. `internal/api/errors.go` handles this.
 - **Inconsistent numeric types** — some fields like `sales_usd_cents` arrive as `0` (int) or `0.0` (float) depending on state. Use `json.Number` or handle both when parsing.
 - **Null vs missing fields** — optional fields may be `null`, empty string, or omitted entirely.
-- **Products create/update return 404** — the routes exist but the actions are stubbed out. Only list, view, delete, enable, disable work.
 - **Deprecated `page` param on sales** — use cursor-based `page_key` instead.

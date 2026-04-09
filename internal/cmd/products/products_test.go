@@ -8,6 +8,7 @@ import (
 	"image/png"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -258,10 +259,10 @@ func TestDelete_RequiresConfirmation(t *testing.T) {
 	}
 }
 
-func TestNewProductsCmd_HelpMentionsCreateUpdateLimitation(t *testing.T) {
+func TestNewProductsCmd_HelpMentionsDraftWorkflow(t *testing.T) {
 	cmd := NewProductsCmd()
-	if !strings.Contains(cmd.Long, "does not support creating or updating products") {
-		t.Fatalf("expected products help to mention create/update limitation, got %q", cmd.Long)
+	if !strings.Contains(cmd.Long, "created as drafts") {
+		t.Fatalf("expected products help to mention draft workflow, got %q", cmd.Long)
 	}
 }
 
@@ -319,6 +320,373 @@ func TestDisable_CorrectEndpoint(t *testing.T) {
 	}
 	if gotPath != "/products/p1/disable" {
 		t.Errorf("got path %q, want /products/p1/disable", gotPath)
+	}
+}
+
+func TestCreate_Success(t *testing.T) {
+	var gotMethod, gotPath string
+	var gotForm url.Values
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
+		gotPath = r.URL.Path
+		_ = r.ParseForm()
+		gotForm = r.PostForm
+		testutil.JSON(t, w, map[string]any{
+			"product": map[string]any{
+				"id": "newprod1", "name": "Art Pack",
+				"formatted_price": "$10", "sales_count": 0,
+			},
+		})
+	})
+
+	cmd := testutil.Command(newCreateCmd(), testutil.Quiet(false))
+	cmd.SetArgs([]string{"--name", "Art Pack", "--price", "10.00", "--tag", "art", "--tag", "digital"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+	if gotMethod != "POST" {
+		t.Errorf("got method %q, want POST", gotMethod)
+	}
+	if gotPath != "/products" {
+		t.Errorf("got path %q, want /products", gotPath)
+	}
+	if gotForm.Get("name") != "Art Pack" {
+		t.Errorf("got name=%q, want Art Pack", gotForm.Get("name"))
+	}
+	if gotForm.Get("native_type") != "digital" {
+		t.Errorf("got native_type=%q, want digital", gotForm.Get("native_type"))
+	}
+	if gotForm.Get("price") != "1000" {
+		t.Errorf("got price=%q, want 1000", gotForm.Get("price"))
+	}
+	tags := gotForm["tags[]"]
+	if len(tags) != 2 || tags[0] != "art" || tags[1] != "digital" {
+		t.Errorf("got tags=%v, want [art digital]", tags)
+	}
+	if !strings.Contains(out, "Created draft product:") || !strings.Contains(out, "newprod1") {
+		t.Errorf("expected create confirmation, got: %q", out)
+	}
+	if !strings.Contains(out, "Publish with:") {
+		t.Errorf("expected publish tip, got: %q", out)
+	}
+}
+
+func TestCreate_MinimalFlags(t *testing.T) {
+	var gotForm url.Values
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		gotForm = r.PostForm
+		testutil.JSON(t, w, map[string]any{
+			"product": map[string]any{
+				"id": "p1", "name": "Simple",
+				"formatted_price": "$0", "sales_count": 0,
+			},
+		})
+	})
+
+	cmd := newCreateCmd()
+	cmd.SetArgs([]string{"--name", "Simple"})
+	testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+	if gotForm.Get("name") != "Simple" {
+		t.Errorf("got name=%q, want Simple", gotForm.Get("name"))
+	}
+	if gotForm.Get("native_type") != "digital" {
+		t.Errorf("got native_type=%q, want digital", gotForm.Get("native_type"))
+	}
+	if gotForm.Get("price") != "" {
+		t.Errorf("price should not be sent when not set, got %q", gotForm.Get("price"))
+	}
+}
+
+func TestCreate_AllOptionalFlags(t *testing.T) {
+	var gotForm url.Values
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		gotForm = r.PostForm
+		testutil.JSON(t, w, map[string]any{
+			"product": map[string]any{
+				"id": "p1", "name": "Full", "formatted_price": "$10",
+			},
+		})
+	})
+
+	cmd := newCreateCmd()
+	cmd.SetArgs([]string{
+		"--name", "Full",
+		"--type", "membership",
+		"--price", "10.00",
+		"--currency", "eur",
+		"--description", "<p>Hello</p>",
+		"--custom-permalink", "my-product",
+		"--custom-summary", "A summary",
+		"--custom-receipt", "Thanks!",
+		"--pay-what-you-want",
+		"--suggested-price", "5.00",
+		"--max-purchase-count", "100",
+		"--taxonomy-id", "tax123",
+		"--subscription-duration", "monthly",
+	})
+	testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	checks := map[string]string{
+		"name":                  "Full",
+		"native_type":           "membership",
+		"price":                 "1000",
+		"price_currency_type":   "eur",
+		"description":           "<p>Hello</p>",
+		"custom_permalink":      "my-product",
+		"custom_summary":        "A summary",
+		"custom_receipt":        "Thanks!",
+		"customizable_price":    "true",
+		"suggested_price_cents": "500",
+		"max_purchase_count":    "100",
+		"taxonomy_id":           "tax123",
+		"subscription_duration": "monthly",
+	}
+	for param, want := range checks {
+		if got := gotForm.Get(param); got != want {
+			t.Errorf("param %s: got %q, want %q", param, got, want)
+		}
+	}
+}
+
+func TestCreate_MissingName(t *testing.T) {
+	cmd := newCreateCmd()
+	cmd.SetArgs([]string{"--price", "1.00"})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "--name") {
+		t.Errorf("expected missing --name error, got: %v", err)
+	}
+}
+
+func TestCreate_InvalidType(t *testing.T) {
+	cmd := newCreateCmd()
+	cmd.SetArgs([]string{"--name", "X", "--type", "physical"})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "invalid --type") {
+		t.Errorf("expected invalid type error, got: %v", err)
+	}
+}
+
+func TestCreate_SubscriptionDurationNonMembership(t *testing.T) {
+	cmd := newCreateCmd()
+	cmd.SetArgs([]string{"--name", "X", "--type", "digital", "--subscription-duration", "monthly"})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "--subscription-duration can only be used with --type membership") {
+		t.Errorf("expected subscription-duration error, got: %v", err)
+	}
+}
+
+func TestCreate_InvalidSubscriptionDuration(t *testing.T) {
+	cmd := newCreateCmd()
+	cmd.SetArgs([]string{"--name", "X", "--type", "membership", "--subscription-duration", "weekly"})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "invalid --subscription-duration") {
+		t.Errorf("expected invalid subscription-duration error, got: %v", err)
+	}
+}
+
+func TestCreate_NegativePrice(t *testing.T) {
+	cmd := newCreateCmd()
+	cmd.SetArgs([]string{"--name", "X", "--price", "-10.00"})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "--price cannot be negative") {
+		t.Errorf("expected negative price error, got: %v", err)
+	}
+}
+
+func TestCreate_InvalidPrice(t *testing.T) {
+	cmd := newCreateCmd()
+	cmd.SetArgs([]string{"--name", "X", "--price", "abc"})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "not a valid price") {
+		t.Errorf("expected invalid price error, got: %v", err)
+	}
+}
+
+func TestCreate_TooManyDecimals(t *testing.T) {
+	cmd := newCreateCmd()
+	cmd.SetArgs([]string{"--name", "X", "--price", "10.999"})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "too many decimal places") {
+		t.Errorf("expected too many decimals error, got: %v", err)
+	}
+}
+
+func TestCreate_NegativeSuggestedPrice(t *testing.T) {
+	cmd := newCreateCmd()
+	cmd.SetArgs([]string{"--name", "X", "--suggested-price", "-5.00"})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "--suggested-price cannot be negative") {
+		t.Errorf("expected negative suggested-price error, got: %v", err)
+	}
+}
+
+func TestCreate_InvalidSuggestedPrice(t *testing.T) {
+	cmd := newCreateCmd()
+	cmd.SetArgs([]string{"--name", "X", "--suggested-price", "abc"})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "not a valid suggested price") {
+		t.Errorf("expected invalid suggested-price error, got: %v", err)
+	}
+}
+
+func TestCreate_CommaInTag(t *testing.T) {
+	var gotForm url.Values
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		gotForm = r.PostForm
+		testutil.JSON(t, w, map[string]any{
+			"product": map[string]any{
+				"id": "p1", "name": "X", "formatted_price": "$0",
+			},
+		})
+	})
+
+	cmd := newCreateCmd()
+	cmd.SetArgs([]string{"--name", "X", "--tag", "art,digital"})
+	testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+	tags := gotForm["tags[]"]
+	if len(tags) != 1 || tags[0] != "art,digital" {
+		t.Errorf("expected single tag \"art,digital\", got %v", tags)
+	}
+}
+
+func TestCreate_JPYRejectsDecimals(t *testing.T) {
+	cmd := newCreateCmd()
+	cmd.SetArgs([]string{"--name", "X", "--price", "10.99", "--currency", "jpy"})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "JPY amounts cannot have decimal places") {
+		t.Errorf("expected JPY decimal error, got: %v", err)
+	}
+}
+
+func TestCreate_JPYWholeNumber(t *testing.T) {
+	var gotForm url.Values
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		gotForm = r.PostForm
+		testutil.JSON(t, w, map[string]any{
+			"product": map[string]any{
+				"id": "p1", "name": "X", "formatted_price": "¥1000",
+			},
+		})
+	})
+
+	cmd := newCreateCmd()
+	cmd.SetArgs([]string{"--name", "X", "--price", "1000", "--currency", "jpy"})
+	testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+	if gotForm.Get("price") != "1000" {
+		t.Errorf("expected price=1000 for JPY (×1 scaling), got %q", gotForm.Get("price"))
+	}
+}
+
+func TestCreate_NegativeMaxPurchaseCount(t *testing.T) {
+	cmd := newCreateCmd()
+	cmd.SetArgs([]string{"--name", "X", "--max-purchase-count", "-1"})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "--max-purchase-count") {
+		t.Errorf("expected negative max-purchase-count error, got: %v", err)
+	}
+}
+
+func TestCreate_MaxPurchaseCountZero(t *testing.T) {
+	var gotForm url.Values
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		gotForm = r.PostForm
+		testutil.JSON(t, w, map[string]any{
+			"product": map[string]any{
+				"id": "p1", "name": "X", "formatted_price": "$0", "sales_count": 0,
+			},
+		})
+	})
+
+	cmd := newCreateCmd()
+	cmd.SetArgs([]string{"--name", "X", "--max-purchase-count", "0"})
+	testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+	if gotForm.Get("max_purchase_count") != "0" {
+		t.Errorf("expected max_purchase_count=0, got %q", gotForm.Get("max_purchase_count"))
+	}
+}
+
+func TestCreate_JSON(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{
+			"product": map[string]any{
+				"id": "p1", "name": "Art", "formatted_price": "$10", "sales_count": 0,
+			},
+		})
+	})
+
+	cmd := testutil.Command(newCreateCmd(), testutil.JSONOutput())
+	cmd.SetArgs([]string{"--name", "Art"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+	var resp map[string]any
+	if err := json.Unmarshal([]byte(out), &resp); err != nil {
+		t.Fatalf("output is not valid JSON: %v\n%s", err, out)
+	}
+}
+
+func TestCreate_Plain(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{
+			"product": map[string]any{
+				"id": "p1", "name": "Art", "formatted_price": "$10", "sales_count": 0,
+			},
+		})
+	})
+
+	cmd := testutil.Command(newCreateCmd(), testutil.PlainOutput())
+	cmd.SetArgs([]string{"--name", "Art"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+	if !strings.Contains(out, "p1\tArt\t$10") {
+		t.Errorf("expected plain tab-separated output, got: %q", out)
+	}
+}
+
+func TestCreate_WholeNumberPrice(t *testing.T) {
+	var gotForm url.Values
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		gotForm = r.PostForm
+		testutil.JSON(t, w, map[string]any{
+			"product": map[string]any{
+				"id": "p1", "name": "X", "formatted_price": "$10",
+			},
+		})
+	})
+
+	cmd := newCreateCmd()
+	cmd.SetArgs([]string{"--name", "X", "--price", "10"})
+	testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+	if gotForm.Get("price") != "1000" {
+		t.Errorf("expected price=1000 (10 dollars), got %q", gotForm.Get("price"))
+	}
+}
+
+func TestCreate_DryRun(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Error("should not reach API in dry-run mode")
+	})
+
+	cmd := testutil.Command(newCreateCmd(), testutil.DryRun(true))
+	cmd.SetArgs([]string{"--name", "Art", "--price", "10.00"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+	if !strings.Contains(out, "POST") || !strings.Contains(out, "/products") {
+		t.Errorf("expected dry-run output with method and path, got: %q", out)
+	}
+}
+
+func TestCreate_APIError(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(422)
+		testutil.JSON(t, w, map[string]any{"message": "Name is required"})
+	})
+
+	cmd := newCreateCmd()
+	cmd.SetArgs([]string{"--name", "X"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error from API")
 	}
 }
 
@@ -511,7 +879,7 @@ func TestNewProductsCmd(t *testing.T) {
 	for _, c := range cmd.Commands() {
 		subs[c.Use] = true
 	}
-	for _, name := range []string{"list", "view <id>", "delete <id>", "enable <id>", "disable <id>", "skus <id>"} {
+	for _, name := range []string{"create", "list", "view <id>", "delete <id>", "enable <id>", "disable <id>", "skus <id>"} {
 		if !subs[name] {
 			t.Errorf("missing subcommand %q", name)
 		}

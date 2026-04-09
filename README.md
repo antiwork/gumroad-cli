@@ -69,7 +69,7 @@ gumroad sales refund abc123 --amount 5.00 --dry-run
 ```
 gumroad auth          login, status, logout
 gumroad user          View your account info
-gumroad products      list, view, delete, enable, disable, skus
+gumroad products      create, list, view, delete, enable, disable, skus
 gumroad sales         list, view, refund, ship, resend-receipt
 gumroad payouts       list, view, upcoming
 gumroad subscribers   list, view
@@ -132,7 +132,7 @@ If you decline a confirmation prompt, mutating commands still emit JSON in machi
 
 `gumroad` maps 1:1 to the [Gumroad API v2](https://app.gumroad.com/api). The CLI exposes everything the API supports today — but the API has some gaps worth knowing about:
 
-- **No product create/update** — the API routes exist but are not implemented. Products must be created and edited through the web UI. The CLI supports delete, enable, and disable which do work.
+- **No product update** — the update API endpoint is not yet supported by the CLI. Products can be created via `gumroad products create` (as drafts) and published via `gumroad products enable`.
 - **No analytics or audience data** — no API endpoints exist for dashboard stats, traffic, or email lists.
 - **No bulk operations** — all actions are one resource at a time.
 - **Limited filtering** — `gumroad sales list` supports date/email/product filters, but `gumroad products list` returns everything with no filtering.
@@ -162,7 +162,7 @@ cmd/gumroad/main.go    Entry point
 internal/
   cmd/                 Command implementations (cobra)
     auth/              Authentication (login, status, logout)
-    products/          gumroad products list|view|delete|enable|disable
+    products/          gumroad products create|list|view|delete|enable|disable
     sales/             gumroad sales list|view|refund|ship|resend-receipt
     ...                One package per noun
   api/                 HTTP client for Gumroad API v2
