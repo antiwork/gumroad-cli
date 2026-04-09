@@ -49,7 +49,6 @@ func ParseSignedMoney(flag, value, noun, currency string) (int, error) {
 	return parseMoney(flag, value, noun, currency)
 }
 
-
 // FormatMoney converts a minor-unit amount back to a user-friendly string
 // (e.g. 1099 → "10.99", 1000 → "10.00", -150 → "-1.50").
 // For single-unit currencies like JPY, returns the amount as-is (e.g. 1000 → "1000").
