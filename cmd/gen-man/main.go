@@ -32,7 +32,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	root.DisableAutoGenTag = true
 
 	if err := cobradoc.GenManTree(root, &cobradoc.GenManHeader{
-		Title:   "GR",
+		Title:   "GUMROAD",
 		Section: "1",
 		Source:  "Gumroad",
 		Manual:  "Gumroad CLI",

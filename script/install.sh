@@ -62,7 +62,7 @@ check_requirements() {
 
     if [[ "$OS" == "windows" ]]; then
         if ! command -v unzip &>/dev/null; then
-            echo "Error: unzip is required on Windows but not found. Install it with: pacman -S unzip" >&2
+            echo "Error: unzip is required on Windows but not found. Install it via your package manager (pacman -S unzip for MSYS2/Git Bash, or Cygwin setup for Cygwin)." >&2
             exit 1
         fi
     else
@@ -99,9 +99,15 @@ detect_platform() {
 }
 
 resolve_version() {
-    local url version
+    local url version curl_exit=0
     url=$(curl -fsS -o /dev/null -w '%{redirect_url}' --max-redirs 0 \
-        "https://github.com/${REPO}/releases/latest" 2>/dev/null) || true
+        "https://github.com/${REPO}/releases/latest" 2>/dev/null) || curl_exit=$?
+
+    if [[ "$curl_exit" -ne 0 ]]; then
+        echo "Error: failed to reach GitHub (curl exit ${curl_exit}). Check your network connection." >&2
+        exit 1
+    fi
+
     version="${url##*/}"
 
     if [[ ! $version =~ ^v[0-9]+\.[0-9]+\.[0-9]+ ]]; then
@@ -171,9 +177,15 @@ install_binary() {
     fi
 
     if [[ -d "${WORK_DIR}/man" ]] && [[ "$OS" != "windows" ]]; then
-        local man_dir="${HOME}/.local/share/man/man1"
-        mkdir -p "$man_dir"
-        cp "${WORK_DIR}"/man/*.1 "$man_dir/" 2>/dev/null || true
+        local man_dir man_files
+        man_dir="$(dirname "$BIN_DIR")/share/man/man1"
+        shopt -s nullglob
+        man_files=("${WORK_DIR}"/man/*.1)
+        shopt -u nullglob
+        if [[ ${#man_files[@]} -gt 0 ]]; then
+            mkdir -p "$man_dir"
+            cp "${man_files[@]}" "$man_dir/"
+        fi
     fi
 }
 
@@ -209,7 +221,11 @@ setup_path() {
         *)      shell_rc="$HOME/.profile" ;;
     esac
 
-    if [[ -f "$shell_rc" ]] && grep -qF "$BIN_DIR" "$shell_rc" 2>/dev/null; then
+    local guard_pattern="export PATH=\"$BIN_DIR:\$PATH\""
+    if [[ "${SHELL:-}" == */fish ]]; then
+        guard_pattern="fish_add_path -- \"$BIN_DIR\""
+    fi
+    if [[ -f "$shell_rc" ]] && grep -qxF "$guard_pattern" "$shell_rc" 2>/dev/null; then
         return 0
     fi
 
