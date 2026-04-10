@@ -1,5 +1,11 @@
 version: 2
 
+project_name: gumroad-cli
+
+before:
+  hooks:
+    - go run ./cmd/gen-man
+
 builds:
   - main: ./cmd/gumroad
     binary: gumroad
@@ -16,6 +22,8 @@ builds:
 archives:
   - format: tar.gz
     name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - man/*.1
     format_overrides:
       - goos: windows
         format: zip
@@ -23,10 +31,20 @@ archives:
 checksum:
   name_template: "checksums.txt"
 
-# Brew tap — inactive until packaging is set up
-# brews:
-#   - repository:
-#       owner: antiwork
-#       name: homebrew-tap
-#     homepage: https://gumroad.com
-#     description: CLI for the Gumroad API
+brews:
+  - name: gumroad
+    repository:
+      owner: antiwork
+      name: homebrew-cli
+      branch: main
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    directory: Formula
+    homepage: https://gumroad.com
+    description: CLI for the Gumroad API
+    license: MIT
+    install: |
+      bin.install "gumroad"
+      man1.install Dir["man/*.1"]
+      generate_completions_from_executable(bin/"gumroad", "completion")
+    test: |
+      system bin/"gumroad", "--version"

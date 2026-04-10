@@ -18,13 +18,27 @@ $ gumroad sales list --json --jq '.sales[0].email'
 
 ## Install
 
+**Homebrew** (macOS and Linux):
+
+```sh
+brew install antiwork/cli/gumroad
+```
+
+**Shell script** (macOS, Linux, and Windows via Git Bash):
+
+```sh
+curl -fsSL https://gumroad.com/install-cli | bash
+```
+
+> Homebrew and the install script require a published release. Until the first release is tagged, use `go install` or build from source.
+
 **Go**:
 
 ```sh
 go install github.com/antiwork/gumroad-cli/cmd/gumroad@latest
 ```
 
-**Local install with man pages and completions**:
+**From source** with man pages and completions:
 
 ```sh
 make install
@@ -34,10 +48,6 @@ make install PREFIX="$HOME/.local"
 ```
 
 Under the selected `PREFIX`, `make install` places the binary in `bin/`, man pages in `share/man/man1/`, and shell completions under `share/`.
-
-**Binary releases**: Not published yet. For now, install with `go install` or build locally with `make build`.
-
-Homebrew packaging is not active yet.
 
 ## Quick start
 
