@@ -21,7 +21,7 @@ $ gumroad sales list --json --jq '.sales[0].email'
 **Homebrew** (macOS and Linux):
 
 ```sh
-brew install antiwork/cli/gumroad
+brew install --cask antiwork/cli/gumroad
 ```
 
 **Shell script** (macOS, Linux, and Windows via Git Bash):
