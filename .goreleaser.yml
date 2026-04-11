@@ -39,7 +39,26 @@ homebrew_casks:
       branch: main
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
     directory: Casks
+    url:
+      verified: github.com/antiwork/gumroad-cli/
     homepage: https://gumroad.com
     description: CLI for the Gumroad API
     binaries:
       - gumroad
+    manpages:
+      - man/*.1
+    generate_completions_from_executable:
+      args:
+        - completion
+      shell_parameter_format: cobra
+    caveats: |
+      `gumroad` is currently distributed as an unsigned, non-notarized binary.
+      On macOS, this cask removes the quarantine bit after install.
+      If Gatekeeper still blocks execution, run:
+        xattr -dr com.apple.quarantine "$(brew --prefix)/bin/gumroad"
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/gumroad"]
+          end

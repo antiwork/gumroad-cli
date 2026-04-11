@@ -18,11 +18,13 @@ $ gumroad sales list --json --jq '.sales[0].email'
 
 ## Install
 
-**Homebrew** (macOS and Linux):
+**Homebrew**:
 
 ```sh
 brew install --cask antiwork/cli/gumroad
 ```
+
+On macOS, this installs the binary, man pages, and shell completions. Linux Homebrew support for casks depends on the Homebrew version and cask support available on your system; if `brew install --cask` is unavailable, use the shell script below.
 
 **Shell script** (macOS, Linux, and Windows via Git Bash):
 
