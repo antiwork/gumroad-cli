@@ -6,16 +6,6 @@ CLI for the [Gumroad API](https://app.gumroad.com/api). Designed for humans and 
 [![Go](https://img.shields.io/github/go-mod/go-version/antiwork/gumroad-cli)](https://github.com/antiwork/gumroad-cli)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/antiwork/gumroad-cli/blob/main/LICENSE)
 
-```
-$ gumroad products list
-ID            NAME              STATUS     PRICE    SALES
-abc123        Design Templates  published  $25.00   42
-def456        Icon Pack         published  $10.00   187
-
-$ gumroad sales list --json --jq '.sales[0].email'
-"customer@example.com"
-```
-
 ## Install
 
 ```sh
@@ -160,11 +150,6 @@ A [Claude Code skill](.claude/skills/gumroad-cli/SKILL.md) is included in this r
 
 - **Webhook deletion** requires the token's OAuth app to match the app that created the subscription. Webhooks created through the web UI cannot be deleted via the API.
 
-**API quirks the CLI normalizes:**
-
-- Gumroad returns `200 OK` with `success: false` for many errors — the CLI detects this and returns proper error codes.
-- Some numeric fields arrive as `0` or `0.0` depending on state.
-- Optional fields may be `null`, empty string, or omitted entirely.
 
 ## Design principles
 
