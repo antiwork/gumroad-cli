@@ -27,6 +27,7 @@ type commandErrorDetail struct {
 	Type       string `json:"type"`
 	Code       string `json:"code,omitempty"`
 	Message    string `json:"message"`
+	Hint       string `json:"hint,omitempty"`
 	StatusCode int    `json:"status_code,omitempty"`
 }
 
@@ -63,13 +64,19 @@ func classifyCommandError(err error) commandErrorDetail {
 			Type:       "api_error",
 			Code:       apiErrorCode(apiErr.StatusCode),
 			Message:    apiErr.Error(),
+			Hint:       apiErr.GetHint(),
 			StatusCode: apiErr.StatusCode,
 		}
 	case errors.Is(err, config.ErrNotAuthenticated), errors.Is(err, api.ErrNotAuthenticated):
+		hint := api.HintRunAuthLogin
+		if strings.Contains(err.Error(), "gumroad auth login") {
+			hint = ""
+		}
 		return commandErrorDetail{
 			Type:    "auth_error",
 			Code:    "not_authenticated",
 			Message: err.Error(),
+			Hint:    hint,
 		}
 	case errors.Is(err, prompt.ErrConfirmationNoInput), errors.Is(err, prompt.ErrConfirmationNonInteractive):
 		return invalidInputErrorDetail(err.Error())

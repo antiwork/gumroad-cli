@@ -196,7 +196,8 @@ func (c *Client) do(method, path string, params url.Values) (json.RawMessage, er
 		}
 		if err := json.Unmarshal(data, &envelope); err == nil {
 			if envelope.Success != nil && !*envelope.Success {
-				err := &APIError{StatusCode: resp.StatusCode, Message: rewriteError(resp.StatusCode, envelope.Message)}
+				msg, hint := rewriteError(resp.StatusCode, envelope.Message)
+				err := &APIError{StatusCode: resp.StatusCode, Message: msg, Hint: hint}
 				logResponse(resp.StatusCode, len(data), err, start)
 				return nil, err
 			}
