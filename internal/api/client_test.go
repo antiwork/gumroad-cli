@@ -652,8 +652,11 @@ func TestClient_HTTP401Error(t *testing.T) {
 	if apiErr.StatusCode != 401 {
 		t.Errorf("got status %d, want 401", apiErr.StatusCode)
 	}
-	if apiErr.Message != "Not authenticated. Run `gumroad auth login` or set `GUMROAD_ACCESS_TOKEN`." {
+	if apiErr.Message != "Not authenticated." {
 		t.Errorf("got message %q", apiErr.Message)
+	}
+	if apiErr.Hint != HintRunAuthLogin {
+		t.Errorf("got hint %q", apiErr.Hint)
 	}
 }
 

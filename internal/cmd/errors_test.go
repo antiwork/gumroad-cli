@@ -35,6 +35,70 @@ func TestPrintStructuredCommandError(t *testing.T) {
 	}
 }
 
+func TestPrintStructuredCommandError_WithHint(t *testing.T) {
+	var buf bytes.Buffer
+	err := printStructuredCommandError(&buf, &api.APIError{StatusCode: 401, Message: "Not authenticated.", Hint: api.HintRunAuthLogin})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var payload commandErrorEnvelope
+	if err := json.Unmarshal(buf.Bytes(), &payload); err != nil {
+		t.Fatalf("expected JSON output, got %v with %q", err, buf.String())
+	}
+	if payload.Error.Hint != api.HintRunAuthLogin {
+		t.Errorf("got hint %q, want %q", payload.Error.Hint, api.HintRunAuthLogin)
+	}
+}
+
+func TestClassifyCommandError_APIWithHint(t *testing.T) {
+	detail := classifyCommandError(&api.APIError{StatusCode: 404, Message: "Resource not found.", Hint: "Check the resource ID and try again."})
+	if detail.Hint != "Check the resource ID and try again." {
+		t.Errorf("got hint %q", detail.Hint)
+	}
+}
+
+func TestClassifyCommandError_AuthHint(t *testing.T) {
+	detail := classifyCommandError(config.ErrNotAuthenticated)
+	if detail.Hint != api.HintRunAuthLogin {
+		t.Errorf("got hint %q, want %q", detail.Hint, api.HintRunAuthLogin)
+	}
+}
+
+func TestClassifyCommandError_WrappedAPIError(t *testing.T) {
+	wrapped := fmt.Errorf("invalid token: %w", &api.APIError{StatusCode: 401, Message: "Not authenticated.", Hint: api.HintRunAuthLogin})
+	detail := classifyCommandError(wrapped)
+	if detail.Type != "api_error" || detail.Code != "not_authenticated" {
+		t.Fatalf("unexpected detail: %+v", detail)
+	}
+	if detail.Hint != api.HintRunAuthLogin {
+		t.Errorf("got hint %q, want %q", detail.Hint, api.HintRunAuthLogin)
+	}
+}
+
+func TestClassifyCommandError_WrappedConfigAuth(t *testing.T) {
+	wrapped := fmt.Errorf("setup failed: %w", config.ErrNotAuthenticated)
+	detail := classifyCommandError(wrapped)
+	if detail.Type != "auth_error" || detail.Code != "not_authenticated" {
+		t.Fatalf("unexpected detail: %+v", detail)
+	}
+	if detail.Hint != api.HintRunAuthLogin {
+		t.Errorf("got hint %q, want %q", detail.Hint, api.HintRunAuthLogin)
+	}
+}
+
+func TestClassifyCommandError_ConfigAuthWithRemediationInMessage(t *testing.T) {
+	// Simulates the real error from config.ResolveToken which already embeds remediation.
+	wrapped := fmt.Errorf("%w. Run `gumroad auth login` first or set `GUMROAD_ACCESS_TOKEN`", config.ErrNotAuthenticated)
+	detail := classifyCommandError(wrapped)
+	if detail.Type != "auth_error" || detail.Code != "not_authenticated" {
+		t.Fatalf("unexpected detail: %+v", detail)
+	}
+	if detail.Hint != "" {
+		t.Errorf("expected empty hint when message already contains remediation, got %q", detail.Hint)
+	}
+}
+
 func TestClassifyCommandError_Nil(t *testing.T) {
 	detail := classifyCommandError(nil)
 	if detail.Type != "internal_error" || detail.Code != "unknown_error" {

@@ -37,7 +37,7 @@ func TestParseAPIError_401(t *testing.T) {
 	body := []byte(`{"success":false}`)
 	err := parseAPIError(401, body)
 	apiErr := mustAPIError(t, err)
-	if apiErr.Message != "Not authenticated. Run `gumroad auth login` or set `GUMROAD_ACCESS_TOKEN`." {
+	if apiErr.Message != "Not authenticated." {
 		t.Errorf("got message %q", apiErr.Message)
 	}
 	if !errors.Is(err, ErrNotAuthenticated) {
@@ -60,7 +60,7 @@ func TestParseAPIError_403_WithMessage(t *testing.T) {
 func TestParseAPIError_403_NoMessage(t *testing.T) {
 	body := []byte(`{"success":false}`)
 	apiErr := mustAPIError(t, parseAPIError(403, body))
-	if apiErr.Message != "Access denied. Your token may not have the required scope." {
+	if apiErr.Message != "Access denied." {
 		t.Errorf("got message %q", apiErr.Message)
 	}
 }
@@ -141,5 +141,47 @@ func TestAPIErrorIs(t *testing.T) {
 	}
 	if err401.Is(nil) {
 		t.Fatal("did not expect nil target to match")
+	}
+}
+
+func TestAPIError_Hints(t *testing.T) {
+	tests := []struct {
+		name       string
+		statusCode int
+		body       string
+		wantHint   string
+	}{
+		{"401", 401, `{"success":false}`, HintRunAuthLogin},
+		{"403", 403, `{"success":false}`, "Check that your token has the required scope."},
+		{"404", 404, `{"success":false}`, "Check the resource ID and try again."},
+		{"429", 429, `{"success":false,"message":"Rate limited"}`, "Wait a moment and retry."},
+		{"500", 500, `{"success":false}`, ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			apiErr := mustAPIError(t, parseAPIError(tt.statusCode, []byte(tt.body)))
+			if apiErr.Hint != tt.wantHint {
+				t.Errorf("got hint %q, want %q", apiErr.Hint, tt.wantHint)
+			}
+		})
+	}
+}
+
+func TestHintedErrorInterface(t *testing.T) {
+	err := &APIError{StatusCode: 401, Message: "Not authenticated.", Hint: HintRunAuthLogin}
+	var hinted HintedError
+	if !errors.As(err, &hinted) {
+		t.Fatal("expected APIError to satisfy HintedError")
+	}
+	if hinted.GetHint() != HintRunAuthLogin {
+		t.Errorf("got hint %q", hinted.GetHint())
+	}
+}
+
+func TestAPIError_GetHint_Nil(t *testing.T) {
+	var err *APIError
+	if err.GetHint() != "" {
+		t.Errorf("expected empty hint from nil receiver")
 	}
 }

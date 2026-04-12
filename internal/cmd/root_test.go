@@ -10,7 +10,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/antiwork/gumroad-cli/internal/api"
 	"github.com/antiwork/gumroad-cli/internal/cmdutil"
+	"github.com/antiwork/gumroad-cli/internal/config"
+	"github.com/antiwork/gumroad-cli/internal/output"
 	"github.com/spf13/cobra"
 )
 
@@ -521,5 +524,65 @@ func TestCommandContext_PrefersCommandContext(t *testing.T) {
 
 	if got := commandContext(cmd).Value(contextKey("trace")); got != "abc123" {
 		t.Fatalf("got context value %v, want abc123", got)
+	}
+}
+
+func TestHintFromError(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want string
+	}{
+		{"api_error_with_hint", &api.APIError{StatusCode: 401, Message: "Not authenticated.", Hint: api.HintRunAuthLogin}, api.HintRunAuthLogin},
+		{"api_error_no_hint", &api.APIError{StatusCode: 500, Message: "Server error"}, ""},
+		{"config_not_authenticated", config.ErrNotAuthenticated, api.HintRunAuthLogin},
+		{"wrapped_api_error", fmt.Errorf("invalid token: %w", &api.APIError{StatusCode: 401, Message: "Not authenticated.", Hint: api.HintRunAuthLogin}), api.HintRunAuthLogin},
+		{"wrapped_config_error", fmt.Errorf("setup failed: %w", config.ErrNotAuthenticated), api.HintRunAuthLogin},
+		{"wrapped_api_not_authenticated", fmt.Errorf("check failed: %w", api.ErrNotAuthenticated), api.HintRunAuthLogin},
+		{"config_auth_with_remediation", fmt.Errorf("%w. Run `gumroad auth login` first or set `GUMROAD_ACCESS_TOKEN`", config.ErrNotAuthenticated), ""},
+		{"plain_error", errors.New("boom"), ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := hintFromError(tt.err); got != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestPrintHumanCommandError_ShowsHint(t *testing.T) {
+	output.SetColorEnabledForTesting(false)
+	defer output.ResetColorEnabledForTesting()
+
+	cmd := &cobra.Command{Use: "test"}
+	var stderr bytes.Buffer
+	cmd.SetErr(&stderr)
+
+	printHumanCommandError(cmd, &api.APIError{StatusCode: 401, Message: "Not authenticated.", Hint: api.HintRunAuthLogin})
+
+	got := stderr.String()
+	if !strings.Contains(got, "Error: Not authenticated.") {
+		t.Errorf("expected error message, got %q", got)
+	}
+	if !strings.Contains(got, "Hint: Run: gumroad auth login") {
+		t.Errorf("expected hint line, got %q", got)
+	}
+}
+
+func TestPrintHumanCommandError_NoHint(t *testing.T) {
+	output.SetColorEnabledForTesting(false)
+	defer output.ResetColorEnabledForTesting()
+
+	cmd := &cobra.Command{Use: "test"}
+	var stderr bytes.Buffer
+	cmd.SetErr(&stderr)
+
+	printHumanCommandError(cmd, errors.New("something broke"))
+
+	got := stderr.String()
+	if strings.Contains(got, "Hint:") {
+		t.Errorf("expected no hint line, got %q", got)
 	}
 }
