@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -183,7 +184,7 @@ func TestSkillInstall_OverwritesExisting(t *testing.T) {
 	path := filepath.Join(dir, "SKILL.md")
 
 	// Write old content
-	if err := os.WriteFile(path, []byte("old content"), 0644); err != nil {
+	if err := os.WriteFile(path, []byte("old content"), 0600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -311,7 +312,6 @@ func TestSkill_TTY_SelectError(t *testing.T) {
 	}
 }
 
-
 func TestDefaultTargets_NoHome(t *testing.T) {
 	origHome := userHomeDir
 	userHomeDir = func() (string, error) { return "", fmt.Errorf("no home") }
@@ -338,14 +338,24 @@ func TestDefaultTargets_WithHome(t *testing.T) {
 }
 
 func TestSkillInstall_ReplacesExistingSymlink(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlinks require elevated privileges on Windows")
+	}
+
 	dir := t.TempDir()
 	linkPath := filepath.Join(dir, "link")
 	target1 := filepath.Join(dir, "target1")
 	target2 := filepath.Join(dir, "target2")
 
-	os.WriteFile(target1, []byte("old"), 0644)
-	os.WriteFile(target2, []byte("new"), 0644)
-	os.Symlink(target1, linkPath)
+	if err := os.WriteFile(target1, []byte("old"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(target2, []byte("new"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target1, linkPath); err != nil {
+		t.Fatal(err)
+	}
 
 	opts := testutil.TestOptions()
 	err := symlinkSkillFile(linkPath, target2, opts)
@@ -360,8 +370,19 @@ func TestSkillInstall_ReplacesExistingSymlink(t *testing.T) {
 }
 
 func TestSymlinkSkillFile_InvalidDir(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlinks require elevated privileges on Windows")
+	}
+
+	dir := t.TempDir()
+	// Use a file as parent to make MkdirAll fail (cross-platform)
+	blocker := filepath.Join(dir, "blocker")
+	if err := os.WriteFile(blocker, []byte("x"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
 	opts := testutil.TestOptions()
-	err := symlinkSkillFile("/dev/null/impossible/link", "/tmp/target", opts)
+	err := symlinkSkillFile(filepath.Join(blocker, "sub", "link"), filepath.Join(dir, "target"), opts)
 	if err == nil {
 		t.Fatal("expected error for invalid directory")
 	}
@@ -371,9 +392,15 @@ func TestSymlinkSkillFile_InvalidDir(t *testing.T) {
 }
 
 func TestSymlinkSkillFile_Success(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlinks require elevated privileges on Windows")
+	}
+
 	dir := t.TempDir()
 	targetPath := filepath.Join(dir, "target")
-	os.WriteFile(targetPath, []byte("content"), 0644)
+	if err := os.WriteFile(targetPath, []byte("content"), 0600); err != nil {
+		t.Fatal(err)
+	}
 
 	linkPath := filepath.Join(dir, "sub", "link")
 	opts := testutil.TestOptions()
@@ -389,11 +416,16 @@ func TestSymlinkSkillFile_Success(t *testing.T) {
 }
 
 func TestSymlinkSkillFile_NoExistingFile(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlinks require elevated privileges on Windows")
+	}
+
 	dir := t.TempDir()
 	targetPath := filepath.Join(dir, "target")
-	os.WriteFile(targetPath, []byte("content"), 0644)
+	if err := os.WriteFile(targetPath, []byte("content"), 0600); err != nil {
+		t.Fatal(err)
+	}
 
-	// linkPath doesn't exist yet — Remove should silently ignore ErrNotExist
 	linkPath := filepath.Join(dir, "newlink")
 	opts := testutil.TestOptions()
 	err := symlinkSkillFile(linkPath, targetPath, opts)
@@ -408,18 +440,31 @@ func TestSymlinkSkillFile_NoExistingFile(t *testing.T) {
 }
 
 func TestWriteSkillFile_InvalidPath(t *testing.T) {
+	dir := t.TempDir()
+	// Use a file as parent to make MkdirAll fail (cross-platform)
+	blocker := filepath.Join(dir, "blocker")
+	if err := os.WriteFile(blocker, []byte("x"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
 	opts := testutil.TestOptions()
-	err := writeSkillFile("/dev/null/impossible/path", []byte("content"), opts)
+	err := writeSkillFile(filepath.Join(blocker, "sub", "SKILL.md"), []byte("content"), opts)
 	if err == nil {
 		t.Fatal("expected error for invalid path")
 	}
 }
 
 func TestWriteSkillFile_ReadOnlyDir(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows does not enforce Unix directory permissions")
+	}
+
 	dir := t.TempDir()
 	readOnlyDir := filepath.Join(dir, "readonly")
-	os.MkdirAll(readOnlyDir, 0555)
-	t.Cleanup(func() { os.Chmod(readOnlyDir, 0755) })
+	if err := os.MkdirAll(readOnlyDir, 0555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(readOnlyDir, 0755) })
 
 	opts := testutil.TestOptions()
 	err := writeSkillFile(filepath.Join(readOnlyDir, "sub", "SKILL.md"), []byte("content"), opts)

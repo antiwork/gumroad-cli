@@ -167,7 +167,7 @@ func writeSkillFile(path string, content []byte, opts cmdutil.Options) error {
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return fmt.Errorf("could not create directory %s: %w", dir, err)
 	}
-	if err := os.WriteFile(path, content, 0644); err != nil {
+	if err := os.WriteFile(path, content, 0600); err != nil {
 		return fmt.Errorf("could not write %s: %w", path, err)
 	}
 	return cmdutil.PrintSuccess(opts, fmt.Sprintf("Installed skill to %s", path))
