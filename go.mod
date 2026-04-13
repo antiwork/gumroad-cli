@@ -3,6 +3,7 @@ module github.com/antiwork/gumroad-cli
 go 1.25.4
 
 require (
+	github.com/cli/browser v1.3.0
 	github.com/itchyny/gojq v0.12.18
 	github.com/mattn/go-runewidth v0.0.19
 	github.com/spf13/cobra v1.10.2

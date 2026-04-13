@@ -17,6 +17,7 @@ type Spinner struct {
 	writer  io.Writer
 	done    chan struct{}
 	mu      sync.Mutex
+	wg      sync.WaitGroup
 	active  bool
 }
 
@@ -46,7 +47,9 @@ func (s *Spinner) Start() {
 	s.mu.Unlock()
 
 	frames := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+	s.wg.Add(1)
 	go func() {
+		defer s.wg.Done()
 		i := 0
 		for {
 			select {
@@ -64,9 +67,13 @@ func (s *Spinner) Start() {
 
 func (s *Spinner) Stop() {
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	wasActive := s.active
 	if s.active {
 		close(s.done)
 		s.active = false
+	}
+	s.mu.Unlock()
+	if wasActive {
+		s.wg.Wait()
 	}
 }

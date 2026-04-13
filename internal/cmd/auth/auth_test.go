@@ -3,16 +3,39 @@ package auth
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/antiwork/gumroad-cli/internal/config"
+	"github.com/antiwork/gumroad-cli/internal/oauth"
 	"github.com/antiwork/gumroad-cli/internal/testutil"
 )
+
+// syncBuffer is a thread-safe bytes.Buffer for concurrent test read/write.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
 
 func setupAuth(t *testing.T, handler http.HandlerFunc) {
 	t.Helper()
@@ -934,6 +957,324 @@ func TestLogout_NonInteractiveRequiresYes(t *testing.T) {
 	// Config should still exist
 	if _, statErr := os.Stat(filepath.Join(cfgDir, "gumroad", "config.json")); statErr != nil {
 		t.Error("config should not be deleted when confirmation is blocked")
+	}
+}
+
+// --- OAuth Login ---
+
+func withTerminal(t *testing.T, isTTY bool) {
+	t.Helper()
+	old := isTerminalFunc
+	isTerminalFunc = func(r interface{}) bool { return isTTY }
+	t.Cleanup(func() { isTerminalFunc = old })
+}
+
+// withMockBrowser replaces oauth.OpenBrowser with a function that simulates
+// the browser by hitting the callback endpoint directly.
+func withMockBrowser(t *testing.T) {
+	t.Helper()
+	old := oauth.OpenBrowser
+	oauth.OpenBrowser = func(authURL string) error {
+		u, err := url.Parse(authURL)
+		if err != nil {
+			return err
+		}
+		redirectURI := u.Query().Get("redirect_uri")
+		state := u.Query().Get("state")
+		callbackURL := fmt.Sprintf("%s?code=test-auth-code&state=%s", redirectURI, state)
+		resp, err := http.Get(callbackURL) //nolint:gosec // G107: test-only, URL from test server
+		if err != nil {
+			return err
+		}
+		resp.Body.Close()
+		return nil
+	}
+	t.Cleanup(func() { oauth.OpenBrowser = old })
+}
+
+// withMockBrowserFail replaces oauth.OpenBrowser with one that always fails.
+func withMockBrowserFail(t *testing.T) {
+	t.Helper()
+	old := oauth.OpenBrowser
+	oauth.OpenBrowser = func(authURL string) error {
+		return fmt.Errorf("no display available")
+	}
+	t.Cleanup(func() { oauth.OpenBrowser = old })
+}
+
+// setupOAuthTokenServer creates a mock token endpoint and configures the oauth
+// package to use it. Returns the API server for /user verification.
+func setupOAuthTokenServer(t *testing.T) {
+	t.Helper()
+	tokenSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(oauth.TokenResponse{
+			AccessToken: "oauth-access-token-from-server",
+			TokenType:   "bearer",
+			Scope:       "edit_products view_sales",
+		}); err != nil {
+			t.Errorf("encode token response: %v", err)
+		}
+	}))
+	t.Cleanup(tokenSrv.Close)
+
+	// Override OAuth constants for tests.
+	oldCfg := oauth.DefaultFlowConfigFunc
+	oauth.DefaultFlowConfigFunc = func() oauth.FlowConfig {
+		cfg := oldCfg()
+		cfg.TokenURL = tokenSrv.URL + "/oauth/token"
+		return cfg
+	}
+	t.Cleanup(func() { oauth.DefaultFlowConfigFunc = oldCfg })
+}
+
+func TestLogin_OAuth_BrowserFlow(t *testing.T) {
+	withTerminal(t, true)
+	withMockBrowser(t)
+	setupOAuthTokenServer(t)
+	setupAuth(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer oauth-access-token-from-server" {
+			w.WriteHeader(401)
+			if err := json.NewEncoder(w).Encode(map[string]any{"success": false}); err != nil {
+				t.Errorf("encode response: %v", err)
+			}
+			return
+		}
+		if err := json.NewEncoder(w).Encode(map[string]any{
+			"success": true,
+			"user":    map[string]any{"name": "OAuth User", "email": "oauth@test.com"},
+		}); err != nil {
+			t.Errorf("encode response: %v", err)
+		}
+	})
+	cfgDir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", cfgDir)
+
+	var out bytes.Buffer
+	cmd := testutil.Command(newLoginCmd(), testutil.Quiet(false), testutil.Stdout(&out))
+	if err := cmd.RunE(cmd, []string{}); err != nil {
+		t.Fatalf("RunE: %v", err)
+	}
+	if !strings.Contains(out.String(), "OAuth User") {
+		t.Errorf("expected user info in output: %q", out.String())
+	}
+
+	data, err := os.ReadFile(filepath.Join(cfgDir, "gumroad", "config.json"))
+	if err != nil {
+		t.Fatalf("config not saved: %v", err)
+	}
+	if !strings.Contains(string(data), "oauth-access-token-from-server") {
+		t.Errorf("config should contain OAuth token, got: %s", data)
+	}
+}
+
+func TestLogin_OAuth_BrowserFails_FallsBackToHeadless(t *testing.T) {
+	withTerminal(t, true)
+	withMockBrowserFail(t)
+	setupOAuthTokenServer(t)
+	setupAuth(t, func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewEncoder(w).Encode(map[string]any{
+			"success": true,
+			"user":    map[string]any{"name": "Headless User", "email": "h@test.com"},
+		}); err != nil {
+			t.Errorf("encode response: %v", err)
+		}
+	})
+	cfgDir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", cfgDir)
+
+	var out bytes.Buffer
+
+	// Use a mutex-protected buffer for stderr to avoid data races
+	// between the command goroutine writing and the test goroutine reading.
+	errOut := &syncBuffer{}
+
+	pr, pw, _ := os.Pipe()
+	cmd := testutil.Command(newLoginCmd(), testutil.Quiet(false), testutil.Stdout(&out), testutil.Stderr(errOut), testutil.Stdin(pr))
+
+	done := make(chan error, 1)
+	go func() {
+		done <- cmd.RunE(cmd, []string{})
+	}()
+
+	// Poll stderr until the headless prompt appears.
+	var state string
+	for i := 0; i < 200; i++ {
+		time.Sleep(10 * time.Millisecond)
+		content := errOut.String()
+		if strings.Contains(content, "Paste the full URL") {
+			for _, line := range strings.Split(content, "\n") {
+				line = strings.TrimSpace(line)
+				if strings.HasPrefix(line, "http") {
+					u, _ := url.Parse(line)
+					state = u.Query().Get("state")
+					break
+				}
+			}
+			break
+		}
+	}
+
+	if state == "" {
+		pw.Close()
+		<-done
+		t.Fatalf("could not extract state from headless prompt. stderr: %q", errOut.String())
+	}
+
+	fmt.Fprintf(pw, "http://127.0.0.1/callback?code=headless-code&state=%s\n", state)
+	pw.Close()
+
+	if err := <-done; err != nil {
+		t.Fatalf("RunE: %v", err)
+	}
+}
+
+func TestLogin_OAuth_WebFlag_NoFallback(t *testing.T) {
+	withTerminal(t, true)
+	withMockBrowserFail(t)
+	setupOAuthTokenServer(t)
+	setupAuth(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Error("should not reach API when --web fails")
+	})
+	cfgDir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", cfgDir)
+
+	cmd := testutil.Command(newLoginCmd())
+	if err := cmd.Flags().Set("web", "true"); err != nil {
+		t.Fatalf("set --web flag: %v", err)
+	}
+	err := cmd.RunE(cmd, []string{})
+	if err == nil || !strings.Contains(err.Error(), "browser login failed") {
+		t.Fatalf("expected browser login failed error, got: %v", err)
+	}
+}
+
+func TestLogin_OAuth_VerifyAndSave_401(t *testing.T) {
+	withTerminal(t, true)
+	withMockBrowser(t)
+	setupOAuthTokenServer(t)
+	setupAuth(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(401)
+		if err := json.NewEncoder(w).Encode(map[string]any{"success": false, "message": "Unauthorized"}); err != nil {
+			t.Errorf("encode response: %v", err)
+		}
+	})
+	cfgDir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", cfgDir)
+
+	cmd := testutil.Command(newLoginCmd())
+	err := cmd.RunE(cmd, []string{})
+	if err == nil || !strings.Contains(err.Error(), "invalid token") {
+		t.Fatalf("expected invalid token error, got: %v", err)
+	}
+}
+
+func TestLogin_OAuth_JSONOutput(t *testing.T) {
+	withTerminal(t, true)
+	withMockBrowser(t)
+	setupOAuthTokenServer(t)
+	setupAuth(t, func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewEncoder(w).Encode(map[string]any{
+			"success": true,
+			"user":    map[string]any{"name": "JSON User", "email": "json@test.com"},
+		}); err != nil {
+			t.Errorf("encode response: %v", err)
+		}
+	})
+	cfgDir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", cfgDir)
+
+	var out bytes.Buffer
+	cmd := testutil.Command(newLoginCmd(), testutil.JSONOutput(), testutil.Stdout(&out))
+	if err := cmd.RunE(cmd, []string{}); err != nil {
+		t.Fatalf("RunE: %v", err)
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(out.Bytes(), &resp); err != nil {
+		t.Fatalf("invalid JSON: %v\n%s", err, out.String())
+	}
+	if resp["authenticated"] != true {
+		t.Errorf("authenticated = %v, want true", resp["authenticated"])
+	}
+}
+
+func TestLogin_OAuth_PlainOutput(t *testing.T) {
+	withTerminal(t, true)
+	withMockBrowser(t)
+	setupOAuthTokenServer(t)
+	setupAuth(t, func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewEncoder(w).Encode(map[string]any{
+			"success": true,
+			"user":    map[string]any{"name": "Plain", "email": "p@t.com"},
+		}); err != nil {
+			t.Errorf("encode response: %v", err)
+		}
+	})
+	cfgDir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", cfgDir)
+
+	var out bytes.Buffer
+	cmd := testutil.Command(newLoginCmd(), testutil.PlainOutput(), testutil.Stdout(&out))
+	if err := cmd.RunE(cmd, []string{}); err != nil {
+		t.Fatalf("RunE: %v", err)
+	}
+	if strings.TrimSpace(out.String()) != "true\tPlain\tp@t.com" {
+		t.Fatalf("unexpected plain output: %q", out.String())
+	}
+}
+
+func TestLogin_OAuth_QuietOutput(t *testing.T) {
+	withTerminal(t, true)
+	withMockBrowser(t)
+	setupOAuthTokenServer(t)
+	setupAuth(t, func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewEncoder(w).Encode(map[string]any{
+			"success": true,
+			"user":    map[string]any{"name": "Quiet", "email": "q@t.com"},
+		}); err != nil {
+			t.Errorf("encode response: %v", err)
+		}
+	})
+	cfgDir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", cfgDir)
+
+	var out bytes.Buffer
+	cmd := testutil.Command(newLoginCmd(), testutil.Quiet(true), testutil.Stdout(&out))
+	if err := cmd.RunE(cmd, []string{}); err != nil {
+		t.Fatalf("RunE: %v", err)
+	}
+	if out.String() != "" {
+		t.Errorf("quiet mode should produce no output, got: %q", out.String())
+	}
+}
+
+func TestLogin_PipedStdin_StillWorks(t *testing.T) {
+	withTerminal(t, false)
+	setupAuth(t, func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewEncoder(w).Encode(map[string]any{
+			"success": true,
+			"user":    map[string]any{"name": "Piped", "email": "piped@test.com"},
+		}); err != nil {
+			t.Errorf("encode response: %v", err)
+		}
+	})
+	cfgDir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", cfgDir)
+
+	cmd := testutil.Command(newLoginCmd(), testutil.Stdin(strings.NewReader("piped-token\n")))
+	if err := cmd.RunE(cmd, []string{}); err != nil {
+		t.Fatalf("RunE: %v", err)
+	}
+}
+
+func TestLogin_WebFlag(t *testing.T) {
+	cmd := newLoginCmd()
+	f := cmd.Flags().Lookup("web")
+	if f == nil {
+		t.Fatal("--web flag not found")
+	}
+	if f.DefValue != "false" {
+		t.Errorf("--web default = %q, want false", f.DefValue)
 	}
 }
 
