@@ -2,9 +2,6 @@
 
 CLI for the [Gumroad API](https://app.gumroad.com/api). Designed for humans and AI agents alike.
 
-[![CI](https://github.com/antiwork/gumroad-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/antiwork/gumroad-cli/actions/workflows/ci.yml)
-[![Go](https://img.shields.io/github/go-mod/go-version/antiwork/gumroad-cli)](https://github.com/antiwork/gumroad-cli)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/antiwork/gumroad-cli/blob/main/LICENSE)
 
 ## Install
 
@@ -111,63 +108,11 @@ Run `gumroad <command> --help` for usage details and examples.
 
 Paginated commands (`sales list`, `payouts list`, `subscribers list`) accept `--all` to fetch every page. Use `--page-delay 200ms` to pace large fetches.
 
-Mutation commands (create, update, delete, refund, ship) emit a JSON envelope with `--json`:
-
-```json
-{
-  "success": true,
-  "message": "Product prod_123 deleted.",
-  "result": { "...": "raw API response" }
-}
-```
-
-If you decline a confirmation prompt, the envelope includes `success: false`, `cancelled: true`, and `result: null`.
-
-## Shell completion
-
-```sh
-source <(gumroad completion bash)                        # Bash
-gumroad completion zsh > "${fpath[1]}/_gumroad"          # Zsh
-gumroad completion fish | source                         # Fish
-gumroad completion powershell | Out-String | Invoke-Expression  # PowerShell
-```
-
 ## AI agents
 
 `gumroad` is built to work with AI agents. The `--json`, `--jq`, and `--no-input` flags make it easy to query Gumroad data programmatically, and `GUMROAD_ACCESS_TOKEN` gives agents a no-persistence auth path.
 
 A [Claude Code skill](skills/gumroad/SKILL.md) is included. Run `gumroad skill` to install or refresh it.
-
-## API coverage
-
-`gumroad` covers the [Gumroad API v2](https://app.gumroad.com/api) — products, sales, payouts, subscribers, licenses, offer codes, variant categories, variants, custom fields, and webhooks are all implemented.
-
-**Not yet in the CLI:**
-
-- **File uploads** — the API supports a presign → S3 upload → complete workflow for product files, covers, and thumbnails. The CLI does not yet wrap this. Use the web UI for file management.
-- **Rich content pages** — Gumroad's multi-section page editor (the "Content" tab) has no public API. Product descriptions (`--description`, HTML) are fully supported.
-
-
-## Design principles
-
-Built following [clig.dev](https://clig.dev/) guidelines and [`gh`](https://github.com/cli/cli) conventions:
-
-- **Human-first, machine-readable on demand** — formatted output by default, `--json`/`--plain` for machines
-- **Secrets stay off the command line** — login uses browser OAuth or reads from stdin; token stored with `0600` permissions
-- **Headless-friendly auth** — `GUMROAD_ACCESS_TOKEN` overrides stored config for shells, agents, and CI
-- **Confirm destructive ops** — interactive confirmation for delete/refund, `--yes` to skip
-- **Safe previews** — `--dry-run` shows mutating requests without executing them
-- **Rewrite errors for humans** — no raw API JSON, actionable suggestions instead
-- **Respect the terminal** — colors off when not TTY or `NO_COLOR` set, pager for long output
-
-## Configuration
-
-```
-~/.config/gumroad/config.json    # macOS/Linux (0600 permissions)
-%APPDATA%\gumroad\config.json    # Windows
-```
-
-On Unix, `XDG_CONFIG_HOME` is respected if set. `GUMROAD_ACCESS_TOKEN` takes precedence over the stored config.
 
 ## Development
 
@@ -187,22 +132,6 @@ Live smoke test:
 GUMROAD_ACCESS_TOKEN=your-token make test-smoke
 ```
 
-### Architecture
-
-```
-cmd/gumroad/main.go    Entry point
-internal/
-  cmd/                 Command packages (one per noun, cobra)
-  api/                 HTTP client for Gumroad API v2
-  oauth/               OAuth browser login with PKCE
-  config/              XDG-compliant config
-  output/              Table, JSON, plain, color, spinner, pager
-  prompt/              Interactive input and confirmations
-  cmdutil/             Shared command utilities
-  testutil/            Mock HTTP server and test helpers
-```
-
-Built with Go, [cobra](https://github.com/spf13/cobra), and [gojq](https://github.com/itchyny/gojq).
 
 ## License
 
