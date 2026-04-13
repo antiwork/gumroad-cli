@@ -5,7 +5,7 @@ import "time"
 const (
 	// ClientID is the public OAuth application UID for the Gumroad CLI.
 	// This is a public client (confidential: false) — the client ID is not secret.
-	ClientID = "PLACEHOLDER_REPLACE_BEFORE_RELEASE"
+	ClientID = "oljO5HmcOWvCZ5wbitpXPXk3u0LjAb5GdAEBBU5hwKA"
 
 	AuthorizeURL = "https://app.gumroad.com/oauth/authorize"
 	TokenURL     = "https://app.gumroad.com/oauth/token" //nolint:gosec // G101: not a credential
