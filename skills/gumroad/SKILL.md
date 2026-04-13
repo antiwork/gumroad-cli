@@ -122,10 +122,6 @@ gumroad sales view <id> --json --no-input
 gumroad sales refund <id> --yes --json --no-input
 gumroad sales refund <id> --amount 5.00 --yes --json --no-input
 
-# Mark as shipped
-gumroad sales ship <id> --json --no-input
-gumroad sales ship <id> --tracking-url https://track.example.com/123 --json --no-input
-
 # Resend receipt
 gumroad sales resend-receipt <id> --json --no-input
 ```

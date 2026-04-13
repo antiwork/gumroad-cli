@@ -1,6 +1,7 @@
 package skill
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -198,14 +199,14 @@ func linkOrCopySkillDir(linkPath, relTarget, absTarget string, opts cmdutil.Opti
 		return fmt.Errorf("could not create directory %s: %w", parent, err)
 	}
 
-	// Remove existing symlink or file. If it's a populated directory,
-	// leave it alone — the user may have placed custom files there.
+	// If a real directory exists, preserve it (user may have custom files)
+	// and fall through to copy. For symlinks or files, remove first.
 	if info, err := os.Lstat(linkPath); err == nil {
-		if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
-			_ = os.Remove(linkPath)
-		} else {
-			// It's a real directory — skip symlink, fall through to copy fallback
+		if info.IsDir() && info.Mode()&os.ModeSymlink == 0 {
 			return copySkillDir(absTarget, linkPath, opts)
+		}
+		if err := os.Remove(linkPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("could not remove existing %s: %w", linkPath, err)
 		}
 	}
 
