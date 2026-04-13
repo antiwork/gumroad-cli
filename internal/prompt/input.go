@@ -18,6 +18,13 @@ var isTerminal = func(fd int) bool {
 	return term.IsTerminal(fd)
 }
 
+// IsInteractive reports whether r is an *os.File connected to a terminal.
+// Returns false if r is not an *os.File.
+var IsInteractive = func(r io.Reader) bool {
+	file, ok := r.(*os.File)
+	return ok && isTerminal(int(file.Fd()))
+}
+
 var readPassword = func(fd int) ([]byte, error) {
 	return term.ReadPassword(fd)
 }

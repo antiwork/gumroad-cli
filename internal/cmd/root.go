@@ -2,12 +2,14 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"strconv"
 	"strings"
 
+	"github.com/antiwork/gumroad-cli/internal/api"
 	"github.com/antiwork/gumroad-cli/internal/cmd/auth"
 	"github.com/antiwork/gumroad-cli/internal/cmd/categories"
 	"github.com/antiwork/gumroad-cli/internal/cmd/completion"
@@ -17,11 +19,13 @@ import (
 	"github.com/antiwork/gumroad-cli/internal/cmd/payouts"
 	"github.com/antiwork/gumroad-cli/internal/cmd/products"
 	"github.com/antiwork/gumroad-cli/internal/cmd/sales"
+	"github.com/antiwork/gumroad-cli/internal/cmd/skill"
 	"github.com/antiwork/gumroad-cli/internal/cmd/subscribers"
 	"github.com/antiwork/gumroad-cli/internal/cmd/user"
 	"github.com/antiwork/gumroad-cli/internal/cmd/variants"
 	"github.com/antiwork/gumroad-cli/internal/cmd/webhooks"
 	"github.com/antiwork/gumroad-cli/internal/cmdutil"
+	"github.com/antiwork/gumroad-cli/internal/config"
 	"github.com/antiwork/gumroad-cli/internal/output"
 	"github.com/spf13/cobra"
 )
@@ -67,6 +71,7 @@ func NewRootCmd() *cobra.Command {
 			if err := cmdutil.RequireNonNegativeDurationFlag(cmd, "page-delay", opts.PageDelay); err != nil {
 				return err
 			}
+			skill.AutoRefresh(Version)
 			return nil
 		},
 		Version: Version,
@@ -107,6 +112,7 @@ func NewRootCmd() *cobra.Command {
 	cmd.AddCommand(customfields.NewCustomFieldsCmd())
 	cmd.AddCommand(webhooks.NewWebhooksCmd())
 	cmd.AddCommand(completion.NewCompletionCmd())
+	cmd.AddCommand(skill.NewSkillCmd())
 	cmdutil.PropagateExamples(cmd)
 
 	return cmd
@@ -196,8 +202,28 @@ func exitCodeForCommandError(cmd *cobra.Command, err error) int {
 }
 
 func printHumanCommandError(cmd *cobra.Command, err error) {
-	style := output.NewStylerForWriter(cmd.ErrOrStderr(), noColorRequested(cmd))
-	fmt.Fprintln(cmd.ErrOrStderr(), style.Red("Error: "+err.Error()))
+	w := cmd.ErrOrStderr()
+	style := output.NewStylerForWriter(w, noColorRequested(cmd))
+	fmt.Fprintln(w, style.Red("Error: "+err.Error()))
+
+	if hint := hintFromError(err); hint != "" {
+		fmt.Fprintln(w, style.Dim("Hint: "+hint))
+	}
+}
+
+func hintFromError(err error) string {
+	var hinted api.HintedError
+	if errors.As(err, &hinted) {
+		return hinted.GetHint()
+	}
+	if errors.Is(err, config.ErrNotAuthenticated) || errors.Is(err, api.ErrNotAuthenticated) {
+		// config.ResolveToken already embeds remediation in the error message;
+		// only add the hint when it would not duplicate.
+		if !strings.Contains(err.Error(), "gumroad auth login") {
+			return api.HintRunAuthLogin
+		}
+	}
+	return ""
 }
 
 func noColorRequested(cmd *cobra.Command) bool {
