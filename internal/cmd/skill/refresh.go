@@ -44,10 +44,8 @@ func AutoRefresh(version string) {
 	_ = os.WriteFile(sentinelPath, []byte(version), 0600)
 }
 
-// refreshExistingInstalls overwrites existing skill files with new content.
-// Uses os.Stat (follows symlinks) so symlinked files get their targets refreshed.
-// Skips project-relative paths since there's no reliable project root at startup.
-// Returns true if all writes succeeded (or no files needed updating).
+// refreshExistingInstalls uses os.Stat (follows symlinks) so symlinked targets
+// get refreshed. Skips project-relative paths — no reliable project root at startup.
 func refreshExistingInstalls(content []byte) bool {
 	ok := true
 	for _, loc := range skillLocations {

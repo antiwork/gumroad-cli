@@ -20,7 +20,6 @@ const (
 	selectValPrint = "" // sentinel: user chose "Print to stdout"
 )
 
-// skillLocation represents a predefined install target.
 type skillLocation struct {
 	Label string
 	Path  string // may contain ~ prefix
@@ -46,7 +45,6 @@ var skillLocations = []skillLocation{
 	{"OpenCode (Global)", "~/.opencode/" + skillRelPath},
 }
 
-// expandPath expands a leading ~ to the user's home directory.
 func expandPath(path string) string {
 	if !strings.HasPrefix(path, "~/") {
 		return path
@@ -159,7 +157,6 @@ func runInstall(opts cmdutil.Options, customPath string) error {
 		return fmt.Errorf("could not determine home directory: %w", err)
 	}
 
-	// Write to the shared baseline
 	sharedDir := filepath.Join(home, ".agents", skillDirName)
 	sharedFile := filepath.Join(sharedDir, skillFileName)
 	if err := writeSkillFile(sharedFile, content, opts); err != nil {
@@ -182,7 +179,6 @@ func runInstall(opts cmdutil.Options, customPath string) error {
 	return nil
 }
 
-// writeSkillFile writes the skill content to a file path.
 func writeSkillFile(path string, content []byte, opts cmdutil.Options) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0755); err != nil { //nolint:gosec // G301: skill files are not secrets
@@ -217,11 +213,9 @@ func linkOrCopySkillDir(linkPath, relTarget, absTarget string, opts cmdutil.Opti
 		return cmdutil.PrintSuccess(opts, fmt.Sprintf("Linked %s → %s", linkPath, relTarget))
 	}
 
-	// Fallback: copy files from the shared directory
 	return copySkillDir(absTarget, linkPath, opts)
 }
 
-// copySkillDir copies all files from src to dst as a fallback when symlinks fail.
 func copySkillDir(src, dst string, opts cmdutil.Options) error {
 	if err := os.MkdirAll(dst, 0755); err != nil { //nolint:gosec // G301: skill files are not secrets
 		return fmt.Errorf("could not create directory %s: %w", dst, err)
