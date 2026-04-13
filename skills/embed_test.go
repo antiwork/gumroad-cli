@@ -15,7 +15,7 @@ func TestSkillMarkdown_ReturnsContent(t *testing.T) {
 	}
 
 	content := string(data)
-	if !strings.Contains(content, "name: gumroad-cli") {
+	if !strings.Contains(content, "name: gumroad") {
 		t.Error("expected frontmatter with name")
 	}
 	if !strings.Contains(content, "gumroad products list") {

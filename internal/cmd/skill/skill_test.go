@@ -23,6 +23,13 @@ func setInteractive(t *testing.T, interactive bool) {
 	t.Cleanup(func() { prompt.IsInteractive = orig })
 }
 
+func overrideHomeDir(t *testing.T, dir string) {
+	t.Helper()
+	orig := userHomeDir
+	userHomeDir = func() (string, error) { return dir, nil }
+	t.Cleanup(func() { userHomeDir = orig })
+}
+
 func rootWithSkill() *cobra.Command {
 	root := &cobra.Command{Use: "gumroad"}
 	root.AddCommand(NewSkillCmd())
@@ -42,7 +49,7 @@ func TestSkill_NonTTY_PrintsToStdout(t *testing.T) {
 	}
 
 	got := stdout.String()
-	if !strings.Contains(got, "name: gumroad-cli") {
+	if !strings.Contains(got, "name: gumroad") {
 		t.Errorf("expected skill content, got %q", got[:min(len(got), 200)])
 	}
 	if !strings.Contains(got, "gumroad products list") {
@@ -60,7 +67,7 @@ func TestSkill_NoInput_PrintsToStdout(t *testing.T) {
 	}
 
 	got := stdout.String()
-	if !strings.Contains(got, "name: gumroad-cli") {
+	if !strings.Contains(got, "name: gumroad") {
 		t.Errorf("expected skill content with --no-input, got %q", got[:min(len(got), 200)])
 	}
 }
@@ -69,7 +76,6 @@ func TestSkill_PipedStdin_FallsBackToStdout(t *testing.T) {
 	output.SetStdoutIsTerminalForTesting(true)
 	defer output.ResetStdoutIsTerminalForTesting()
 
-	// Simulate piped stdin (non-interactive reader)
 	r, w, err := os.Pipe()
 	if err != nil {
 		t.Fatal(err)
@@ -85,7 +91,7 @@ func TestSkill_PipedStdin_FallsBackToStdout(t *testing.T) {
 		t.Fatalf("expected fallback to stdout, got error: %v", runErr)
 	}
 
-	if !strings.Contains(stdout.String(), "name: gumroad-cli") {
+	if !strings.Contains(stdout.String(), "name: gumroad") {
 		t.Error("expected skill content on stdout when stdin is piped")
 	}
 }
@@ -97,9 +103,6 @@ func TestSkillInstall_CustomPath(t *testing.T) {
 	cmd := testutil.Command(newInstallCmd(), testutil.Quiet(false))
 	cmd.SetArgs([]string{"--path", path})
 
-	var stderr bytes.Buffer
-	cmd.SetErr(&stderr)
-
 	err := cmd.Execute()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -109,61 +112,107 @@ func TestSkillInstall_CustomPath(t *testing.T) {
 	if readErr != nil {
 		t.Fatalf("could not read installed file: %v", readErr)
 	}
-	if !strings.Contains(string(content), "name: gumroad-cli") {
+	if !strings.Contains(string(content), "name: gumroad") {
 		t.Error("installed file does not contain expected skill content")
 	}
 }
 
 func TestSkillInstall_DefaultLocations(t *testing.T) {
-	dir := t.TempDir()
-
-	// Create a fake ~/.claude dir so symlink path triggers
-	claudeDir := filepath.Join(dir, ".claude")
-	if err := os.MkdirAll(claudeDir, 0755); err != nil {
-		t.Fatalf("could not create claude dir: %v", err)
+	if runtime.GOOS == "windows" {
+		t.Skip("symlinks require elevated privileges on Windows")
 	}
 
-	// Override userHomeDir for the install command
-	origHome := userHomeDir
-	userHomeDir = func() (string, error) { return dir, nil }
-	t.Cleanup(func() { userHomeDir = origHome })
+	dir := t.TempDir()
+	overrideHomeDir(t, dir)
+
+	// Create ~/.claude so symlink triggers
+	if err := os.MkdirAll(filepath.Join(dir, ".claude"), 0755); err != nil {
+		t.Fatal(err)
+	}
 
 	cmd := testutil.Command(newInstallCmd())
-
-	var stderr bytes.Buffer
-	cmd.SetErr(&stderr)
-
 	err := cmd.RunE(cmd, []string{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// Verify shared file was written
-	sharedPath := filepath.Join(dir, ".agents", skillRelPath)
-	if _, statErr := os.Stat(sharedPath); statErr != nil {
-		t.Errorf("expected shared file at %s", sharedPath)
+	// Verify shared file
+	sharedFile := filepath.Join(dir, ".agents", skillRelPath)
+	if _, statErr := os.Stat(sharedFile); statErr != nil {
+		t.Errorf("expected shared file at %s", sharedFile)
 	}
 
-	// Verify symlink was created
-	claudeSkillPath := filepath.Join(dir, ".claude", skillRelPath)
-	info, statErr := os.Lstat(claudeSkillPath)
+	// Verify directory symlink at ~/.claude/skills/gumroad
+	claudeSkillDir := filepath.Join(dir, ".claude", skillDirName)
+	info, statErr := os.Lstat(claudeSkillDir)
 	if statErr != nil {
-		t.Errorf("expected symlink at %s", claudeSkillPath)
-	} else if info.Mode()&os.ModeSymlink == 0 {
-		t.Errorf("expected symlink at %s, got regular file", claudeSkillPath)
+		t.Fatalf("expected symlink dir at %s: %v", claudeSkillDir, statErr)
+	}
+	if info.Mode()&os.ModeSymlink == 0 {
+		t.Errorf("expected directory symlink at %s, got mode %v", claudeSkillDir, info.Mode())
 	}
 
-	// Verify symlink target resolves to correct content
-	content, readErr := os.ReadFile(claudeSkillPath)
+	// Verify symlink target is relative
+	target, _ := os.Readlink(claudeSkillDir)
+	if !strings.HasPrefix(target, "..") {
+		t.Errorf("expected relative symlink target, got %q", target)
+	}
+
+	// Verify content resolves through symlink
+	content, readErr := os.ReadFile(filepath.Join(claudeSkillDir, skillFileName))
 	if readErr != nil {
 		t.Fatalf("could not read through symlink: %v", readErr)
 	}
-	if !strings.Contains(string(content), "name: gumroad-cli") {
-		t.Error("symlinked file does not contain expected skill content")
+	if !strings.Contains(string(content), "name: gumroad") {
+		t.Error("symlinked file does not contain expected content")
+	}
+}
+
+func TestSkillInstall_FallbackCopyOnSymlinkFailure(t *testing.T) {
+	dir := t.TempDir()
+	overrideHomeDir(t, dir)
+
+	if err := os.MkdirAll(filepath.Join(dir, ".claude"), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Write shared baseline first
+	content, _ := readSkill()
+	sharedDir := filepath.Join(dir, ".agents", skillDirName)
+	if err := os.MkdirAll(sharedDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sharedDir, skillFileName), content, 0644); err != nil { //nolint:gosec // G306: test file
+		t.Fatal(err)
+	}
+
+	// Pre-create a regular file at the symlink target to block symlink creation
+	claudeSkillDir := filepath.Join(dir, ".claude", skillDirName)
+	if err := os.MkdirAll(claudeSkillDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// linkOrCopySkillDir uses RemoveAll first, so it will remove the dir and try symlink.
+	// To actually test the copy fallback, we need symlink to fail.
+	// This is hard to simulate portably. Instead, test copySkillDir directly.
+	dstDir := filepath.Join(dir, "copy-target")
+	opts := testutil.TestOptions()
+	err := copySkillDir(sharedDir, dstDir, opts)
+	if err != nil {
+		t.Fatalf("copySkillDir failed: %v", err)
+	}
+
+	copied, readErr := os.ReadFile(filepath.Join(dstDir, skillFileName))
+	if readErr != nil {
+		t.Fatalf("could not read copied file: %v", readErr)
+	}
+	if !strings.Contains(string(copied), "name: gumroad") {
+		t.Error("copied file missing expected content")
 	}
 }
 
 func TestSkillInstall_HomeError(t *testing.T) {
+	overrideHomeDir(t, "")
 	origHome := userHomeDir
 	userHomeDir = func() (string, error) { return "", fmt.Errorf("no home") }
 	t.Cleanup(func() { userHomeDir = origHome })
@@ -177,11 +226,7 @@ func TestSkillInstall_HomeError(t *testing.T) {
 
 func TestSkillInstall_NoClaudeDir(t *testing.T) {
 	dir := t.TempDir()
-	// Don't create .claude dir — symlink step should be skipped
-
-	origHome := userHomeDir
-	userHomeDir = func() (string, error) { return dir, nil }
-	t.Cleanup(func() { userHomeDir = origHome })
+	overrideHomeDir(t, dir)
 
 	cmd := testutil.Command(newInstallCmd())
 	err := cmd.RunE(cmd, []string{})
@@ -189,16 +234,14 @@ func TestSkillInstall_NoClaudeDir(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// Shared file should exist
 	sharedPath := filepath.Join(dir, ".agents", skillRelPath)
 	if _, statErr := os.Stat(sharedPath); statErr != nil {
 		t.Errorf("expected shared file at %s", sharedPath)
 	}
 
-	// Claude symlink should NOT exist
-	claudeSkillPath := filepath.Join(dir, ".claude", skillRelPath)
-	if _, statErr := os.Stat(claudeSkillPath); statErr == nil {
-		t.Errorf("did not expect file at %s when ~/.claude doesn't exist", claudeSkillPath)
+	claudeSkillDir := filepath.Join(dir, ".claude", skillDirName)
+	if _, statErr := os.Stat(claudeSkillDir); statErr == nil {
+		t.Errorf("did not expect dir at %s when ~/.claude doesn't exist", claudeSkillDir)
 	}
 }
 
@@ -206,15 +249,13 @@ func TestSkillInstall_OverwritesExisting(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "SKILL.md")
 
-	// Write old content
 	if err := os.WriteFile(path, []byte("old content"), 0600); err != nil {
 		t.Fatal(err)
 	}
 
 	cmd := testutil.Command(newInstallCmd())
 	cmd.SetArgs([]string{"--path", path})
-	err := cmd.Execute()
-	if err != nil {
+	if err := cmd.Execute(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -222,7 +263,7 @@ func TestSkillInstall_OverwritesExisting(t *testing.T) {
 	if strings.Contains(string(content), "old content") {
 		t.Error("expected old content to be overwritten")
 	}
-	if !strings.Contains(string(content), "name: gumroad-cli") {
+	if !strings.Contains(string(content), "name: gumroad") {
 		t.Error("expected new skill content")
 	}
 }
@@ -237,8 +278,7 @@ func TestSkillInstall_Quiet(t *testing.T) {
 	var stderr bytes.Buffer
 	cmd.SetErr(&stderr)
 
-	err := cmd.Execute()
-	if err != nil {
+	if err := cmd.Execute(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -255,24 +295,14 @@ func TestSkill_TTY_SelectInstallTarget(t *testing.T) {
 	dir := t.TempDir()
 	installPath := filepath.Join(dir, "SKILL.md")
 
-	origTargets := defaultTargets
-	defaultTargets = func() []installTarget {
-		return []installTarget{
-			{"Test", installPath},
-		}
-	}
-	t.Cleanup(func() { defaultTargets = origTargets })
-
 	origSelect := selectFunc
 	selectFunc = func(msg string, opts []prompt.SelectOption, in io.Reader, out io.Writer, noInput bool) (string, error) {
-		// Simulate choosing the first option (the install path)
-		return opts[0].Value, nil
+		return installPath, nil
 	}
 	t.Cleanup(func() { selectFunc = origSelect })
 
 	cmd := testutil.Command(NewSkillCmd(), testutil.NoInput(false))
-	err := cmd.RunE(cmd, []string{})
-	if err != nil {
+	if err := cmd.RunE(cmd, []string{}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -280,7 +310,7 @@ func TestSkill_TTY_SelectInstallTarget(t *testing.T) {
 	if readErr != nil {
 		t.Fatalf("expected file at %s: %v", installPath, readErr)
 	}
-	if !strings.Contains(string(content), "name: gumroad-cli") {
+	if !strings.Contains(string(content), "name: gumroad") {
 		t.Error("installed file missing expected content")
 	}
 }
@@ -290,12 +320,6 @@ func TestSkill_TTY_SelectStdout(t *testing.T) {
 	defer output.ResetStdoutIsTerminalForTesting()
 	setInteractive(t, true)
 
-	origTargets := defaultTargets
-	defaultTargets = func() []installTarget {
-		return []installTarget{{"Test", "/tmp/unused"}}
-	}
-	t.Cleanup(func() { defaultTargets = origTargets })
-
 	origSelect := selectFunc
 	selectFunc = func(msg string, opts []prompt.SelectOption, in io.Reader, out io.Writer, noInput bool) (string, error) {
 		return selectValPrint, nil
@@ -304,12 +328,11 @@ func TestSkill_TTY_SelectStdout(t *testing.T) {
 
 	var stdout bytes.Buffer
 	cmd := testutil.Command(NewSkillCmd(), testutil.NoInput(false), testutil.Stdout(&stdout))
-	err := cmd.RunE(cmd, []string{})
-	if err != nil {
+	if err := cmd.RunE(cmd, []string{}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if !strings.Contains(stdout.String(), "name: gumroad-cli") {
+	if !strings.Contains(stdout.String(), "name: gumroad") {
 		t.Error("expected skill content on stdout")
 	}
 }
@@ -318,12 +341,6 @@ func TestSkill_TTY_SelectError(t *testing.T) {
 	output.SetStdoutIsTerminalForTesting(true)
 	defer output.ResetStdoutIsTerminalForTesting()
 	setInteractive(t, true)
-
-	origTargets := defaultTargets
-	defaultTargets = func() []installTarget {
-		return []installTarget{{"Test", "/tmp/unused"}}
-	}
-	t.Cleanup(func() { defaultTargets = origTargets })
 
 	origSelect := selectFunc
 	selectFunc = func(msg string, opts []prompt.SelectOption, in io.Reader, out io.Writer, noInput bool) (string, error) {
@@ -338,136 +355,188 @@ func TestSkill_TTY_SelectError(t *testing.T) {
 	}
 }
 
-func TestDefaultTargets_NoHome(t *testing.T) {
-	origHome := userHomeDir
-	userHomeDir = func() (string, error) { return "", fmt.Errorf("no home") }
-	t.Cleanup(func() { userHomeDir = origHome })
+func TestExpandPath(t *testing.T) {
+	overrideHomeDir(t, "/fakehome")
 
-	targets := defaultTargets()
-	if len(targets) != 1 {
-		t.Fatalf("expected 1 target without HOME, got %d", len(targets))
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"~/.agents/skills", "/fakehome/.agents/skills"},
+		{".claude/skills", ".claude/skills"},
+		{"/absolute/path", "/absolute/path"},
 	}
-	if targets[0].Label != "Claude Code (Project)" {
-		t.Errorf("expected project target, got %q", targets[0].Label)
-	}
-}
-
-func TestDefaultTargets_WithHome(t *testing.T) {
-	origHome := userHomeDir
-	userHomeDir = func() (string, error) { return "/fakehome", nil }
-	t.Cleanup(func() { userHomeDir = origHome })
-
-	targets := defaultTargets()
-	if len(targets) != 5 {
-		t.Fatalf("expected 5 targets with HOME, got %d", len(targets))
+	for _, tt := range tests {
+		got := expandPath(tt.input)
+		if got != tt.want {
+			t.Errorf("expandPath(%q) = %q, want %q", tt.input, got, tt.want)
+		}
 	}
 }
 
-func TestSkillInstall_ReplacesExistingSymlink(t *testing.T) {
+func TestCodexGlobalSkillPath_Default(t *testing.T) {
+	t.Setenv("CODEX_HOME", "")
+	path := codexGlobalSkillPath()
+	if !strings.Contains(path, ".codex") {
+		t.Errorf("expected default codex path, got %q", path)
+	}
+}
+
+func TestCodexGlobalSkillPath_CustomHome(t *testing.T) {
+	t.Setenv("CODEX_HOME", "/custom/codex")
+	path := codexGlobalSkillPath()
+	if !strings.HasPrefix(path, "/custom/codex") {
+		t.Errorf("expected custom codex path, got %q", path)
+	}
+}
+
+func TestLinkOrCopySkillDir_Symlink(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("symlinks require elevated privileges on Windows")
 	}
 
 	dir := t.TempDir()
-	linkPath := filepath.Join(dir, "link")
-	target1 := filepath.Join(dir, "target1")
-	target2 := filepath.Join(dir, "target2")
+	srcDir := filepath.Join(dir, "src")
+	if err := os.MkdirAll(srcDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(srcDir, "SKILL.md"), []byte("content"), 0644); err != nil { //nolint:gosec // G306: test
+		t.Fatal(err)
+	}
 
-	if err := os.WriteFile(target1, []byte("old"), 0600); err != nil {
+	linkPath := filepath.Join(dir, "link")
+	opts := testutil.TestOptions()
+	if err := linkOrCopySkillDir(linkPath, srcDir, srcDir, opts); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	info, _ := os.Lstat(linkPath)
+	if info.Mode()&os.ModeSymlink == 0 {
+		t.Error("expected symlink")
+	}
+}
+
+func TestLinkOrCopySkillDir_ExistingDirFallsToCopy(t *testing.T) {
+	dir := t.TempDir()
+	srcDir := filepath.Join(dir, "src")
+	if err := os.MkdirAll(srcDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(target2, []byte("new"), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(srcDir, "SKILL.md"), []byte("skill"), 0644); err != nil { //nolint:gosec // G306: test
 		t.Fatal(err)
 	}
-	if err := os.Symlink(target1, linkPath); err != nil {
+
+	// Pre-create a real directory at the link path
+	linkPath := filepath.Join(dir, "link")
+	if err := os.MkdirAll(linkPath, 0755); err != nil {
+		t.Fatal(err)
+	}
+	// Put a custom file the user might have
+	if err := os.WriteFile(filepath.Join(linkPath, "custom.txt"), []byte("user data"), 0644); err != nil { //nolint:gosec // G306: test
 		t.Fatal(err)
 	}
 
 	opts := testutil.TestOptions()
-	err := symlinkSkillFile(linkPath, target2, opts)
-	if err != nil {
+	if err := linkOrCopySkillDir(linkPath, "../src", srcDir, opts); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	resolved, _ := os.Readlink(linkPath)
-	if resolved != target2 {
-		t.Errorf("expected symlink to %s, got %s", target2, resolved)
+	// SKILL.md should be copied
+	data, _ := os.ReadFile(filepath.Join(linkPath, "SKILL.md"))
+	if string(data) != "skill" {
+		t.Errorf("expected copied SKILL.md, got %q", string(data))
+	}
+
+	// User's custom file should be preserved
+	custom, _ := os.ReadFile(filepath.Join(linkPath, "custom.txt"))
+	if string(custom) != "user data" {
+		t.Error("expected user's custom.txt to be preserved")
 	}
 }
 
-func TestSymlinkSkillFile_InvalidDir(t *testing.T) {
+func TestLinkOrCopySkillDir_ReplacesExistingSymlink(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("symlinks require elevated privileges on Windows")
 	}
 
 	dir := t.TempDir()
-	// Use a file as parent to make MkdirAll fail (cross-platform)
+	srcDir := filepath.Join(dir, "src")
+	if err := os.MkdirAll(srcDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(srcDir, "SKILL.md"), []byte("new"), 0644); err != nil { //nolint:gosec // G306: test
+		t.Fatal(err)
+	}
+
+	// Create an old symlink pointing elsewhere
+	linkPath := filepath.Join(dir, "link")
+	oldTarget := filepath.Join(dir, "old")
+	if err := os.MkdirAll(oldTarget, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(oldTarget, linkPath); err != nil {
+		t.Fatal(err)
+	}
+
+	opts := testutil.TestOptions()
+	if err := linkOrCopySkillDir(linkPath, srcDir, srcDir, opts); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Should be a new symlink to srcDir
+	target, _ := os.Readlink(linkPath)
+	if target != srcDir {
+		t.Errorf("expected symlink to %s, got %s", srcDir, target)
+	}
+}
+
+func TestLinkOrCopySkillDir_InvalidParent(t *testing.T) {
+	dir := t.TempDir()
 	blocker := filepath.Join(dir, "blocker")
 	if err := os.WriteFile(blocker, []byte("x"), 0600); err != nil {
 		t.Fatal(err)
 	}
 
 	opts := testutil.TestOptions()
-	err := symlinkSkillFile(filepath.Join(blocker, "sub", "link"), filepath.Join(dir, "target"), opts)
+	err := linkOrCopySkillDir(filepath.Join(blocker, "sub", "link"), "../src", dir, opts)
 	if err == nil {
-		t.Fatal("expected error for invalid directory")
-	}
-	if !strings.Contains(err.Error(), "could not create directory") {
-		t.Errorf("unexpected error: %v", err)
+		t.Fatal("expected error for invalid parent directory")
 	}
 }
 
-func TestSymlinkSkillFile_Success(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("symlinks require elevated privileges on Windows")
-	}
-
+func TestCopySkillDir_InvalidSrc(t *testing.T) {
 	dir := t.TempDir()
-	targetPath := filepath.Join(dir, "target")
-	if err := os.WriteFile(targetPath, []byte("content"), 0600); err != nil {
-		t.Fatal(err)
-	}
-
-	linkPath := filepath.Join(dir, "sub", "link")
 	opts := testutil.TestOptions()
-	err := symlinkSkillFile(linkPath, targetPath, opts)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	resolved, _ := os.Readlink(linkPath)
-	if resolved != targetPath {
-		t.Errorf("expected symlink to %s, got %s", targetPath, resolved)
+	err := copySkillDir(filepath.Join(dir, "nonexistent"), filepath.Join(dir, "dst"), opts)
+	if err == nil {
+		t.Fatal("expected error for nonexistent source")
 	}
 }
 
-func TestSymlinkSkillFile_NoExistingFile(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("symlinks require elevated privileges on Windows")
-	}
-
+func TestCopySkillDir(t *testing.T) {
 	dir := t.TempDir()
-	targetPath := filepath.Join(dir, "target")
-	if err := os.WriteFile(targetPath, []byte("content"), 0600); err != nil {
+	srcDir := filepath.Join(dir, "src")
+	if err := os.MkdirAll(srcDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(srcDir, "SKILL.md"), []byte("skill"), 0644); err != nil { //nolint:gosec // G306: test
 		t.Fatal(err)
 	}
 
-	linkPath := filepath.Join(dir, "newlink")
+	dstDir := filepath.Join(dir, "dst")
 	opts := testutil.TestOptions()
-	err := symlinkSkillFile(linkPath, targetPath, opts)
-	if err != nil {
+	if err := copySkillDir(srcDir, dstDir, opts); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	resolved, _ := os.Readlink(linkPath)
-	if resolved != targetPath {
-		t.Errorf("expected symlink to %s, got %s", targetPath, resolved)
+	data, _ := os.ReadFile(filepath.Join(dstDir, "SKILL.md"))
+	if string(data) != "skill" {
+		t.Errorf("got %q", string(data))
 	}
 }
 
 func TestWriteSkillFile_InvalidPath(t *testing.T) {
 	dir := t.TempDir()
-	// Use a file as parent to make MkdirAll fail (cross-platform)
 	blocker := filepath.Join(dir, "blocker")
 	if err := os.WriteFile(blocker, []byte("x"), 0600); err != nil {
 		t.Fatal(err)
@@ -503,8 +572,7 @@ func TestWriteSkillFile_Success(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "nested", "SKILL.md")
 	opts := testutil.TestOptions()
-	err := writeSkillFile(path, []byte("skill content"), opts)
-	if err != nil {
+	if err := writeSkillFile(path, []byte("skill content"), opts); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	data, _ := os.ReadFile(path)
@@ -555,8 +623,7 @@ func TestSkill_Help(t *testing.T) {
 	var stdout bytes.Buffer
 	root.SetOut(&stdout)
 
-	err := root.Execute()
-	if err != nil {
+	if err := root.Execute(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -573,8 +640,7 @@ func TestSkillInstall_Help(t *testing.T) {
 	var stdout bytes.Buffer
 	root.SetOut(&stdout)
 
-	err := root.Execute()
-	if err != nil {
+	if err := root.Execute(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 

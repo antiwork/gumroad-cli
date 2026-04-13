@@ -71,6 +71,7 @@ func NewRootCmd() *cobra.Command {
 			if err := cmdutil.RequireNonNegativeDurationFlag(cmd, "page-delay", opts.PageDelay); err != nil {
 				return err
 			}
+			skill.AutoRefresh(Version)
 			return nil
 		},
 		Version: Version,
