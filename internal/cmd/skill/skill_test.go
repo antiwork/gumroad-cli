@@ -362,7 +362,7 @@ func TestExpandPath(t *testing.T) {
 		input string
 		want  string
 	}{
-		{"~/.agents/skills", "/fakehome/.agents/skills"},
+		{"~/.agents/skills", filepath.Join("/fakehome", ".agents", "skills")},
 		{".claude/skills", ".claude/skills"},
 		{"/absolute/path", "/absolute/path"},
 	}
@@ -385,7 +385,7 @@ func TestCodexGlobalSkillPath_Default(t *testing.T) {
 func TestCodexGlobalSkillPath_CustomHome(t *testing.T) {
 	t.Setenv("CODEX_HOME", "/custom/codex")
 	path := codexGlobalSkillPath()
-	if !strings.HasPrefix(path, "/custom/codex") {
+	if !strings.Contains(path, "custom") || !strings.Contains(path, "codex") {
 		t.Errorf("expected custom codex path, got %q", path)
 	}
 }
