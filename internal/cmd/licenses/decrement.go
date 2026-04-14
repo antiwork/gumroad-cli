@@ -12,8 +12,8 @@ func newDecrementCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "decrement",
-		Short: "Decrement the use count of a license key",
-		Long: `Decrement the use count of a license key. This cannot be undone.
+		Short: "Decrement a license use count",
+		Long: `Decrement a license use count. This cannot be undone.
 
 Requires confirmation. Use --yes to skip when piping the key via stdin.`,
 		Args: cmdutil.ExactArgs(0),

@@ -7,7 +7,7 @@ import (
 func NewSubscribersCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "subscribers",
-		Short: "Manage product subscribers",
+		Short: "View subscribers",
 		Example: `  gumroad subscribers list --product <id>
   gumroad subscribers view <id>`,
 	}

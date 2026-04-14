@@ -8,7 +8,7 @@ func NewCategoriesCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "variant-categories",
 		Aliases: []string{"vc"},
-		Short:   "Manage product variant categories",
+		Short:   "Manage variant categories",
 		Example: `  gumroad variant-categories list --product <id>
   gumroad variant-categories create --product <id> --title "Size"`,
 	}

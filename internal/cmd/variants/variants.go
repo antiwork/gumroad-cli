@@ -7,7 +7,7 @@ import (
 func NewVariantsCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "variants",
-		Short: "Manage product variants",
+		Short: "Manage variants",
 		Example: `  gumroad variants list --product <id> --category <cat_id>
   gumroad variants create --product <id> --category <cat_id> --name "Large"`,
 	}

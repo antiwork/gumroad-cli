@@ -15,8 +15,8 @@ func newRotateCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "rotate",
-		Short: "Rotate (regenerate) a license key",
-		Long: `Rotate (regenerate) a license key. The old key is permanently invalidated.
+		Short: "Rotate a license key",
+		Long: `Rotate a license key. The old key is permanently invalidated.
 
 Requires confirmation. Use --yes to skip when piping the key via stdin.`,
 		Args: cmdutil.ExactArgs(0),

@@ -10,8 +10,8 @@ import (
 func newDeleteCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "delete <id>",
-		Short: "Delete a webhook subscription",
-		Long: `Delete a webhook subscription.
+		Short: "Delete a webhook",
+		Long: `Delete a webhook.
 
 Note: This only succeeds when the token's OAuth app matches the subscription's app.`,
 		Args: cmdutil.ExactArgs(1),

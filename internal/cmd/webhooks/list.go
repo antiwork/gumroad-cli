@@ -24,9 +24,9 @@ func newListCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "list",
-		Short: "List webhook subscriptions",
+		Short: "List webhooks",
 		Args:  cmdutil.ExactArgs(0),
-		Long:  "List webhook subscriptions. --resource is required (no 'list all' endpoint).",
+		Long:  "List webhooks. --resource is required (no 'list all' endpoint).",
 		RunE: func(c *cobra.Command, args []string) error {
 			opts := cmdutil.OptionsFrom(c)
 			if resource == "" {

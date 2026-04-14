@@ -8,7 +8,7 @@ func NewOfferCodesCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "offer-codes",
 		Aliases: []string{"oc"},
-		Short:   "Manage product offer codes",
+		Short:   "Manage offer codes",
 		Example: `  gumroad offer-codes list --product <id>
   gumroad offer-codes create --product <id> --name SAVE10 --percent-off 10`,
 	}
