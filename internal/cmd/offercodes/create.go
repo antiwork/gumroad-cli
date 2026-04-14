@@ -67,7 +67,8 @@ Use either --amount (flat discount) or --percent-off (percentage discount), not 
 				params.Set("amount_off", strconv.Itoa(cents))
 			}
 			if hasPercentOff {
-				params.Set("percent_off", strconv.Itoa(percentOff))
+				params.Set("amount_off", strconv.Itoa(percentOff))
+				params.Set("offer_type", "percent")
 			}
 			if hasMaxPurchaseCount {
 				params.Set("max_purchase_count", strconv.Itoa(maxPurchaseCount))

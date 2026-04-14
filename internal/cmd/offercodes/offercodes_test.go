@@ -431,13 +431,13 @@ func TestCreate_NameRequired(t *testing.T) {
 }
 
 func TestCreate_PercentOff(t *testing.T) {
-	var gotPercentOff, gotAmountOff string
+	var gotAmountOff, gotOfferType string
 	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
 		if err := r.ParseForm(); err != nil {
 			t.Fatalf("ParseForm failed: %v", err)
 		}
-		gotPercentOff = r.PostForm.Get("percent_off")
 		gotAmountOff = r.PostForm.Get("amount_off")
+		gotOfferType = r.PostForm.Get("offer_type")
 		testutil.JSON(t, w, map[string]any{"offer_code": map[string]any{"id": "oc1", "name": r.PostForm.Get("name")}})
 	})
 
@@ -449,21 +449,22 @@ func TestCreate_PercentOff(t *testing.T) {
 		}
 	})
 
-	if gotPercentOff != "20" {
-		t.Errorf("got percent_off=%q, want 20", gotPercentOff)
+	if gotAmountOff != "20" {
+		t.Errorf("got amount_off=%q, want 20", gotAmountOff)
 	}
-	if gotAmountOff != "" {
-		t.Errorf("amount_off should be empty, got %q", gotAmountOff)
+	if gotOfferType != "percent" {
+		t.Errorf("got offer_type=%q, want percent", gotOfferType)
 	}
 }
 
 func TestCreate_Amount(t *testing.T) {
-	var gotAmountOff string
+	var gotAmountOff, gotOfferType string
 	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
 		if err := r.ParseForm(); err != nil {
 			t.Fatalf("ParseForm failed: %v", err)
 		}
 		gotAmountOff = r.PostForm.Get("amount_off")
+		gotOfferType = r.PostForm.Get("offer_type")
 		testutil.JSON(t, w, map[string]any{"offer_code": map[string]any{"id": "oc1", "name": "FLAT5"}})
 	})
 
@@ -477,6 +478,9 @@ func TestCreate_Amount(t *testing.T) {
 
 	if gotAmountOff != "500" {
 		t.Errorf("got amount_off=%q, want 500", gotAmountOff)
+	}
+	if gotOfferType != "" {
+		t.Errorf("offer_type should be empty for flat discount, got %q", gotOfferType)
 	}
 }
 
