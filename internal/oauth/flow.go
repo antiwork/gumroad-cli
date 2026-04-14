@@ -260,12 +260,12 @@ func callbackHandler(expectedState string, resultCh chan<- callbackResult) http.
 
 		if err != nil {
 			w.WriteHeader(http.StatusBadRequest)
-			fmt.Fprint(w, htmlPage("Authorization denied", "You can close this tab.", true))
+			fmt.Fprint(w, htmlPage("Authorization denied", "Close this tab and try again.", true))
 			return
 		}
 
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, htmlPage("Logged in", "You can close this tab.", false))
+		fmt.Fprint(w, htmlPage("Authorization complete", "You can return to your terminal and close this tab.", false))
 	}
 }
 
@@ -354,7 +354,7 @@ func htmlPage(title, message string, isError bool) string {
 <html lang="en"><head><meta charset="utf-8"><title>Gumroad CLI</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-body{font-family:"ABC Favorit",Avenir,Montserrat,Corbel,"URW Gothic",source-sans-pro,sans-serif;display:flex;justify-content:center;align-items:center;min-height:100vh;padding:1rem;background:#f4f4f0;color:#000;line-height:1.5}
+body{font-family:ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;display:flex;justify-content:center;align-items:center;min-height:100vh;padding:1rem;background:#f4f4f0;color:#000;line-height:1.5}
 .card{text-align:center;padding:2rem;background:#fff;border:1px solid #000;border-radius:0.25rem;max-width:24rem;width:100%%}
 .icon{display:inline-flex;align-items:center;justify-content:center;width:2.5rem;height:2.5rem;margin-bottom:1rem;background:%s;color:#000;border:1px solid #000;border-radius:999px}
 h1{font-size:1.25rem;font-weight:700;margin-bottom:0.25rem}
