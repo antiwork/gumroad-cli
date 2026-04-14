@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/url"
 
+	"github.com/antiwork/gumroad-cli/internal/api"
 	"github.com/antiwork/gumroad-cli/internal/cmdutil"
 	"github.com/antiwork/gumroad-cli/internal/output"
 	"github.com/spf13/cobra"
@@ -27,7 +28,7 @@ func newViewCmd() *cobra.Command {
 						CreatedAt      string `json:"created_at"`
 						Refunded       bool   `json:"refunded"`
 						Shipped        bool   `json:"shipped"`
-						OrderID        string `json:"order_id"`
+						OrderID        api.JSONInt `json:"order_id"`
 					} `json:"sale"`
 				}
 				if err := json.Unmarshal(data, &resp); err != nil {
@@ -49,8 +50,8 @@ func newViewCmd() *cobra.Command {
 				if err := output.Writef(opts.Out(), "Sale ID: %s\n", s.ID); err != nil {
 					return err
 				}
-				if s.OrderID != "" {
-					if err := output.Writef(opts.Out(), "Order: %s\n", s.OrderID); err != nil {
+				if s.OrderID > 0 {
+					if err := output.Writef(opts.Out(), "Order: %d\n", s.OrderID); err != nil {
 						return err
 					}
 				}
