@@ -34,6 +34,7 @@ var (
 	Version        = "dev"
 	newRootCommand = NewRootCmd
 	exitProcess    = os.Exit
+	getOSArgs      = func() []string { return os.Args }
 )
 
 func NewRootCmd() *cobra.Command {
@@ -159,7 +160,30 @@ func Execute() {
 }
 
 func executeRootCommand(stdout, stderr io.Writer) int {
-	return executeCommand(newRootCommand(), stdout, stderr)
+	cmd := newRootCommand()
+	cmd.SetOut(stdout)
+	cmd.SetErr(stderr)
+
+	err := cmd.Execute()
+	if err == nil {
+		return 0
+	}
+
+	if isUnknownShorthandError(err) {
+		if newArgs := insertDoubleDashBeforeArg(getOSArgs()[1:], err); newArgs != nil {
+			retryCmd := newRootCommand()
+			retryCmd.SetArgs(newArgs)
+			retryCmd.SetOut(stdout)
+			retryCmd.SetErr(stderr)
+			if retryErr := retryCmd.Execute(); retryErr == nil {
+				return 0
+			} else {
+				return exitCodeForCommandError(retryCmd, retryErr)
+			}
+		}
+	}
+
+	return exitCodeForCommandError(cmd, err)
 }
 
 func executeCommand(cmd *cobra.Command, stdout, stderr io.Writer) int {
@@ -177,6 +201,72 @@ func executeCommand(cmd *cobra.Command, stdout, stderr io.Writer) int {
 	}
 
 	return 0
+}
+
+// isUnknownShorthandError checks if the error is from cobra/pflag rejecting
+// a dash-prefixed argument as an unknown shorthand flag. This relies on
+// pflag's error format: "unknown shorthand flag: 'X' in -XYZ".
+func isUnknownShorthandError(err error) bool {
+	return strings.Contains(err.Error(), "unknown shorthand flag")
+}
+
+// insertDoubleDashBeforeArg finds the arg that caused an "unknown shorthand flag"
+// error and inserts "--" before it so cobra treats it as a positional arg.
+// Returns nil if the offending arg cannot be identified or doesn't look like
+// an encoded ID (to avoid retrying real flag typos like "-z").
+func insertDoubleDashBeforeArg(args []string, err error) []string {
+	// Error format: "unknown shorthand flag: 'c' in -cGksPcArAUU8j_XTYsrnQ=="
+	// The error may include usage text after newlines, so only look at the first line.
+	firstLine := err.Error()
+	if nl := strings.IndexByte(firstLine, '\n'); nl >= 0 {
+		firstLine = firstLine[:nl]
+	}
+	inIdx := strings.LastIndex(firstLine, " in ")
+	if inIdx < 0 {
+		return nil
+	}
+	offending := firstLine[inIdx+4:]
+
+	// Only retry if the offending arg looks like an encoded ID, not a flag typo.
+	// Gumroad IDs are base64-encoded and contain digits, '=', '_', '+', or '/'.
+	// Flag typos like "-z" or "-json" are purely alphabetic (plus the leading dash).
+	if !looksLikeEncodedID(offending) {
+		return nil
+	}
+
+	// Move the offending arg to the end, preceded by "--", so all flags
+	// remain before "--" and are parsed normally.
+	result := make([]string, 0, len(args)+1)
+	found := false
+	for _, arg := range args {
+		if !found && arg == offending {
+			found = true
+			continue // skip it; we'll append it after "--"
+		}
+		result = append(result, arg)
+	}
+	if !found {
+		return nil
+	}
+	result = append(result, "--", offending)
+	return result
+}
+
+// looksLikeEncodedID returns true if s looks like a base64-encoded Gumroad ID
+// rather than a mistyped shorthand flag. Encoded IDs typically contain digits,
+// '=', '_', '+', or '/' — characters that never appear in flag names. As a
+// fallback, any arg longer than 10 characters is treated as an ID since flag
+// typos are short.
+func looksLikeEncodedID(s string) bool {
+	if len(s) > 10 {
+		return true
+	}
+	for _, c := range s {
+		if (c >= '0' && c <= '9') || c == '=' || c == '_' || c == '+' || c == '/' {
+			return true
+		}
+	}
+	return false
 }
 
 func exitCodeForCommandError(cmd *cobra.Command, err error) int {
@@ -230,7 +320,7 @@ func noColorRequested(cmd *cobra.Command) bool {
 	if noColorRequestedFromCommand(cmd) {
 		return true
 	}
-	return noColorRequestedInArgs(os.Args[1:])
+	return noColorRequestedInArgs(getOSArgs()[1:])
 }
 
 func noColorRequestedFromCommand(cmd *cobra.Command) bool {
