@@ -586,3 +586,124 @@ func TestPrintHumanCommandError_NoHint(t *testing.T) {
 		t.Errorf("expected no hint line, got %q", got)
 	}
 }
+
+func TestIsUnknownShorthandError(t *testing.T) {
+	tests := []struct {
+		err  string
+		want bool
+	}{
+		{"unknown shorthand flag: 'c' in -cGk", true},
+		{"unknown flag: --bogus", false},
+		{"missing required argument: <id>", false},
+	}
+	for _, tt := range tests {
+		if got := isUnknownShorthandError(errors.New(tt.err)); got != tt.want {
+			t.Errorf("isUnknownShorthandError(%q) = %v, want %v", tt.err, got, tt.want)
+		}
+	}
+}
+
+func TestInsertDoubleDashBeforeArg(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		err  error
+		want []string
+	}{
+		{
+			"simple dash ID",
+			[]string{"products", "view", "-cGk=="},
+			errors.New("unknown shorthand flag: 'c' in -cGk=="),
+			[]string{"products", "view", "--", "-cGk=="},
+		},
+		{
+			"dash ID with flags before",
+			[]string{"products", "update", "--name", "x", "-cGk=="},
+			errors.New("unknown shorthand flag: 'c' in -cGk=="),
+			[]string{"products", "update", "--name", "x", "--", "-cGk=="},
+		},
+		{
+			"dash ID with flags after",
+			[]string{"products", "view", "-cGk==", "--no-color"},
+			errors.New("unknown shorthand flag: 'c' in -cGk=="),
+			[]string{"products", "view", "--no-color", "--", "-cGk=="},
+		},
+		{
+			"error with usage text appended",
+			[]string{"products", "view", "-cGk=="},
+			errors.New("unknown shorthand flag: 'c' in -cGk==\n\nUsage:\n  gumroad products view <id>"),
+			[]string{"products", "view", "--", "-cGk=="},
+		},
+		{
+			"no in keyword",
+			[]string{"products", "view", "-cGk=="},
+			errors.New("some other error"),
+			nil,
+		},
+		{
+			"offending arg not found",
+			[]string{"products", "view", "abc123"},
+			errors.New("unknown shorthand flag: 'c' in -cGk=="),
+			nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := insertDoubleDashBeforeArg(tt.args, tt.err)
+			if tt.want == nil {
+				if got != nil {
+					t.Fatalf("got %v, want nil", got)
+				}
+				return
+			}
+			if len(got) != len(tt.want) {
+				t.Fatalf("got %v, want %v", got, tt.want)
+			}
+			for i := range got {
+				if got[i] != tt.want[i] {
+					t.Fatalf("got[%d]=%q, want %q (full: %v)", i, got[i], tt.want[i], got)
+				}
+			}
+		})
+	}
+}
+
+func TestExecuteRootCommand_RetriesDashPrefixedID(t *testing.T) {
+	called := false
+	simArgs := []string{"gumroad", "view", "-dashID"}
+
+	replaceRootCommandFactory(t, func() *cobra.Command {
+		cmd := &cobra.Command{
+			Use:           "gumroad",
+			SilenceUsage:  true,
+			SilenceErrors: true,
+		}
+		cmd.SetFlagErrorFunc(func(c *cobra.Command, err error) error {
+			return cmdutil.NewUsageError(c, err.Error())
+		})
+		sub := &cobra.Command{
+			Use:  "view <id>",
+			Args: cmdutil.ExactArgs(1),
+			RunE: func(c *cobra.Command, args []string) error {
+				called = true
+				return nil
+			},
+		}
+		cmd.AddCommand(sub)
+		cmd.SetArgs(simArgs[1:]) // simulate os.Args[1:]
+		return cmd
+	})
+
+	origGetOSArgs := getOSArgs
+	getOSArgs = func() []string { return simArgs }
+	defer func() { getOSArgs = origGetOSArgs }()
+
+	var stdout, stderr bytes.Buffer
+	code := executeRootCommand(&stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("got exit code %d, want 0; stderr=%q", code, stderr.String())
+	}
+	if !called {
+		t.Fatal("expected RunE to be called after retry")
+	}
+}

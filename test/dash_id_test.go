@@ -1,22 +1,26 @@
 package test
 
 import (
-	"bytes"
+	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
-
-	cmd "github.com/antiwork/gumroad-cli/internal/cmd"
-	"github.com/antiwork/gumroad-cli/internal/testutil"
 )
 
 // TestDashPrefixedIDArgs verifies that every command accepting a positional ID
-// argument correctly handles IDs starting with "-". Without
-// ParseErrorsWhitelist.UnknownFlags, cobra interprets these as shorthand flags
-// and rejects them. The setting is applied centrally by cmdutil.AllowDashIDs.
+// argument correctly handles IDs starting with "-". Cobra normally interprets
+// these as shorthand flags. The CLI catches this error and retries with "--"
+// inserted before the offending arg, so the ID is treated as a positional arg.
 func TestDashPrefixedIDArgs(t *testing.T) {
-	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
-		testutil.JSON(t, w, map[string]any{
+	bin := buildBinary(t)
+
+	var lastPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		lastPath = r.URL.Path
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"success":          true,
 			"product":          map[string]any{"id": "p1", "name": "Test"},
 			"offer_code":       map[string]any{"id": "oc1", "name": "TEST"},
 			"variant_category": map[string]any{"id": "vc1", "title": "Size"},
@@ -26,7 +30,15 @@ func TestDashPrefixedIDArgs(t *testing.T) {
 			"payout":           map[string]any{"id": "pay1", "display_payout_period": "Jan 2026", "formatted_amount": "$100"},
 			"skus":             []map[string]any{},
 		})
-	})
+	}))
+	t.Cleanup(srv.Close)
+
+	cfgDir := setupConfig(t)
+	env := []string{
+		"XDG_CONFIG_HOME=" + cfgDir,
+		"GUMROAD_API_BASE_URL=" + srv.URL,
+		"GUMROAD_ACCESS_TOKEN=",
+	}
 
 	dashID := "-cGksPcArAUU8j_XTYsrnQ=="
 
@@ -75,20 +87,24 @@ func TestDashPrefixedIDArgs(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			root := cmd.NewRootCmd()
-			root.SetArgs(append(tt.args, "--no-color"))
-			var out bytes.Buffer
-			root.SetOut(&out)
-			root.SetErr(&out)
-
-			err := root.Execute()
+			lastPath = ""
+			args := append(tt.args, "--no-color")
+			out, err := runGR(t, bin, env, args...)
 			if err != nil {
-				combined := out.String()
-				if strings.Contains(combined, "unknown shorthand flag") || strings.Contains(err.Error(), "unknown shorthand flag") {
-					t.Fatalf("dash-prefixed ID %q was parsed as a flag: %v", dashID, err)
+				if strings.Contains(out, "unknown shorthand flag") {
+					t.Fatalf("dash-prefixed ID %q was parsed as a flag:\n%s", dashID, out)
 				}
-				// Other errors (e.g. mock server doesn't match exactly) are acceptable —
-				// the point is that the ID was not mistaken for a flag.
+				if strings.Contains(out, "missing required argument") {
+					t.Fatalf("dash-prefixed ID %q was discarded during flag parsing:\n%s", dashID, out)
+				}
+				// Other errors (e.g. API returns unexpected shape) are acceptable —
+				// the point is that the ID was passed through to the API.
+			}
+			if lastPath == "" {
+				t.Fatalf("API was never called — dash-prefixed ID %q was not passed through", dashID)
+			}
+			if !strings.Contains(lastPath, dashID) {
+				t.Errorf("API path %q does not contain expected ID %q", lastPath, dashID)
 			}
 		})
 	}

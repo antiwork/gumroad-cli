@@ -71,19 +71,6 @@ func ExactArgs(n int) cobra.PositionalArgs {
 	}
 }
 
-// AllowDashIDs walks the command tree and sets ParseErrorsWhitelist.UnknownFlags
-// on commands that accept positional arguments. This prevents cobra from
-// rejecting Gumroad IDs that start with "-" (e.g. "-cGksPcArAUU8j_XTYsrnQ==")
-// as unknown shorthand flags.
-func AllowDashIDs(cmd *cobra.Command) {
-	if len(positionalArgs(cmd.Use)) > 0 {
-		cmd.Flags().ParseErrorsWhitelist.UnknownFlags = true
-	}
-	for _, child := range cmd.Commands() {
-		AllowDashIDs(child)
-	}
-}
-
 // PropagateExamples fills empty command examples from the nearest ancestor.
 func PropagateExamples(cmd *cobra.Command) {
 	propagateExamples(cmd, "")
