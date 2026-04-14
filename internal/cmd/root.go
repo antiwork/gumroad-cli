@@ -204,14 +204,16 @@ func executeCommand(cmd *cobra.Command, stdout, stderr io.Writer) int {
 }
 
 // isUnknownShorthandError checks if the error is from cobra/pflag rejecting
-// a dash-prefixed argument as an unknown shorthand flag.
+// a dash-prefixed argument as an unknown shorthand flag. This relies on
+// pflag's error format: "unknown shorthand flag: 'X' in -XYZ".
 func isUnknownShorthandError(err error) bool {
 	return strings.Contains(err.Error(), "unknown shorthand flag")
 }
 
 // insertDoubleDashBeforeArg finds the arg that caused an "unknown shorthand flag"
 // error and inserts "--" before it so cobra treats it as a positional arg.
-// Returns nil if the offending arg cannot be identified.
+// Returns nil if the offending arg cannot be identified or doesn't look like
+// an encoded ID (to avoid retrying real flag typos like "-z").
 func insertDoubleDashBeforeArg(args []string, err error) []string {
 	// Error format: "unknown shorthand flag: 'c' in -cGksPcArAUU8j_XTYsrnQ=="
 	// The error may include usage text after newlines, so only look at the first line.
@@ -224,6 +226,13 @@ func insertDoubleDashBeforeArg(args []string, err error) []string {
 		return nil
 	}
 	offending := firstLine[inIdx+4:]
+
+	// Only retry if the offending arg looks like an encoded ID, not a flag typo.
+	// Gumroad IDs are base64-encoded and contain digits, '=', '_', '+', or '/'.
+	// Flag typos like "-z" or "-json" are purely alphabetic (plus the leading dash).
+	if !looksLikeEncodedID(offending) {
+		return nil
+	}
 
 	// Move the offending arg to the end, preceded by "--", so all flags
 	// remain before "--" and are parsed normally.
@@ -241,6 +250,23 @@ func insertDoubleDashBeforeArg(args []string, err error) []string {
 	}
 	result = append(result, "--", offending)
 	return result
+}
+
+// looksLikeEncodedID returns true if s looks like a base64-encoded Gumroad ID
+// rather than a mistyped shorthand flag. Encoded IDs typically contain digits,
+// '=', '_', '+', or '/' — characters that never appear in flag names. As a
+// fallback, any arg longer than 10 characters is treated as an ID since flag
+// typos are short.
+func looksLikeEncodedID(s string) bool {
+	if len(s) > 10 {
+		return true
+	}
+	for _, c := range s {
+		if (c >= '0' && c <= '9') || c == '=' || c == '_' || c == '+' || c == '/' {
+			return true
+		}
+	}
+	return false
 }
 
 func exitCodeForCommandError(cmd *cobra.Command, err error) int {

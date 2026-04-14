@@ -53,6 +53,13 @@ func replaceRootCommandFactory(t *testing.T, factory func() *cobra.Command) {
 	})
 }
 
+func replaceGetOSArgs(t *testing.T, args []string) {
+	t.Helper()
+	previous := getOSArgs
+	getOSArgs = func() []string { return args }
+	t.Cleanup(func() { getOSArgs = previous })
+}
+
 func replaceExitProcess(t *testing.T, exitFn func(int)) {
 	t.Helper()
 
@@ -646,6 +653,24 @@ func TestInsertDoubleDashBeforeArg(t *testing.T) {
 			errors.New("unknown shorthand flag: 'c' in -cGk=="),
 			nil,
 		},
+		{
+			"short flag typo not retried",
+			[]string{"products", "list", "-z"},
+			errors.New("unknown shorthand flag: 'z' in -z"),
+			nil,
+		},
+		{
+			"two-char flag typo not retried",
+			[]string{"products", "list", "-zx"},
+			errors.New("unknown shorthand flag: 'z' in -zx"),
+			nil,
+		},
+		{
+			"alpha-only flag typo not retried",
+			[]string{"products", "list", "-json"},
+			errors.New("unknown shorthand flag: 'j' in -json"),
+			nil,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -669,8 +694,8 @@ func TestInsertDoubleDashBeforeArg(t *testing.T) {
 }
 
 func TestExecuteRootCommand_RetriesDashPrefixedID(t *testing.T) {
-	called := false
-	simArgs := []string{"gumroad", "view", "-dashID"}
+	var gotArgs []string
+	simArgs := []string{"gumroad", "view", "-dAsh1D=="}
 
 	replaceRootCommandFactory(t, func() *cobra.Command {
 		cmd := &cobra.Command{
@@ -685,7 +710,7 @@ func TestExecuteRootCommand_RetriesDashPrefixedID(t *testing.T) {
 			Use:  "view <id>",
 			Args: cmdutil.ExactArgs(1),
 			RunE: func(c *cobra.Command, args []string) error {
-				called = true
+				gotArgs = args
 				return nil
 			},
 		}
@@ -694,16 +719,48 @@ func TestExecuteRootCommand_RetriesDashPrefixedID(t *testing.T) {
 		return cmd
 	})
 
-	origGetOSArgs := getOSArgs
-	getOSArgs = func() []string { return simArgs }
-	defer func() { getOSArgs = origGetOSArgs }()
+	replaceGetOSArgs(t, simArgs)
 
 	var stdout, stderr bytes.Buffer
 	code := executeRootCommand(&stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("got exit code %d, want 0; stderr=%q", code, stderr.String())
 	}
-	if !called {
-		t.Fatal("expected RunE to be called after retry")
+	if len(gotArgs) != 1 || gotArgs[0] != "-dAsh1D==" {
+		t.Fatalf("RunE got args %v, want [\"-dAsh1D==\"]", gotArgs)
+	}
+}
+
+func TestExecuteRootCommand_DoesNotRetryShortFlagTypo(t *testing.T) {
+	simArgs := []string{"gumroad", "view", "-z"}
+
+	replaceRootCommandFactory(t, func() *cobra.Command {
+		cmd := &cobra.Command{
+			Use:           "gumroad",
+			SilenceUsage:  true,
+			SilenceErrors: true,
+		}
+		cmd.SetFlagErrorFunc(func(c *cobra.Command, err error) error {
+			return cmdutil.NewUsageError(c, err.Error())
+		})
+		sub := &cobra.Command{
+			Use:  "view <id>",
+			Args: cmdutil.ExactArgs(1),
+			RunE: func(c *cobra.Command, args []string) error {
+				t.Fatal("RunE should not be called for a flag typo")
+				return nil
+			},
+		}
+		cmd.AddCommand(sub)
+		cmd.SetArgs(simArgs[1:])
+		return cmd
+	})
+
+	replaceGetOSArgs(t, simArgs)
+
+	var stdout, stderr bytes.Buffer
+	code := executeRootCommand(&stdout, &stderr)
+	if code == 0 {
+		t.Fatal("expected non-zero exit code for flag typo")
 	}
 }
