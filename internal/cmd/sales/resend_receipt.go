@@ -10,7 +10,7 @@ import (
 func newResendReceiptCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "resend-receipt <id>",
-		Short: "Resend the receipt for a sale",
+		Short: "Resend a receipt",
 		Args:  cmdutil.ExactArgs(1),
 		RunE: func(c *cobra.Command, args []string) error {
 			opts := cmdutil.OptionsFrom(c)

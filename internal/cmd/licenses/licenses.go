@@ -7,7 +7,7 @@ import (
 func NewLicensesCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "licenses",
-		Short: "Manage product licenses",
+		Short: "Manage licenses",
 		Example: `  echo "$LICENSE_KEY" | gumroad licenses verify --product <id> --no-increment
   echo "$LICENSE_KEY" | gumroad licenses enable --product <id>
   echo "$LICENSE_KEY" | gumroad licenses disable --product <id>`,

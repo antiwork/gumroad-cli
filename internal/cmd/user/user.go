@@ -23,7 +23,7 @@ type userResponse struct {
 func NewUserCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "user",
-		Short: "Show your Gumroad account info",
+		Short: "Show account info",
 		Args:  cmdutil.ExactArgs(0),
 		Example: `  gumroad user
   gumroad user --json

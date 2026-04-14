@@ -7,7 +7,7 @@ import (
 func NewPayoutsCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "payouts",
-		Short: "View your payouts",
+		Short: "View payouts",
 		Example: `  gumroad payouts list
   gumroad payouts view <id>
   gumroad payouts upcoming`,

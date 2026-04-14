@@ -7,7 +7,7 @@ import (
 func NewSalesCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "sales",
-		Short: "Manage your sales",
+		Short: "Manage sales",
 		Example: `  gumroad sales list
   gumroad sales view <id>
   gumroad sales refund <id>`,

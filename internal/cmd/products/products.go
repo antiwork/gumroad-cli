@@ -8,8 +8,8 @@ import (
 func NewProductsCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "products",
-		Short: "Manage your Gumroad products",
-		Long: "Manage your Gumroad products.\n\n" +
+		Short: "Manage products",
+		Long: "Manage products.\n\n" +
 			"Create, update, list, view, delete, publish, and unpublish products. " +
 			"New products are created as drafts; use `gumroad products publish <id>` to publish.",
 		Example: `  gumroad products list

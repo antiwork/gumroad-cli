@@ -36,7 +36,7 @@ type authUser struct {
 func newStatusCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:     "status",
-		Short:   "Show current authentication status",
+		Short:   "Show authentication status",
 		Args:    cmdutil.ExactArgs(0),
 		Example: "  gumroad auth status",
 		RunE: func(c *cobra.Command, args []string) error {

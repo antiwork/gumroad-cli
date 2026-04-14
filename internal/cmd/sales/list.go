@@ -32,7 +32,7 @@ func newListCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "list",
-		Short: "List your sales",
+		Short: "List sales",
 		Args:  cmdutil.ExactArgs(0),
 		Example: `  gumroad sales list
   gumroad sales list --product <id> --after 2024-01-01

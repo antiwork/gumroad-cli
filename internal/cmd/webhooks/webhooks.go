@@ -7,8 +7,8 @@ import (
 func NewWebhooksCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "webhooks",
-		Short: "Manage resource subscriptions (webhooks)",
-		Long: `Manage webhook subscriptions for resource events.
+		Short: "Manage webhooks",
+		Long: `Manage webhooks for resource events.
 
 Note: delete only succeeds when the token's OAuth app matches the subscription's app.`,
 		Example: `  gumroad webhooks list --resource sale

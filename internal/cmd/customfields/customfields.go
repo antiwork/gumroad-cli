@@ -8,7 +8,7 @@ func NewCustomFieldsCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "custom-fields",
 		Aliases: []string{"cf"},
-		Short:   "Manage product custom fields",
+		Short:   "Manage custom fields",
 		Long:    "Manage custom fields for a product. Update and delete key by name, not ID.",
 		Example: `  gumroad custom-fields list --product <id>
   gumroad custom-fields create --product <id> --name "Company" --required`,

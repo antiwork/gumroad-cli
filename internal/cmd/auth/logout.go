@@ -19,7 +19,7 @@ type logoutStatus struct {
 func newLogoutCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:     "logout",
-		Short:   "Remove stored authentication token",
+		Short:   "Log out of Gumroad",
 		Args:    cmdutil.ExactArgs(0),
 		Example: "  gumroad auth logout",
 		RunE: func(c *cobra.Command, args []string) error {

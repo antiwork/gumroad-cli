@@ -26,7 +26,7 @@ type productsListResponse struct {
 func newListCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:     "list",
-		Short:   "List your products",
+		Short:   "List products",
 		Args:    cmdutil.ExactArgs(0),
 		Example: `  gumroad products list`,
 		RunE: func(c *cobra.Command, args []string) error {

@@ -223,7 +223,7 @@ gumroad variants delete <var_id> --product <id> --category <cat_id> --yes --json
 
 **All subcommands require** `--product` and `--category`.
 
-### custom-fields — Manage product custom fields
+### custom-fields — Manage custom fields
 
 Custom fields are keyed by name, not ID.
 
@@ -234,7 +234,7 @@ gumroad custom-fields update --product <id> --name "Company" --required --json -
 gumroad custom-fields delete --product <id> --name "Company" --yes --json --no-input
 ```
 
-### webhooks — Manage webhook subscriptions
+### webhooks — Manage webhooks
 
 ```sh
 # List (--resource is required)

@@ -31,9 +31,9 @@ func newLoginCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "login",
-		Short: "Authenticate with Gumroad",
+		Short: "Log in to Gumroad",
 		Args:  cmdutil.ExactArgs(0),
-		Long: `Authenticate with Gumroad via browser-based OAuth or a manual API token.
+		Long: `Log in to Gumroad via browser-based OAuth or a manual API token.
 
 By default, opens your browser for OAuth authorization.
 When stdin is piped (e.g. echo $TOKEN | gumroad auth login), reads a token directly.`,
