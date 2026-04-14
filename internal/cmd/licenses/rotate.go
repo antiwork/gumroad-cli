@@ -16,7 +16,10 @@ func newRotateCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "rotate",
 		Short: "Rotate (regenerate) a license key",
-		Args:  cmdutil.ExactArgs(0),
+		Long: `Rotate (regenerate) a license key. The old key is permanently invalidated.
+
+Requires confirmation. Use --yes to skip when piping the key via stdin.`,
+		Args: cmdutil.ExactArgs(0),
 		RunE: func(c *cobra.Command, args []string) error {
 			opts := cmdutil.OptionsFrom(c)
 			if product == "" {
@@ -32,7 +35,7 @@ func newRotateCmd() *cobra.Command {
 				return err
 			}
 			if !ok {
-				return cmdutil.PrintCancelledAction(opts, "rotate license key", product)
+				return cmdutil.PrintCancelledAction(opts, "rotate license key for product "+product, product)
 			}
 
 			params := url.Values{}

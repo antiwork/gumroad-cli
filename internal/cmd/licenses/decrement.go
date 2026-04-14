@@ -13,7 +13,10 @@ func newDecrementCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "decrement",
 		Short: "Decrement the use count of a license key",
-		Args:  cmdutil.ExactArgs(0),
+		Long: `Decrement the use count of a license key. This cannot be undone.
+
+Requires confirmation. Use --yes to skip when piping the key via stdin.`,
+		Args: cmdutil.ExactArgs(0),
 		RunE: func(c *cobra.Command, args []string) error {
 			opts := cmdutil.OptionsFrom(c)
 			if product == "" {
@@ -29,7 +32,7 @@ func newDecrementCmd() *cobra.Command {
 				return err
 			}
 			if !ok {
-				return cmdutil.PrintCancelledAction(opts, "decrement license use count", product)
+				return cmdutil.PrintCancelledAction(opts, "decrement license use count for product "+product, product)
 			}
 
 			params := url.Values{}
