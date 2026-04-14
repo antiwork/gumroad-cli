@@ -605,23 +605,10 @@ func TestView_Plain(t *testing.T) {
 	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
 		testutil.JSON(t, w, map[string]any{
 			"sale": map[string]any{
-				"id": "s1", "email": "a@b.com", "product_name": "Art",
+				"id": "s1", "email": "a@example.com", "product_name": "Art",
 				"formatted_total_price": "$10", "created_at": "2024-01-15",
 			},
 		})
-	})
-
-	cmd := testutil.Command(newViewCmd(), testutil.PlainOutput())
-	out := testutil.CaptureStdout(func() { _ = cmd.RunE(cmd, []string{"s1"}) })
-	if !strings.Contains(out, "s1") || !strings.Contains(out, "Art") {
-		t.Errorf("plain view missing data: %q", out)
-	}
-}
-
-func TestView_PlainWithOrderID(t *testing.T) {
-	testutil.Setup(t, func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"success":true,"sale":{"id":"s1","email":"a@example.com","product_name":"Art","formatted_total_price":"$10","created_at":"2024-01-15","order_id":535572601}}`))
 	})
 
 	cmd := testutil.Command(newViewCmd(), testutil.PlainOutput())
@@ -630,8 +617,44 @@ func TestView_PlainWithOrderID(t *testing.T) {
 	if execErr != nil {
 		t.Fatalf("RunE failed: %v", execErr)
 	}
-	if !strings.Contains(out, "535572601") {
-		t.Errorf("plain view should include order ID: %q", out)
+	cols := strings.Split(strings.TrimRight(out, "\n"), "\t")
+	if len(cols) != 7 {
+		t.Fatalf("expected 7 tab-separated columns, got %d: %q", len(cols), out)
+	}
+	if cols[0] != "s1" || cols[2] != "Art" || cols[3] != "$10" {
+		t.Errorf("plain view data mismatch: %q", cols)
+	}
+	if cols[6] != "" {
+		t.Errorf("order_id column should be empty when absent, got %q", cols[6])
+	}
+}
+
+func TestView_PlainWithOrderID(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{
+			"sale": map[string]any{
+				"id": "s1", "email": "a@example.com", "product_name": "Art",
+				"formatted_total_price": "$10", "created_at": "2024-01-15",
+				"order_id": 535572601,
+			},
+		})
+	})
+
+	cmd := testutil.Command(newViewCmd(), testutil.PlainOutput())
+	var execErr error
+	out := testutil.CaptureStdout(func() { execErr = cmd.RunE(cmd, []string{"s1"}) })
+	if execErr != nil {
+		t.Fatalf("RunE failed: %v", execErr)
+	}
+	cols := strings.Split(strings.TrimRight(out, "\n"), "\t")
+	if len(cols) != 7 {
+		t.Fatalf("expected 7 tab-separated columns, got %d: %q", len(cols), out)
+	}
+	if cols[0] != "s1" || cols[2] != "Art" || cols[3] != "$10" {
+		t.Errorf("plain view data mismatch: %q", cols)
+	}
+	if cols[6] != "535572601" {
+		t.Errorf("order_id column should be 535572601, got %q", cols[6])
 	}
 }
 
