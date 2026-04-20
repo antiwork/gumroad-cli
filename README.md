@@ -6,7 +6,14 @@ CLI for the [Gumroad API](https://app.gumroad.com/api). Designed for humans and 
 ## Install
 
 ```sh
-brew install --cask antiwork/cli/gumroad
+brew install antiwork/cli/gumroad
+```
+
+If you previously installed the cask, switch once with:
+
+```sh
+brew uninstall --cask antiwork/cli/gumroad
+brew install antiwork/cli/gumroad
 ```
 
 <details>
