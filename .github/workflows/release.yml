@@ -32,4 +32,23 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+      - name: Check out Homebrew tap
+        uses: actions/checkout@v4
+        with:
+          repository: antiwork/homebrew-cli
+          path: .tap/homebrew-cli
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          fetch-depth: 0
+      - name: Update Homebrew tap
+        run: ./script/update-homebrew-tap.sh "${GITHUB_REF_NAME}" dist/checksums.txt .tap/homebrew-cli
+      - name: Publish Homebrew tap changes
+        working-directory: .tap/homebrew-cli
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add README.md Formula/gumroad.rb Casks/gumroad.rb
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m "Update gumroad to ${GITHUB_REF_NAME}"
+          git push origin HEAD:main
