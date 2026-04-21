@@ -120,7 +120,8 @@ func primaryCause(err error) error {
 	}
 	var kept []error
 	for _, inner := range mu.Unwrap() {
-		if _, isCleanup := inner.(*upload.CleanupFailedError); isCleanup {
+		var cleanup *upload.CleanupFailedError
+		if errors.As(inner, &cleanup) {
 			continue
 		}
 		kept = append(kept, inner)

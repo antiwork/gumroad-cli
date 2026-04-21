@@ -382,6 +382,24 @@ func TestClassifyCommandError_APIErrorJoinedWithCleanup_PreservesPrimary(t *test
 	}
 }
 
+func TestClassifyCommandError_APIErrorJoinedWithWrappedCleanup_PreservesPrimary(t *testing.T) {
+	primary := &api.APIError{StatusCode: 403, Message: "Access denied"}
+	cleanup := fmt.Errorf("abort retry exhausted: %w", &upload.CleanupFailedError{
+		UploadID: "up-wrapped",
+		Key:      "attachments/u/k/original/wrapped.bin",
+		Cause:    errors.New("abort 500"),
+	})
+	joined := errors.Join(primary, cleanup)
+
+	detail := classifyCommandError(joined)
+	if detail.Type != "api_error" || detail.Code != "access_denied" {
+		t.Fatalf("type/code = %q/%q, want api_error/access_denied", detail.Type, detail.Code)
+	}
+	if detail.Recovery == nil || detail.Recovery.UploadID != "up-wrapped" {
+		t.Errorf("expected wrapped cleanup orphan handles attached, got %+v", detail.Recovery)
+	}
+}
+
 // When abort returns an HTTP error, CleanupFailedError.Unwrap exposes it as
 // an *api.APIError. Classification must still report cleanup_failed, not the
 // abort's api_error, so callers know there's an orphan to reclaim.

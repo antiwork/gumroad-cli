@@ -28,6 +28,7 @@ func TestSpinner_TTY_ActivatesAndStops(t *testing.T) {
 	orig := isSpinnerTerminal
 	isSpinnerTerminal = func(io.Writer) bool { return true }
 	defer func() { isSpinnerTerminal = orig }()
+	t.Setenv("TERM", "xterm-256color")
 
 	s := NewSpinner("loading")
 	s.Start()
@@ -56,6 +57,7 @@ func TestSpinner_DoubleStop(t *testing.T) {
 	orig := isSpinnerTerminal
 	isSpinnerTerminal = func(io.Writer) bool { return true }
 	defer func() { isSpinnerTerminal = orig }()
+	t.Setenv("TERM", "xterm-256color")
 
 	s := NewSpinner("loading")
 	s.Start()
@@ -146,6 +148,7 @@ func TestSpinner_SetMessage_BeforeStartAndAfterStop(t *testing.T) {
 	orig := isSpinnerTerminal
 	isSpinnerTerminal = func(io.Writer) bool { return true }
 	defer func() { isSpinnerTerminal = orig }()
+	t.Setenv("TERM", "xterm-256color")
 	s.Start()
 	time.Sleep(10 * time.Millisecond)
 	s.Stop()
@@ -165,6 +168,7 @@ func TestSpinner_SetMessage_ConcurrentRenders(t *testing.T) {
 	orig := isSpinnerTerminal
 	isSpinnerTerminal = func(io.Writer) bool { return true }
 	defer func() { isSpinnerTerminal = orig }()
+	t.Setenv("TERM", "xterm-256color")
 
 	s := NewSpinnerTo("start", io.Discard)
 	s.Start()
