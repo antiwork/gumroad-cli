@@ -96,6 +96,7 @@ gumroad offer-codes   list, view, create, update, delete
 gumroad variant-categories list, view, create, update, delete
 gumroad variants      list, view, create, update, delete
 gumroad custom-fields list, create, update, delete
+gumroad files         upload, complete, abort
 gumroad webhooks      list, create, delete
 gumroad skill         Install or refresh the Claude Code skill
 gumroad completion    bash, zsh, fish, powershell

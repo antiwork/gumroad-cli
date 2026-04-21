@@ -14,6 +14,7 @@ import (
 	"github.com/antiwork/gumroad-cli/internal/cmdutil"
 	"github.com/antiwork/gumroad-cli/internal/config"
 	"github.com/antiwork/gumroad-cli/internal/output"
+	"github.com/antiwork/gumroad-cli/internal/upload"
 	"github.com/spf13/cobra"
 )
 
@@ -534,7 +535,7 @@ func TestCommandContext_PrefersCommandContext(t *testing.T) {
 	}
 }
 
-func TestHintFromError(t *testing.T) {
+func TestClassifyCommandError_Hint(t *testing.T) {
 	tests := []struct {
 		name string
 		err  error
@@ -552,10 +553,34 @@ func TestHintFromError(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := hintFromError(tt.err); got != tt.want {
+			if got := classifyCommandError(tt.err).Hint; got != tt.want {
 				t.Errorf("got %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestPrintHumanCommandError_ShowsUploadRecoveryHint(t *testing.T) {
+	output.SetColorEnabledForTesting(false)
+	defer output.ResetColorEnabledForTesting()
+
+	cmd := &cobra.Command{Use: "test"}
+	var stderr bytes.Buffer
+	cmd.SetErr(&stderr)
+
+	state := &upload.UnknownStateError{
+		UploadID: "up-1",
+		Key:      "attachments/u/k/original/p.bin",
+		Cause:    errors.New("503"),
+	}
+	printHumanCommandError(cmd, state)
+
+	got := stderr.String()
+	if !strings.Contains(got, "Hint:") || !strings.Contains(got, "Do not retry blindly") {
+		t.Errorf("expected upload hint in human output, got:\n%s", got)
+	}
+	if !strings.Contains(got, "Recovery:") {
+		t.Errorf("expected recovery block, got:\n%s", got)
 	}
 }
 

@@ -57,12 +57,26 @@ func (s *Spinner) Start() {
 				fmt.Fprintf(s.writer, "\r\033[K")
 				return
 			default:
-				fmt.Fprintf(s.writer, "\r%s %s", frames[i%len(frames)], s.message)
+				s.mu.Lock()
+				msg := s.message
+				s.mu.Unlock()
+				// \033[K clears to end of line so shorter messages
+				// replacing longer ones leave no trailing characters.
+				fmt.Fprintf(s.writer, "\r\033[K%s %s", frames[i%len(frames)], msg)
 				i++
 				time.Sleep(80 * time.Millisecond)
 			}
 		}
 	}()
+}
+
+// SetMessage replaces the spinner label. It is safe to call from any goroutine
+// and takes effect on the next animation tick. Calls before Start or after Stop
+// are accepted but nothing is rendered.
+func (s *Spinner) SetMessage(message string) {
+	s.mu.Lock()
+	s.message = message
+	s.mu.Unlock()
 }
 
 func (s *Spinner) Stop() {

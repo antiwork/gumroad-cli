@@ -2,18 +2,17 @@ package cmd
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"os"
 	"strconv"
 	"strings"
 
-	"github.com/antiwork/gumroad-cli/internal/api"
 	"github.com/antiwork/gumroad-cli/internal/cmd/auth"
 	"github.com/antiwork/gumroad-cli/internal/cmd/categories"
 	"github.com/antiwork/gumroad-cli/internal/cmd/completion"
 	"github.com/antiwork/gumroad-cli/internal/cmd/customfields"
+	"github.com/antiwork/gumroad-cli/internal/cmd/files"
 	"github.com/antiwork/gumroad-cli/internal/cmd/licenses"
 	"github.com/antiwork/gumroad-cli/internal/cmd/offercodes"
 	"github.com/antiwork/gumroad-cli/internal/cmd/payouts"
@@ -25,7 +24,6 @@ import (
 	"github.com/antiwork/gumroad-cli/internal/cmd/variants"
 	"github.com/antiwork/gumroad-cli/internal/cmd/webhooks"
 	"github.com/antiwork/gumroad-cli/internal/cmdutil"
-	"github.com/antiwork/gumroad-cli/internal/config"
 	"github.com/antiwork/gumroad-cli/internal/output"
 	"github.com/spf13/cobra"
 )
@@ -111,6 +109,7 @@ func NewRootCmd() *cobra.Command {
 	cmd.AddCommand(categories.NewCategoriesCmd())
 	cmd.AddCommand(variants.NewVariantsCmd())
 	cmd.AddCommand(customfields.NewCustomFieldsCmd())
+	cmd.AddCommand(files.NewFilesCmd())
 	cmd.AddCommand(webhooks.NewWebhooksCmd())
 	cmd.AddCommand(completion.NewCompletionCmd())
 	cmd.AddCommand(skill.NewSkillCmd())
@@ -296,24 +295,14 @@ func printHumanCommandError(cmd *cobra.Command, err error) {
 	style := output.NewStylerForWriter(w, noColorRequested(cmd))
 	fmt.Fprintln(w, style.Red("Error: "+err.Error()))
 
-	if hint := hintFromError(err); hint != "" {
+	// classifyCommandError is the single source of truth for error hints
+	// so human and JSON modes stay in sync — particularly for upload
+	// errors, whose recovery guidance is not carried by the
+	// api.HintedError interface.
+	if hint := classifyCommandError(err).Hint; hint != "" {
 		fmt.Fprintln(w, style.Dim("Hint: "+hint))
 	}
-}
-
-func hintFromError(err error) string {
-	var hinted api.HintedError
-	if errors.As(err, &hinted) {
-		return hinted.GetHint()
-	}
-	if errors.Is(err, config.ErrNotAuthenticated) || errors.Is(err, api.ErrNotAuthenticated) {
-		// config.ResolveToken already embeds remediation in the error message;
-		// only add the hint when it would not duplicate.
-		if !strings.Contains(err.Error(), "gumroad auth login") {
-			return api.HintRunAuthLogin
-		}
-	}
-	return ""
+	printUploadRecovery(w, style, err)
 }
 
 func noColorRequested(cmd *cobra.Command) bool {
