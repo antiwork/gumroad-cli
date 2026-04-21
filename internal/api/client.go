@@ -78,6 +78,14 @@ func (c *Client) Post(path string, params url.Values) (json.RawMessage, error) {
 	return c.do("POST", path, params)
 }
 
+// PostWithContext runs a POST under ctx instead of the client's baked-in
+// context. Use this when a single call's lifetime must be bounded
+// independently — e.g. best-effort cleanup that should honor the caller's
+// cancellation.
+func (c *Client) PostWithContext(ctx context.Context, path string, params url.Values) (json.RawMessage, error) {
+	return c.doWithContext(ctx, "POST", path, params)
+}
+
 func (c *Client) Put(path string, params url.Values) (json.RawMessage, error) {
 	return c.do("PUT", path, params)
 }
@@ -99,6 +107,10 @@ func (c *Client) debugf(format string, args ...any) {
 }
 
 func (c *Client) do(method, path string, params url.Values) (json.RawMessage, error) {
+	return c.doWithContext(c.requestContext(), method, path, params)
+}
+
+func (c *Client) doWithContext(ctx context.Context, method, path string, params url.Values) (json.RawMessage, error) {
 	baseURL := c.baseURL
 	if baseURL == "" {
 		baseURL = defaultBaseURL()
@@ -132,7 +144,7 @@ func (c *Client) do(method, path string, params url.Values) (json.RawMessage, er
 			body = strings.NewReader(encodedParams)
 		}
 
-		req, err := http.NewRequestWithContext(c.requestContext(), method, requestURL, body)
+		req, err := http.NewRequestWithContext(ctx, method, requestURL, body)
 		if err != nil {
 			c.debugf("request method=%s url=%s phase=build err=%q", method, logURL, err)
 			return nil, fmt.Errorf("could not create request: %w", err)
@@ -150,7 +162,7 @@ func (c *Client) do(method, path string, params url.Values) (json.RawMessage, er
 			if shouldRetry(method, attempt, 0) {
 				delay := retryDelay(attempt, "")
 				c.debugf("retry method=%s url=%s attempt=%d wait=%s reason=%q", method, logURL, attempt+1, delay, err)
-				if err := c.snooze(delay); err != nil {
+				if err := c.snoozeCtx(ctx, delay); err != nil {
 					return nil, fmt.Errorf("request failed: %w", err)
 				}
 				continue
@@ -165,7 +177,7 @@ func (c *Client) do(method, path string, params url.Values) (json.RawMessage, er
 			if isRetryableReadError(readErr) && shouldRetry(method, attempt, 0) {
 				delay := retryDelay(attempt, "")
 				c.debugf("retry method=%s url=%s attempt=%d wait=%s reason=%q", method, logURL, attempt+1, delay, readErr)
-				if err := c.snooze(delay); err != nil {
+				if err := c.snoozeCtx(ctx, delay); err != nil {
 					return nil, fmt.Errorf("request failed: %w", err)
 				}
 				continue
@@ -177,7 +189,7 @@ func (c *Client) do(method, path string, params url.Values) (json.RawMessage, er
 		if shouldRetry(method, attempt, resp.StatusCode) {
 			delay := retryDelay(attempt, resp.Header.Get("Retry-After"))
 			c.debugf("retry method=%s url=%s attempt=%d wait=%s reason=%q", method, logURL, attempt+1, delay, resp.Status)
-			if err := c.snooze(delay); err != nil {
+			if err := c.snoozeCtx(ctx, delay); err != nil {
 				return nil, fmt.Errorf("request failed: %w", err)
 			}
 			continue
@@ -233,11 +245,11 @@ func normalizeContext(ctx context.Context) context.Context {
 	return context.Background()
 }
 
-func (c *Client) snooze(delay time.Duration) error {
+func (c *Client) snoozeCtx(ctx context.Context, delay time.Duration) error {
 	if c.sleep != nil {
-		return c.sleep(c.requestContext(), delay)
+		return c.sleep(ctx, delay)
 	}
-	return sleepContext(c.requestContext(), delay)
+	return sleepContext(ctx, delay)
 }
 
 func sleepContext(ctx context.Context, delay time.Duration) error {
