@@ -169,7 +169,7 @@ func runComplete(opts cmdutil.Options, manifest completeManifest, params url.Val
 
 	data, err := client.PostWithContext(opts.Context, "/files/complete", params)
 	if err != nil {
-		return handleCompleteFailure(client, err, manifest)
+		return handleCompleteFailure(err, manifest)
 	}
 	if sp != nil {
 		sp.Stop()
@@ -179,10 +179,10 @@ func runComplete(opts cmdutil.Options, manifest completeManifest, params url.Val
 		FileURL string `json:"file_url"`
 	}
 	if err := json.Unmarshal(data, &resp); err != nil {
-		return handleCompleteFailure(client, fmt.Errorf("could not parse /files/complete response: %w", err), manifest)
+		return handleCompleteFailure(fmt.Errorf("could not parse /files/complete response: %w", err), manifest)
 	}
 	if resp.FileURL == "" {
-		return handleCompleteFailure(client, errors.New("/files/complete response missing file_url"), manifest)
+		return handleCompleteFailure(errors.New("/files/complete response missing file_url"), manifest)
 	}
 	return renderFileURL(opts, resp.FileURL)
 }
@@ -198,7 +198,7 @@ func runComplete(opts cmdutil.Options, manifest completeManifest, params url.Val
 //     here is external input, and common causes of a 4xx here (wrong seller
 //     token, slightly wrong manifest) are recoverable with the SAME parts
 //     still present on S3. Auto-aborting would destroy that state.
-func handleCompleteFailure(_ *api.Client, err error, manifest completeManifest) error {
+func handleCompleteFailure(err error, manifest completeManifest) error {
 	parts := make([]upload.CompletedPart, len(manifest.CompletedParts))
 	for i, p := range manifest.CompletedParts {
 		parts[i] = upload.CompletedPart{PartNumber: p.PartNumber, ETag: p.ETag}

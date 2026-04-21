@@ -276,10 +276,10 @@ func TestClassifyCommandError_UploadCleanupFailed_CarriesOrphanHandles(t *testin
 	}
 }
 
-func TestClassifyCommandError_UnknownStateJoinedWithCleanup_MergesHandles(t *testing.T) {
+func TestClassifyCommandError_UnknownStateJoinedWithCleanup_MergesMissingHandles(t *testing.T) {
 	state := &upload.UnknownStateError{
 		UploadID: "up-3",
-		Key:      "attachments/u/k/original/file3.bin",
+		Key:      "",
 		Cause:    errors.New("503"),
 	}
 	cleanup := &upload.CleanupFailedError{
@@ -295,6 +295,33 @@ func TestClassifyCommandError_UnknownStateJoinedWithCleanup_MergesHandles(t *tes
 	// The state's handles take priority; cleanup fills only missing fields.
 	if detail.Recovery.UploadID != "up-3" {
 		t.Errorf("UploadID = %q, want up-3", detail.Recovery.UploadID)
+	}
+	if detail.Recovery.Key != cleanup.Key {
+		t.Errorf("Key = %q, want %q", detail.Recovery.Key, cleanup.Key)
+	}
+}
+
+func TestClassifyCommandError_UnknownStateJoinedWithCleanup_FillsMissingUploadID(t *testing.T) {
+	state := &upload.UnknownStateError{
+		UploadID: "",
+		Key:      "attachments/u/k/original/file4.bin",
+		Cause:    errors.New("503"),
+	}
+	cleanup := &upload.CleanupFailedError{
+		UploadID: "up-4-cleanup",
+		Key:      "attachments/u/k/original/file4.bin",
+		Cause:    errors.New("abort 500"),
+	}
+
+	detail := classifyCommandError(errors.Join(state, cleanup))
+	if detail.Code != "complete_state_unknown" {
+		t.Fatalf("code = %q, want complete_state_unknown", detail.Code)
+	}
+	if detail.Recovery.UploadID != cleanup.UploadID {
+		t.Errorf("UploadID = %q, want %q", detail.Recovery.UploadID, cleanup.UploadID)
+	}
+	if detail.Recovery.Key != state.Key {
+		t.Errorf("Key = %q, want %q", detail.Recovery.Key, state.Key)
 	}
 }
 

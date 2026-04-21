@@ -91,17 +91,11 @@ func classifyCommandError(err error) commandErrorDetail {
 		if detail.Type == "internal_error" {
 			detail = uploadCleanupFailedDetail(err, cleanup)
 		}
-		// A CleanupFailedError joined alongside a better-classified primary
-		// (API error, auth error, usage error) must not erase that
-		// classification. Attach orphan handles as a secondary Recovery
-		// signal unless the primary already supplied one (UnknownStateError
-		// carries its own manifest).
-		if detail.Recovery == nil {
-			detail.Recovery = &uploadRecoveryInfo{
-				UploadID: cleanup.UploadID,
-				Key:      cleanup.Key,
-			}
-		}
+		// Attach orphan handles as secondary recovery metadata without
+		// erasing any better-primary classification. If the primary
+		// already populated Recovery (UnknownStateError / rejected replay),
+		// cleanup only fills missing upload_id/key fields.
+		detail.Recovery = mergeCleanupRecovery(detail.Recovery, cleanup)
 	}
 
 	return detail
@@ -146,7 +140,7 @@ func classifyPrimaryCause(err error) commandErrorDetail {
 	case errors.As(err, &usageErr):
 		return invalidInputErrorDetail(usageErr.Error())
 	case errors.As(err, &unknownState):
-		return uploadIncompleteDetail(err, unknownState, cleanupFailedFrom(err))
+		return uploadIncompleteDetail(err, unknownState)
 	// ErrPresignExpired is a sentinel distinct from UnknownStateError: the
 	// server never committed, so a retry-the-whole-upload is safe (no
 	// duplicate risk). Classify it explicitly so automation distinguishes
@@ -218,18 +212,28 @@ func invalidInputErrorDetail(message string) commandErrorDetail {
 	}
 }
 
-// cleanupFailedFrom extracts an optional joined CleanupFailedError so the
-// recovery payload carries both state-unknown and abort-orphan identifiers
-// when they co-occur.
-func cleanupFailedFrom(err error) *upload.CleanupFailedError {
-	var cleanup *upload.CleanupFailedError
-	if errors.As(err, &cleanup) {
-		return cleanup
+// mergeCleanupRecovery attaches cleanup orphan handles as secondary recovery
+// metadata without overwriting upload state the primary error already carried.
+func mergeCleanupRecovery(recovery *uploadRecoveryInfo, cleanup *upload.CleanupFailedError) *uploadRecoveryInfo {
+	if cleanup == nil {
+		return recovery
 	}
-	return nil
+	if recovery == nil {
+		return &uploadRecoveryInfo{
+			UploadID: cleanup.UploadID,
+			Key:      cleanup.Key,
+		}
+	}
+	if recovery.UploadID == "" {
+		recovery.UploadID = cleanup.UploadID
+	}
+	if recovery.Key == "" {
+		recovery.Key = cleanup.Key
+	}
+	return recovery
 }
 
-func uploadIncompleteDetail(err error, state *upload.UnknownStateError, cleanup *upload.CleanupFailedError) commandErrorDetail {
+func uploadIncompleteDetail(err error, state *upload.UnknownStateError) commandErrorDetail {
 	recovery := &uploadRecoveryInfo{
 		FileURL:  state.FileURL,
 		UploadID: state.UploadID,
@@ -239,14 +243,6 @@ func uploadIncompleteDetail(err error, state *upload.UnknownStateError, cleanup 
 		recovery.CompletedParts = make([]uploadCompletedPart, len(state.CompletedParts))
 		for i, p := range state.CompletedParts {
 			recovery.CompletedParts[i] = uploadCompletedPart{PartNumber: p.PartNumber, ETag: p.ETag}
-		}
-	}
-	if cleanup != nil {
-		if recovery.UploadID == "" {
-			recovery.UploadID = cleanup.UploadID
-		}
-		if recovery.Key == "" {
-			recovery.Key = cleanup.Key
 		}
 	}
 	// The recovery's file_url is a non-authoritative hint from the presign
