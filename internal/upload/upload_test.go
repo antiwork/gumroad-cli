@@ -1295,32 +1295,37 @@ func TestUpload_SuccessBodyDrainBounded(t *testing.T) {
 }
 
 func TestUpload_PresignPartialResponseTriggersAbort(t *testing.T) {
-	// If presign validation fails but upload_id/key were returned, Upload
-	// must still attempt /files/abort so the server-side multipart is not
-	// orphaned.
+	// If the presign body parses upload_id/key successfully but then fails
+	// — e.g. a later field has the wrong type — the server has already
+	// created the multipart upload. Upload must call /files/abort using
+	// the salvaged handles instead of leaking the orphan.
 	setTestPartSize(t, 100)
 	path := writeFile(t, 50)
 
 	mock := &railsMock{}
 	client, _ := setupServers(t, mock, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		t.Error("S3 should not be reached when presign validation fails")
+		t.Error("S3 must not be reached when presign parsing fails")
 	}))
 	mock.presign = func(w http.ResponseWriter, r *http.Request) {
-		// upload_id and key present, file_url missing — validation fails but
-		// the server has already created the multipart upload.
-		testutil.JSON(t, w, map[string]any{
-			"upload_id": "up-orphan",
-			"key":       "attachments/orphan",
-			"parts":     []map[string]any{{"part_number": 1, "presigned_url": "https://s3/p1"}},
-		})
+		// `parts` is a string instead of an array: json.Unmarshal populates
+		// UploadID and Key in order, then fails on the type mismatch,
+		// returning the partially-filled struct alongside the parse error.
+		_, _ = io.WriteString(w, `{"success":true,"upload_id":"up-orphan","key":"attachments/orphan","parts":"not_an_array"}`)
 	}
 
 	_, err := Upload(context.Background(), client, path, Options{})
 	if err == nil {
 		t.Fatal("expected error")
 	}
+	if !strings.Contains(err.Error(), "parse presign response") {
+		t.Errorf("error = %v, want parse-presign error", err)
+	}
 	if mock.abortCalls.Load() != 1 {
 		t.Errorf("abortCalls = %d, want 1 (orphan must be cleaned up)", mock.abortCalls.Load())
+	}
+	var cleanup *CleanupFailedError
+	if errors.As(err, &cleanup) {
+		t.Errorf("abort unexpectedly failed: %v", cleanup)
 	}
 }
 
