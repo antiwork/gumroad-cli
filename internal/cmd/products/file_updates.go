@@ -47,9 +47,16 @@ type productFilesResponse struct {
 }
 
 type dryRunUpdateBody struct {
-	DryRun  bool                 `json:"dry_run"`
-	Uploads []dryRunCreateUpload `json:"uploads"`
-	Request dryRunCreateRequest  `json:"request"`
+	DryRun    bool                 `json:"dry_run"`
+	Uploads   []dryRunCreateUpload `json:"uploads"`
+	Preserved []dryRunExistingFile `json:"preserved"`
+	Removed   []dryRunExistingFile `json:"removed"`
+	Request   dryRunCreateRequest  `json:"request"`
+}
+
+type dryRunExistingFile struct {
+	ID   string `json:"id"`
+	Name string `json:"name,omitempty"`
 }
 
 func collectRequestedProductUploads(
@@ -105,31 +112,9 @@ func planProductFileUpdate(
 	keepIDs, removeIDs []string,
 	replaceFiles bool,
 ) (productFileUpdatePlan, error) {
-	if len(keepIDs) > 0 && !replaceFiles {
-		return productFileUpdatePlan{}, cmdutil.UsageErrorf(cmd,
-			"--keep-file can only be used together with --replace-files")
-	}
-
-	keepSet := make(map[string]struct{}, len(keepIDs))
-	for _, id := range keepIDs {
-		keepSet[id] = struct{}{}
-	}
-	removeSet := make(map[string]struct{}, len(removeIDs))
-	for _, id := range removeIDs {
-		removeSet[id] = struct{}{}
-	}
-
-	var conflicts []string
-	for id := range keepSet {
-		if _, ok := removeSet[id]; ok {
-			conflicts = append(conflicts, id)
-		}
-	}
-	if len(conflicts) > 0 {
-		sort.Strings(conflicts)
-		return productFileUpdatePlan{}, cmdutil.UsageErrorf(cmd,
-			"cannot use --keep-file and --remove-file for the same id(s): %s",
-			joinComma(conflicts))
+	keepSet, removeSet, err := validateProductFileSelections(cmd, keepIDs, removeIDs, replaceFiles)
+	if err != nil {
+		return productFileUpdatePlan{}, err
 	}
 
 	existingByID := make(map[string]existingProductFile, len(existing))
@@ -209,6 +194,41 @@ func describeProductUploads(uploads []requestedProductUpload) ([]plannedProductU
 	return planned, nil
 }
 
+func validateProductFileSelections(
+	cmd *cobra.Command,
+	keepIDs, removeIDs []string,
+	replaceFiles bool,
+) (map[string]struct{}, map[string]struct{}, error) {
+	if len(keepIDs) > 0 && !replaceFiles {
+		return nil, nil, cmdutil.UsageErrorf(cmd,
+			"--keep-file can only be used together with --replace-files")
+	}
+
+	keepSet := make(map[string]struct{}, len(keepIDs))
+	for _, id := range keepIDs {
+		keepSet[id] = struct{}{}
+	}
+	removeSet := make(map[string]struct{}, len(removeIDs))
+	for _, id := range removeIDs {
+		removeSet[id] = struct{}{}
+	}
+
+	var conflicts []string
+	for id := range keepSet {
+		if _, ok := removeSet[id]; ok {
+			conflicts = append(conflicts, id)
+		}
+	}
+	if len(conflicts) > 0 {
+		sort.Strings(conflicts)
+		return nil, nil, cmdutil.UsageErrorf(cmd,
+			"cannot use --keep-file and --remove-file for the same id(s): %s",
+			joinComma(conflicts))
+	}
+
+	return keepSet, removeSet, nil
+}
+
 func buildProductUpdateFilesPayload(plan productFileUpdatePlan, uploadURLs []string) []map[string]any {
 	files := make([]map[string]any, 0, len(plan.Preserved)+len(plan.Uploads))
 	for _, file := range plan.Preserved {
@@ -238,28 +258,32 @@ func placeholderUploadURLs(count int) []string {
 func renderProductUpdateDryRun(
 	opts cmdutil.Options,
 	path string,
+	plan productFileUpdatePlan,
 	uploads []plannedProductUpload,
 	body map[string]any,
 ) error {
 	switch {
 	case opts.UsesJSONOutput():
-		return renderProductUpdateDryRunJSON(opts, path, uploads, body)
+		return renderProductUpdateDryRunJSON(opts, path, plan, uploads, body)
 	case opts.PlainOutput:
-		return renderProductUpdateDryRunPlain(opts, path, uploads, body)
+		return renderProductUpdateDryRunPlain(opts, path, plan, uploads, body)
 	default:
-		return renderProductUpdateDryRunHuman(opts, path, uploads, body)
+		return renderProductUpdateDryRunHuman(opts, path, plan, uploads, body)
 	}
 }
 
 func renderProductUpdateDryRunJSON(
 	opts cmdutil.Options,
 	path string,
+	plan productFileUpdatePlan,
 	uploads []plannedProductUpload,
 	body map[string]any,
 ) error {
 	payload := dryRunUpdateBody{
-		DryRun:  true,
-		Uploads: make([]dryRunCreateUpload, 0, len(uploads)),
+		DryRun:    true,
+		Uploads:   make([]dryRunCreateUpload, 0, len(uploads)),
+		Preserved: make([]dryRunExistingFile, 0, len(plan.Preserved)),
+		Removed:   make([]dryRunExistingFile, 0, len(plan.Removed)),
 		Request: dryRunCreateRequest{
 			Method: http.MethodPut,
 			Path:   path,
@@ -268,6 +292,12 @@ func renderProductUpdateDryRunJSON(
 	}
 	for _, planned := range uploads {
 		payload.Uploads = append(payload.Uploads, dryRunProductUpload(planned.Plan))
+	}
+	for _, current := range plan.Preserved {
+		payload.Preserved = append(payload.Preserved, dryRunExistingProductFile(current))
+	}
+	for _, current := range plan.Removed {
+		payload.Removed = append(payload.Removed, dryRunExistingProductFile(current))
 	}
 	data, err := json.Marshal(payload)
 	if err != nil {
@@ -279,9 +309,28 @@ func renderProductUpdateDryRunJSON(
 func renderProductUpdateDryRunPlain(
 	opts cmdutil.Options,
 	path string,
+	plan productFileUpdatePlan,
 	uploads []plannedProductUpload,
 	body map[string]any,
 ) error {
+	for _, current := range plan.Preserved {
+		if err := output.PrintPlain(opts.Out(), [][]string{{
+			"preserve",
+			current.ID,
+			current.Name,
+		}}); err != nil {
+			return err
+		}
+	}
+	for _, current := range plan.Removed {
+		if err := output.PrintPlain(opts.Out(), [][]string{{
+			"remove",
+			current.ID,
+			current.Name,
+		}}); err != nil {
+			return err
+		}
+	}
 	for _, planned := range uploads {
 		if err := renderProductUploadDryRunPlain(opts, planned.Plan); err != nil {
 			return err
@@ -301,9 +350,20 @@ func renderProductUpdateDryRunPlain(
 func renderProductUpdateDryRunHuman(
 	opts cmdutil.Options,
 	path string,
+	plan productFileUpdatePlan,
 	uploads []plannedProductUpload,
 	body map[string]any,
 ) error {
+	for _, current := range plan.Preserved {
+		if err := output.Writeln(opts.Out(), "Preserve existing file: "+formatExistingProductFileLabel(current)); err != nil {
+			return err
+		}
+	}
+	for _, current := range plan.Removed {
+		if err := output.Writeln(opts.Out(), "Remove existing file: "+formatExistingProductFileLabel(current)); err != nil {
+			return err
+		}
+	}
 	for _, planned := range uploads {
 		if err := renderProductUploadDryRun(opts, planned.Plan); err != nil {
 			return err
@@ -348,14 +408,56 @@ func confirmProductFileRemoval(opts cmdutil.Options, productID string, removed [
 	if len(removed) == 0 {
 		return true, nil
 	}
+	return cmdutil.ConfirmAction(opts, productFileRemovalMessage(productID, removed))
+}
 
+func dryRunExistingProductFile(file existingProductFile) dryRunExistingFile {
+	return dryRunExistingFile{
+		ID:   file.ID,
+		Name: file.Name,
+	}
+}
+
+func formatExistingProductFileLabel(file existingProductFile) string {
+	name := strings.TrimSpace(file.Name)
+	switch {
+	case name == "":
+		return file.ID
+	case name == file.ID:
+		return name
+	default:
+		return fmt.Sprintf("%s (%s)", name, file.ID)
+	}
+}
+
+func summarizeExistingProductFiles(files []existingProductFile, max int) string {
+	if len(files) == 0 {
+		return ""
+	}
+	if max <= 0 || max > len(files) {
+		max = len(files)
+	}
+	labels := make([]string, 0, max+1)
+	for _, current := range files[:max] {
+		labels = append(labels, formatExistingProductFileLabel(current))
+	}
+	if extra := len(files) - max; extra > 0 {
+		labels = append(labels, fmt.Sprintf("and %d more", extra))
+	}
+	return strings.Join(labels, ", ")
+}
+
+func productFileRemovalMessage(productID string, removed []existingProductFile) string {
 	label := "1 existing file"
 	if len(removed) != 1 {
 		label = strconv.Itoa(len(removed)) + " existing files"
 	}
 
 	message := fmt.Sprintf("Update product %s and remove %s?", productID, label)
-	return cmdutil.ConfirmAction(opts, message)
+	if summary := summarizeExistingProductFiles(removed, 5); summary != "" {
+		message = fmt.Sprintf("Update product %s and remove %s: %s?", productID, label, summary)
+	}
+	return message
 }
 
 func joinComma(values []string) string {

@@ -115,11 +115,15 @@ func newUpdateCmd() *cobra.Command {
 				flags.Changed("replace-files")
 			if !fileFlagsChanged {
 				if opts.DryRun && opts.UsesJSONOutput() {
-					return renderProductUpdateDryRun(opts, path, nil, buildProductJSONBody(params, nil))
+					return renderProductUpdateDryRun(opts, path, productFileUpdatePlan{}, nil, buildProductJSONBody(params, nil))
 				}
 				return cmdutil.RunRequestWithSuccess(opts,
 					"Updating product...", "PUT", path, params,
 					args[0], "Product "+args[0]+" updated.")
+			}
+
+			if _, _, err := validateProductFileSelections(c, keepFileIDs, removeFileIDs, replaceFiles); err != nil {
+				return err
 			}
 
 			token, err := config.Token()
@@ -153,7 +157,7 @@ func newUpdateCmd() *cobra.Command {
 			if opts.DryRun {
 				payload := buildProductJSONBody(params,
 					buildProductUpdateFilesPayload(filePlan, placeholderUploadURLs(len(plannedUploads))))
-				return renderProductUpdateDryRun(opts, path, plannedUploads, payload)
+				return renderProductUpdateDryRun(opts, path, filePlan, plannedUploads, payload)
 			}
 
 			uploadedURLs, err := uploadBatch(opts, client, productBatchUploadInputs(plannedUploads))
@@ -161,7 +165,10 @@ func newUpdateCmd() *cobra.Command {
 				return err
 			}
 			payload := buildProductJSONBody(params, buildProductUpdateFilesPayload(filePlan, uploadedURLs))
-			return runProductUpdateJSON(opts, client, path, args[0], payload)
+			if err := runProductUpdateJSON(opts, client, path, args[0], payload); err != nil {
+				return wrapPartialUploadError(err, uploadedURLs)
+			}
+			return nil
 		},
 	}
 

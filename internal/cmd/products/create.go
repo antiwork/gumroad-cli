@@ -189,7 +189,7 @@ func newCreateCmd() *cobra.Command {
 					return err
 				}
 				body := buildProductJSONBody(params, buildCreateUploadFilesPayload(plannedUploads, fileURLs))
-				return cmdutil.RunWithToken(opts, token, "Creating product...",
+				err = cmdutil.RunWithToken(opts, token, "Creating product...",
 					func(client *api.Client) (json.RawMessage, error) {
 						return client.PostJSON("/products", body)
 					},
@@ -201,6 +201,7 @@ func newCreateCmd() *cobra.Command {
 						return renderCreateProductResult(opts, resp)
 					},
 				)
+				return wrapPartialUploadError(err, fileURLs)
 			}
 
 			return cmdutil.RunRequestDecoded[createProductResponse](opts,

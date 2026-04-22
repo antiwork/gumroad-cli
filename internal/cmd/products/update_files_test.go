@@ -28,6 +28,7 @@ type productUpdateFileServers struct {
 	s3Calls        atomic.Int32
 	completeSeq    atomic.Int32
 	failCompleteOn int32
+	putStatus      int
 
 	putForm     url.Values
 	putJSON     map[string]any
@@ -87,6 +88,10 @@ func (s *productUpdateFileServers) dispatch(t *testing.T) http.HandlerFunc {
 						t.Fatalf("ParseForm failed: %v", err)
 					}
 					s.putForm = r.PostForm
+				}
+				if s.putStatus != 0 {
+					http.Error(w, "update failed", s.putStatus)
+					return
 				}
 				testutil.JSON(t, w, map[string]any{})
 			default:
@@ -260,6 +265,9 @@ func TestUpdate_KeepAndRemoveSameIDErrors(t *testing.T) {
 	if !strings.Contains(err.Error(), "--keep-file") || !strings.Contains(err.Error(), "--remove-file") {
 		t.Fatalf("expected conflict error, got %v", err)
 	}
+	if srv.getCalls.Load() != 0 {
+		t.Fatalf("unexpected GET calls: %d", srv.getCalls.Load())
+	}
 	if srv.putCalls.Load() != 0 {
 		t.Fatalf("unexpected PUT calls: %d", srv.putCalls.Load())
 	}
@@ -290,8 +298,8 @@ func TestUpdate_UnknownRemoveFileErrorsAfterPrefetch(t *testing.T) {
 func TestUpdate_ReplaceFilesClearAllUsesJSONBody(t *testing.T) {
 	srv := newProductUpdateFileServers(t)
 	srv.existingFiles = []existingProductFile{
-		{ID: "file_a"},
-		{ID: "file_b"},
+		{ID: "file_a", Name: "Old A.pdf"},
+		{ID: "file_b", Name: "Old B.pdf"},
 	}
 	testutil.Setup(t, srv.dispatch(t))
 
@@ -333,8 +341,8 @@ func TestUpdate_ReplaceFilesNoInputRequiresYes(t *testing.T) {
 func TestUpdate_FileDryRunPrefetchesButDoesNotUploadOrPut(t *testing.T) {
 	srv := newProductUpdateFileServers(t)
 	srv.existingFiles = []existingProductFile{
-		{ID: "file_a"},
-		{ID: "file_b"},
+		{ID: "file_a", Name: "Old A.pdf"},
+		{ID: "file_b", Name: "Old B.pdf"},
 	}
 	testutil.Setup(t, srv.dispatch(t))
 
@@ -370,6 +378,12 @@ func TestUpdate_FileDryRunPrefetchesButDoesNotUploadOrPut(t *testing.T) {
 	}
 	if payload.Uploads[0].PartCount != 1 {
 		t.Fatalf("upload part count = %d, want 1", payload.Uploads[0].PartCount)
+	}
+	if len(payload.Preserved) != 1 || payload.Preserved[0].ID != "file_b" || payload.Preserved[0].Name != "Old B.pdf" {
+		t.Fatalf("preserved = %+v", payload.Preserved)
+	}
+	if len(payload.Removed) != 1 || payload.Removed[0].ID != "file_a" || payload.Removed[0].Name != "Old A.pdf" {
+		t.Fatalf("removed = %+v", payload.Removed)
 	}
 	files := productUpdateJSONFiles(t, payload.Request.Body)
 	if len(files) != 2 || files[0]["id"] != "file_b" {
@@ -428,6 +442,26 @@ func TestUpdate_FileDryRunHumanIncludesUploadPlan(t *testing.T) {
 	}
 }
 
+func TestUpdate_DryRunHumanIncludesExistingFileNames(t *testing.T) {
+	srv := newProductUpdateFileServers(t)
+	srv.existingFiles = []existingProductFile{
+		{ID: "file_a", Name: "Old A.pdf"},
+		{ID: "file_b", Name: "Old B.pdf"},
+	}
+	testutil.Setup(t, srv.dispatch(t))
+
+	cmd := testutil.Command(newUpdateCmd(), testutil.DryRun(true))
+	cmd.SetArgs([]string{"prod1", "--remove-file", "file_a"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	if !strings.Contains(out, "Preserve existing file: Old B.pdf (file_b)") {
+		t.Fatalf("human dry-run missing preserved file: %q", out)
+	}
+	if !strings.Contains(out, "Remove existing file: Old A.pdf (file_a)") {
+		t.Fatalf("human dry-run missing removed file: %q", out)
+	}
+}
+
 func TestUpdate_KeepFileRequiresReplaceFiles(t *testing.T) {
 	srv := newProductUpdateFileServers(t)
 	srv.existingFiles = []existingProductFile{{ID: "file_a"}}
@@ -441,6 +475,9 @@ func TestUpdate_KeepFileRequiresReplaceFiles(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "--replace-files") {
 		t.Fatalf("expected keep-file usage error, got %v", err)
+	}
+	if srv.getCalls.Load() != 0 {
+		t.Fatalf("unexpected GET calls: %d", srv.getCalls.Load())
 	}
 }
 
@@ -523,6 +560,30 @@ func TestUpdate_FileUploadFailureIncludesUploadedURLs(t *testing.T) {
 	}
 }
 
+func TestUpdate_ProductUpdateFailureIncludesUploadedURLs(t *testing.T) {
+	srv := newProductUpdateFileServers(t)
+	srv.putStatus = http.StatusBadGateway
+	testutil.Setup(t, srv.dispatch(t))
+
+	path := writeProductUploadFixture(t, "first")
+	cmd := testutil.Command(newUpdateCmd(), testutil.Yes(true))
+	cmd.SetArgs([]string{
+		"prod1",
+		"--file", path,
+	})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected update failure")
+	}
+	if !strings.Contains(err.Error(), "https://example.com/attachments/u/k/original/upload-1.bin") {
+		t.Fatalf("expected uploaded URL in error, got %v", err)
+	}
+	if srv.putCalls.Load() != 1 {
+		t.Fatalf("PUT calls = %d, want 1", srv.putCalls.Load())
+	}
+}
+
 func TestUpdate_ReplaceFilesClearAllDryRunJSON(t *testing.T) {
 	srv := newProductUpdateFileServers(t)
 	srv.existingFiles = []existingProductFile{{ID: "file_a"}}
@@ -541,6 +602,12 @@ func TestUpdate_ReplaceFilesClearAllDryRunJSON(t *testing.T) {
 	}
 	if len(payload.Uploads) != 0 {
 		t.Fatalf("expected no uploads, got %+v", payload.Uploads)
+	}
+	if len(payload.Preserved) != 0 {
+		t.Fatalf("expected no preserved files, got %+v", payload.Preserved)
+	}
+	if len(payload.Removed) != 1 || payload.Removed[0].ID != "file_a" {
+		t.Fatalf("removed = %+v", payload.Removed)
 	}
 	files, ok := payload.Request.Body["files"].([]any)
 	if !ok {
@@ -618,12 +685,35 @@ func TestWrapPartialUploadErrorIncludesUploadedURLs(t *testing.T) {
 	}
 }
 
+func TestWrapPartialUploadErrorNilStaysNil(t *testing.T) {
+	if err := wrapPartialUploadError(nil, []string{"one"}); err != nil {
+		t.Fatalf("expected nil, got %v", err)
+	}
+}
+
+func TestProductFileRemovalMessageIncludesNames(t *testing.T) {
+	message := productFileRemovalMessage("prod1", []existingProductFile{
+		{ID: "file_a", Name: "Old A.pdf"},
+		{ID: "file_b", Name: "Old B.pdf"},
+		{ID: "file_c"},
+	})
+	if !strings.Contains(message, "Update product prod1 and remove 3 existing files:") {
+		t.Fatalf("unexpected message: %q", message)
+	}
+	if !strings.Contains(message, "Old A.pdf (file_a)") || !strings.Contains(message, "Old B.pdf (file_b)") {
+		t.Fatalf("unexpected message: %q", message)
+	}
+	if !strings.Contains(message, "file_c") {
+		t.Fatalf("unexpected summary: %q", message)
+	}
+}
+
 func TestRenderProductUpdateDryRunJSON_Direct(t *testing.T) {
 	var buf bytes.Buffer
 	opts := testutil.TestOptions(testutil.Stdout(&buf), testutil.JSONOutput())
 	body := map[string]any{"files": []map[string]any{}}
 
-	if err := renderProductUpdateDryRunJSON(opts, "/products/prod1", nil, body); err != nil {
+	if err := renderProductUpdateDryRunJSON(opts, "/products/prod1", productFileUpdatePlan{}, nil, body); err != nil {
 		t.Fatalf("renderProductUpdateDryRunJSON: %v", err)
 	}
 	var payload dryRunUpdateBody
@@ -635,5 +725,8 @@ func TestRenderProductUpdateDryRunJSON_Direct(t *testing.T) {
 	}
 	if len(payload.Uploads) != 0 {
 		t.Fatalf("expected no uploads, got %+v", payload.Uploads)
+	}
+	if len(payload.Preserved) != 0 || len(payload.Removed) != 0 {
+		t.Fatalf("unexpected file delta: preserved=%+v removed=%+v", payload.Preserved, payload.Removed)
 	}
 }

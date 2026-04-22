@@ -56,6 +56,9 @@ func uploadBatch(opts cmdutil.Options, client *api.Client, uploads []batchUpload
 }
 
 func wrapPartialUploadError(err error, uploadedURLs []string) error {
+	if err == nil {
+		return nil
+	}
 	if len(uploadedURLs) == 0 {
 		return err
 	}

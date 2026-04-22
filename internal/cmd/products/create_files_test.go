@@ -22,6 +22,7 @@ type createUploadServers struct {
 	mu               sync.Mutex
 	presignFilenames []string
 	productJSON      map[string]any
+	productStatus    int
 	s3Calls          int
 	completeCalls    int
 	abortCalls       int
@@ -108,7 +109,12 @@ func (srv *createUploadServers) dispatch(t *testing.T) http.HandlerFunc {
 			}
 			srv.mu.Lock()
 			srv.productJSON = body
+			status := srv.productStatus
 			srv.mu.Unlock()
+			if status != 0 {
+				http.Error(w, "product failed", status)
+				return
+			}
 
 			testutil.JSON(t, w, map[string]any{
 				"product": map[string]any{
@@ -394,5 +400,38 @@ func TestCreate_WithFiles_PartialFailureIncludesUploadedURLs(t *testing.T) {
 	}
 	if completeCalls != 2 {
 		t.Fatalf("complete calls = %d, want 2", completeCalls)
+	}
+}
+
+func TestCreate_WithFiles_ProductCreateFailureIncludesUploadedURLs(t *testing.T) {
+	srv := newCreateUploadServers(t)
+	srv.productStatus = http.StatusBadGateway
+	testutil.Setup(t, srv.dispatch(t))
+
+	path := writeCreateFixture(t, "first")
+	cmd := testutil.Command(newCreateCmd())
+	cmd.SetArgs([]string{
+		"--name", "Art Pack",
+		"--price", "10.00",
+		"--file", path,
+	})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected create failure")
+	}
+	if !strings.Contains(err.Error(), "https://example.com/uploads/up-1") {
+		t.Fatalf("expected uploaded URL in error, got %v", err)
+	}
+
+	_, productJSON, s3Calls, completeCalls := srv.snapshot()
+	if len(productJSON) == 0 {
+		t.Fatal("expected product create payload to be attempted")
+	}
+	if s3Calls != 1 {
+		t.Fatalf("S3 calls = %d, want 1", s3Calls)
+	}
+	if completeCalls != 1 {
+		t.Fatalf("complete calls = %d, want 1", completeCalls)
 	}
 }
