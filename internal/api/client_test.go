@@ -216,6 +216,45 @@ func TestClient_Put(t *testing.T) {
 	}
 }
 
+func TestClient_PutJSON(t *testing.T) {
+	var gotMethod string
+	var gotContentType string
+	var gotBody map[string]any
+	srv := setupTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
+		gotContentType = r.Header.Get("Content-Type")
+		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+			t.Fatalf("Decode failed: %v", err)
+		}
+		if err := json.NewEncoder(w).Encode(map[string]any{"success": true}); err != nil {
+			t.Fatalf("encode response: %v", err)
+		}
+	})
+	c := newTestClient(srv)
+
+	payload := map[string]any{
+		"files": []any{},
+		"name":  "updated",
+	}
+	_, err := c.PutJSON("/resource/1", payload)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if gotMethod != "PUT" {
+		t.Errorf("got method %q, want PUT", gotMethod)
+	}
+	if gotContentType != "application/json" {
+		t.Errorf("got Content-Type=%q, want application/json", gotContentType)
+	}
+	if gotBody["name"] != "updated" {
+		t.Errorf("got name=%v, want updated", gotBody["name"])
+	}
+	files, ok := gotBody["files"].([]any)
+	if !ok || len(files) != 0 {
+		t.Errorf("got files=%#v, want empty array", gotBody["files"])
+	}
+}
+
 func TestClient_Delete(t *testing.T) {
 	var gotMethod string
 	srv := setupTestServer(t, func(w http.ResponseWriter, r *http.Request) {

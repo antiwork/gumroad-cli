@@ -15,6 +15,8 @@ func NewProductsCmd() *cobra.Command {
 		Example: `  gumroad products list
   gumroad products create --name "Art Pack" --price 10.00
   gumroad products update <product_id> --name "New Name"
+  gumroad products update <product_id> --file ./pack.zip
+  gumroad products update <product_id> --replace-files --keep-file file_123 --file ./new-pack.zip
   gumroad products view <id>
   gumroad products publish <id>
   gumroad products unpublish <id>

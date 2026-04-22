@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/antiwork/gumroad-cli/internal/cmdutil"
+	"github.com/antiwork/gumroad-cli/internal/config"
 	"github.com/spf13/cobra"
 )
 
@@ -16,13 +17,21 @@ func newUpdateCmd() *cobra.Command {
 	var maxPurchaseCount int
 	var payWhatYouWant bool
 	var tags []string
+	var files []string
+	var fileNames []string
+	var fileDescriptions []string
+	var keepFileIDs []string
+	var removeFileIDs []string
+	var replaceFiles bool
 
 	cmd := &cobra.Command{
 		Use:   "update <product_id>",
 		Short: "Update a product",
 		Example: `  gumroad products update <id> --name "New Name"
   gumroad products update <id> --price 15.00 --currency eur
-  gumroad products update <id> --tag art --tag digital`,
+  gumroad products update <id> --tag art --tag digital
+  gumroad products update <id> --file ./pack.zip
+  gumroad products update <id> --replace-files --keep-file file_123 --file ./new-pack.zip`,
 		Args: cmdutil.ExactArgs(1),
 		RunE: func(c *cobra.Command, args []string) error {
 			opts := cmdutil.OptionsFrom(c)
@@ -33,6 +42,8 @@ func newUpdateCmd() *cobra.Command {
 				"custom-permalink", "custom-summary", "custom-receipt",
 				"pay-what-you-want", "suggested-price", "max-purchase-count",
 				"taxonomy-id", "tag",
+				"file", "file-name", "file-description",
+				"keep-file", "remove-file", "replace-files",
 			); err != nil {
 				return err
 			}
@@ -41,6 +52,10 @@ func newUpdateCmd() *cobra.Command {
 				return cmdutil.UsageErrorf(c, "--name cannot be empty")
 			}
 			if err := cmdutil.RequireNonNegativeIntFlag(c, "max-purchase-count", maxPurchaseCount); err != nil {
+				return err
+			}
+			requestedUploads, err := collectRequestedProductUploads(c, files, fileNames, fileDescriptions)
+			if err != nil {
 				return err
 			}
 
@@ -92,6 +107,68 @@ func newUpdateCmd() *cobra.Command {
 			}
 
 			path := cmdutil.JoinPath("products", args[0])
+			fileFlagsChanged := flags.Changed("file") ||
+				flags.Changed("file-name") ||
+				flags.Changed("file-description") ||
+				flags.Changed("keep-file") ||
+				flags.Changed("remove-file") ||
+				flags.Changed("replace-files")
+			if !fileFlagsChanged {
+				return cmdutil.RunRequestWithSuccess(opts,
+					"Updating product...", "PUT", path, params,
+					args[0], "Product "+args[0]+" updated.")
+			}
+
+			token, err := config.Token()
+			if err != nil {
+				return err
+			}
+			client := cmdutil.NewAPIClient(opts, token)
+			existingFiles, err := fetchExistingProductFiles(client, args[0])
+			if err != nil {
+				return err
+			}
+
+			filePlan, err := planProductFileUpdate(c, existingFiles, requestedUploads, keepFileIDs, removeFileIDs, replaceFiles)
+			if err != nil {
+				return err
+			}
+
+			ok, err := confirmProductFileRemoval(opts, args[0], filePlan.Removed)
+			if err != nil {
+				return err
+			}
+			if !ok {
+				return cmdutil.PrintCancelledAction(opts, "update product "+args[0], args[0])
+			}
+
+			if fileUpdateNeedsJSONBody(filePlan) {
+				if opts.DryRun {
+					return renderClearAllFilesDryRun(opts, path, params)
+				}
+				payload := buildProductUpdateJSONBody(params, []map[string]any{})
+				return runProductUpdateJSON(opts, client, path, args[0], payload)
+			}
+
+			plannedUploads, err := describeProductUploads(filePlan.Uploads)
+			if err != nil {
+				return err
+			}
+			if opts.DryRun {
+				dryRunParams := cmdutil.CloneValues(params)
+				appendProductFilesParams(dryRunParams, filePlan, placeholderUploadURLs(len(plannedUploads)))
+				return cmdutil.PrintDryRunRequest(opts, "PUT", path, dryRunParams)
+			}
+
+			uploadedURLs := make([]string, len(plannedUploads))
+			for i, planned := range plannedUploads {
+				fileURL, err := uploadProductFile(opts, client, planned)
+				if err != nil {
+					return err
+				}
+				uploadedURLs[i] = fileURL
+			}
+			appendProductFilesParams(params, filePlan, uploadedURLs)
 			return cmdutil.RunRequestWithSuccess(opts,
 				"Updating product...", "PUT", path, params,
 				args[0], "Product "+args[0]+" updated.")
@@ -110,6 +187,12 @@ func newUpdateCmd() *cobra.Command {
 	cmd.Flags().IntVar(&maxPurchaseCount, "max-purchase-count", 0, "New maximum number of purchases")
 	cmd.Flags().StringVar(&taxonomyID, "taxonomy-id", "", "New taxonomy/category ID")
 	cmd.Flags().StringArrayVar(&tags, "tag", nil, "Tag (repeatable, replaces all existing tags)")
+	cmd.Flags().StringArrayVar(&files, "file", nil, "Attach a new local file (repeatable)")
+	cmd.Flags().StringArrayVar(&fileNames, "file-name", nil, "Display name for the matching --file (repeatable)")
+	cmd.Flags().StringArrayVar(&fileDescriptions, "file-description", nil, "Description for the matching --file (repeatable)")
+	cmd.Flags().StringArrayVar(&keepFileIDs, "keep-file", nil, "Existing file ID to preserve when using --replace-files (repeatable)")
+	cmd.Flags().StringArrayVar(&removeFileIDs, "remove-file", nil, "Existing file ID to remove (repeatable)")
+	cmd.Flags().BoolVar(&replaceFiles, "replace-files", false, "Replace the current file set instead of preserving existing files by default")
 
 	return cmd
 }

@@ -110,7 +110,7 @@ func RunRequestWithSuccess(opts Options, spinnerMessage, method, path string, pa
 	if err != nil {
 		return err
 	}
-	return renderMutationSuccess(opts, data, id, successMessage)
+	return PrintMutationSuccess(opts, data, id, successMessage)
 }
 
 // RunWithToken executes a caller-provided client operation with a
@@ -182,6 +182,12 @@ func printMutationPayload(opts Options, payload mutationOutput) error {
 		return fmt.Errorf("could not encode JSON output: %w", err)
 	}
 	return output.PrintJSON(opts.Out(), data, opts.JQExpr)
+}
+
+// PrintMutationSuccess renders a successful mutating command with the shared
+// human/plain/JSON envelope used across the CLI.
+func PrintMutationSuccess(opts Options, data json.RawMessage, id, successMessage string) error {
+	return renderMutationSuccess(opts, data, id, successMessage)
 }
 
 func renderMutationSuccess(opts Options, data json.RawMessage, id, successMessage string) error {

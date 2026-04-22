@@ -104,6 +104,19 @@ gumroad completion    bash, zsh, fish, powershell
 
 Run `gumroad <command> --help` for usage details and examples.
 
+## File attachments
+
+```sh
+# Upload a file and print the canonical Gumroad URL
+gumroad files upload ./pack.zip
+
+# Add a new file to a product while keeping its current attachments
+gumroad products update <product_id> --file ./pack.zip
+
+# Replace the current file set, preserving only the IDs you keep explicitly
+gumroad products update <product_id> --replace-files --keep-file <file_id> --file ./new-pack.zip
+```
+
 ## Output modes
 
 | Flag | Output | Use case |
