@@ -149,12 +149,6 @@ func (m *railsMock) dispatch(t *testing.T, w http.ResponseWriter, r *http.Reques
 	}
 }
 
-func (m *railsMock) completeForm() url.Values {
-	m.completeMu.Lock()
-	defer m.completeMu.Unlock()
-	return m.completeBody
-}
-
 func (m *railsMock) completeJSONBody() map[string]any {
 	m.completeMu.Lock()
 	defer m.completeMu.Unlock()
