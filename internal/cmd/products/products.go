@@ -14,6 +14,7 @@ func NewProductsCmd() *cobra.Command {
 			"New products are created as drafts; use `gumroad products publish <id>` to publish.",
 		Example: `  gumroad products list
   gumroad products create --name "Art Pack" --price 10.00
+  gumroad products create --name "Art Pack" --file ./pack.zip --file-name "Art Pack.zip"
   gumroad products update <product_id> --name "New Name"
   gumroad products update <product_id> --file ./pack.zip
   gumroad products update <product_id> --replace-files --keep-file file_123 --file ./new-pack.zip

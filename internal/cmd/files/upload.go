@@ -10,6 +10,7 @@ import (
 	"github.com/antiwork/gumroad-cli/internal/config"
 	"github.com/antiwork/gumroad-cli/internal/output"
 	"github.com/antiwork/gumroad-cli/internal/upload"
+	"github.com/antiwork/gumroad-cli/internal/uploadui"
 	"github.com/spf13/cobra"
 )
 
@@ -54,43 +55,11 @@ func runUpload(opts cmdutil.Options, path string, plan upload.Plan) error {
 		return err
 	}
 	client := cmdutil.NewAPIClient(opts, token)
-
-	// Cache the total-bytes label so the progress callback (fires once per
-	// part, up to ~200x on a 20 GB upload) doesn't re-format it each tick.
-	totalLabel := humanBytes(plan.Size)
-	var sp *output.Spinner
-	if cmdutil.ShouldShowSpinner(opts) {
-		sp = output.NewSpinnerTo(spinnerStatus(plan.Filename, 0, totalLabel), opts.Err())
-		sp.Start()
-		defer sp.Stop()
-	}
-
-	progress := func(uploaded int64) {
-		if sp != nil {
-			sp.SetMessage(spinnerStatus(plan.Filename, uploaded, totalLabel))
-		}
-	}
-
-	fileURL, err := upload.Upload(opts.Context, client, path, upload.Options{
-		Filename:   plan.Filename,
-		Progress:   progress,
-		HTTPClient: s3HTTPClientForTesting,
-	})
+	fileURL, err := uploadui.UploadFile(opts, client, path, plan, s3HTTPClientForTesting, plan.Filename)
 	if err != nil {
 		return err
 	}
-	// Drain the spinner before rendering the URL. upload.Upload's contract
-	// permits a final progress callback to fire after it returns, which
-	// would otherwise keep the spinner repainting stderr while stdout is
-	// printing the canonical URL — corrupting the output on a shared TTY.
-	if sp != nil {
-		sp.Stop()
-	}
 	return renderFileURL(opts, fileURL)
-}
-
-func spinnerStatus(filename string, uploaded int64, totalLabel string) string {
-	return fmt.Sprintf("Uploading %s %s / %s", filename, humanBytes(uploaded), totalLabel)
 }
 
 func renderFileURL(opts cmdutil.Options, fileURL string) error {
@@ -154,22 +123,5 @@ func renderDryRun(opts cmdutil.Options, plan upload.Plan) error {
 	if plan.PartCount != 1 {
 		parts = fmt.Sprintf("%d parts", plan.PartCount)
 	}
-	return output.Writef(opts.Out(), "Size: %s (%s)\n", humanBytes(plan.Size), parts)
-}
-
-// humanBytes renders a byte count with IEC-style (1024-based) magnitudes but
-// decimal-unit labels (KB/MB/GB), matching how Gumroad quotes file sizes.
-func humanBytes(n int64) string {
-	const unit = 1024
-	if n < unit {
-		return fmt.Sprintf("%d B", n)
-	}
-	div, exp := int64(unit), 0
-	for n/div >= unit && exp < 3 {
-		div *= unit
-		exp++
-	}
-	v := float64(n) / float64(div)
-	units := []string{"KB", "MB", "GB", "TB"}
-	return fmt.Sprintf("%.1f %s", v, units[exp])
+	return output.Writef(opts.Out(), "Size: %s (%s)\n", uploadui.HumanBytes(plan.Size), parts)
 }

@@ -16,6 +16,7 @@ import (
 	"github.com/antiwork/gumroad-cli/internal/cmdutil"
 	"github.com/antiwork/gumroad-cli/internal/testutil"
 	"github.com/antiwork/gumroad-cli/internal/upload"
+	"github.com/antiwork/gumroad-cli/internal/uploadui"
 )
 
 // uploadServers wires a Rails mock (via testutil.Setup) plus an in-process
@@ -422,16 +423,6 @@ func TestRenderDryRun_MultiPartPluralization(t *testing.T) {
 	}
 }
 
-func TestSpinnerStatus_IncludesFilenameAndProgress(t *testing.T) {
-	got := spinnerStatus("pack.zip", 1024*1024*4, "12.0 MB")
-	if !strings.Contains(got, "pack.zip") {
-		t.Errorf("spinnerStatus missing filename: %q", got)
-	}
-	if !strings.Contains(got, "4.0 MB") || !strings.Contains(got, "12.0 MB") {
-		t.Errorf("spinnerStatus missing bytes: %q", got)
-	}
-}
-
 func TestHumanBytes_Magnitudes(t *testing.T) {
 	cases := []struct {
 		in   int64
@@ -448,7 +439,7 @@ func TestHumanBytes_Magnitudes(t *testing.T) {
 		{1024 * 1024 * 1024 * 1024 * 2048, "2048.0 TB"},
 	}
 	for _, c := range cases {
-		if got := humanBytes(c.in); got != c.want {
+		if got := uploadui.HumanBytes(c.in); got != c.want {
 			t.Errorf("humanBytes(%d) = %q, want %q", c.in, got, c.want)
 		}
 	}
