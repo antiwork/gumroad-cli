@@ -13,7 +13,7 @@ import (
 	"github.com/antiwork/gumroad-cli/internal/config"
 	"github.com/antiwork/gumroad-cli/internal/output"
 	"github.com/antiwork/gumroad-cli/internal/upload"
-	"github.com/antiwork/gumroad-cli/internal/uploadcmd"
+	"github.com/antiwork/gumroad-cli/internal/uploadui"
 	"github.com/spf13/cobra"
 )
 
@@ -193,7 +193,7 @@ func newCreateCmd() *cobra.Command {
 					if len(plannedUploads) > 1 {
 						statusLabel = fmt.Sprintf("%s (%d/%d)", planned.Plan.Filename, i+1, len(plannedUploads))
 					}
-					fileURLs[i], err = uploadcmd.UploadFile(opts, client, planned.Path, planned.Plan, s3HTTPClientForTesting, statusLabel)
+					fileURLs[i], err = uploadui.UploadFile(opts, client, planned.Path, planned.Plan, s3HTTPClientForTesting, statusLabel)
 					if err != nil {
 						return err
 					}
@@ -374,5 +374,5 @@ func renderCreateUploadDryRun(opts cmdutil.Options, plan upload.Plan) error {
 	if plan.PartCount != 1 {
 		parts = fmt.Sprintf("%d parts", plan.PartCount)
 	}
-	return output.Writef(opts.Out(), "Size: %s (%s)\n", uploadcmd.HumanBytes(plan.Size), parts)
+	return output.Writef(opts.Out(), "Size: %s (%s)\n", uploadui.HumanBytes(plan.Size), parts)
 }

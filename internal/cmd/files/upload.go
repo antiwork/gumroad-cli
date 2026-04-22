@@ -10,7 +10,7 @@ import (
 	"github.com/antiwork/gumroad-cli/internal/config"
 	"github.com/antiwork/gumroad-cli/internal/output"
 	"github.com/antiwork/gumroad-cli/internal/upload"
-	"github.com/antiwork/gumroad-cli/internal/uploadcmd"
+	"github.com/antiwork/gumroad-cli/internal/uploadui"
 	"github.com/spf13/cobra"
 )
 
@@ -55,7 +55,7 @@ func runUpload(opts cmdutil.Options, path string, plan upload.Plan) error {
 		return err
 	}
 	client := cmdutil.NewAPIClient(opts, token)
-	fileURL, err := uploadcmd.UploadFile(opts, client, path, plan, s3HTTPClientForTesting, plan.Filename)
+	fileURL, err := uploadui.UploadFile(opts, client, path, plan, s3HTTPClientForTesting, plan.Filename)
 	if err != nil {
 		return err
 	}
@@ -123,5 +123,5 @@ func renderDryRun(opts cmdutil.Options, plan upload.Plan) error {
 	if plan.PartCount != 1 {
 		parts = fmt.Sprintf("%d parts", plan.PartCount)
 	}
-	return output.Writef(opts.Out(), "Size: %s (%s)\n", uploadcmd.HumanBytes(plan.Size), parts)
+	return output.Writef(opts.Out(), "Size: %s (%s)\n", uploadui.HumanBytes(plan.Size), parts)
 }

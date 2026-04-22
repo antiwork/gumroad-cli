@@ -16,7 +16,7 @@ import (
 	"github.com/antiwork/gumroad-cli/internal/cmdutil"
 	"github.com/antiwork/gumroad-cli/internal/testutil"
 	"github.com/antiwork/gumroad-cli/internal/upload"
-	"github.com/antiwork/gumroad-cli/internal/uploadcmd"
+	"github.com/antiwork/gumroad-cli/internal/uploadui"
 )
 
 // uploadServers wires a Rails mock (via testutil.Setup) plus an in-process
@@ -439,7 +439,7 @@ func TestHumanBytes_Magnitudes(t *testing.T) {
 		{1024 * 1024 * 1024 * 1024 * 2048, "2048.0 TB"},
 	}
 	for _, c := range cases {
-		if got := uploadcmd.HumanBytes(c.in); got != c.want {
+		if got := uploadui.HumanBytes(c.in); got != c.want {
 			t.Errorf("humanBytes(%d) = %q, want %q", c.in, got, c.want)
 		}
 	}

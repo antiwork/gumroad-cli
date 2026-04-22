@@ -1,4 +1,4 @@
-package uploadcmd
+package uploadui
 
 import (
 	"fmt"
