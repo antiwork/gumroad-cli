@@ -191,7 +191,7 @@ func (c *Client) doPreparedWithContext(
 		}
 
 		req.Header.Set("Authorization", "Bearer "+c.token)
-		req.Header.Set("User-Agent", "gumroad/"+c.version)
+		req.Header.Set("User-Agent", "gumroad-cli/"+c.version)
 		if contentType != "" {
 			req.Header.Set("Content-Type", contentType)
 		}

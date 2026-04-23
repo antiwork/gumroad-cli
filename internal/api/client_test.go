@@ -107,8 +107,8 @@ func TestClient_UserAgent(t *testing.T) {
 	c := &Client{token: "tok", httpClient: srv.Client(), baseURL: srv.URL, version: "1.2.3"}
 
 	_, _ = c.Get("/user", nil)
-	if gotUA != "gumroad/1.2.3" {
-		t.Errorf("got User-Agent=%q, want %q", gotUA, "gumroad/1.2.3")
+	if gotUA != "gumroad-cli/1.2.3" {
+		t.Errorf("got User-Agent=%q, want %q", gotUA, "gumroad-cli/1.2.3")
 	}
 }
 
