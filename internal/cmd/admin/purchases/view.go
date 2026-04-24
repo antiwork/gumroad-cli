@@ -20,7 +20,7 @@ type purchase struct {
 	Email               string      `json:"email"`
 	SellerEmail         string      `json:"seller_email"`
 	ProductName         string      `json:"product_name"`
-	LinkName            string      `json:"link_name"`
+	ProductAlias        string      `json:"link_name"`
 	ProductID           string      `json:"product_id"`
 	FormattedTotalPrice string      `json:"formatted_total_price"`
 	PriceCents          api.JSONInt `json:"price_cents"`
@@ -48,7 +48,7 @@ func newViewCmd() *cobra.Command {
 func renderPurchase(opts cmdutil.Options, p purchase) error {
 	product := p.ProductName
 	if product == "" {
-		product = p.LinkName
+		product = p.ProductAlias
 	}
 	if product == "" {
 		product = p.ProductID
@@ -84,8 +84,10 @@ func renderPurchase(opts cmdutil.Options, p purchase) error {
 	if err := output.Writeln(opts.Out(), style.Bold(headline)); err != nil {
 		return err
 	}
-	if err := output.Writef(opts.Out(), "Purchase ID: %s\n", p.ID); err != nil {
-		return err
+	if headline != p.ID {
+		if err := output.Writef(opts.Out(), "Purchase ID: %s\n", p.ID); err != nil {
+			return err
+		}
 	}
 	if p.Email != "" {
 		if err := output.Writef(opts.Out(), "Buyer: %s\n", p.Email); err != nil {

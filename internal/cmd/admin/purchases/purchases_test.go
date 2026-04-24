@@ -99,7 +99,7 @@ func TestViewHumanOutputOmitsEmptyOptionalFields(t *testing.T) {
 	cmd.SetArgs([]string{"123"})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
-	if strings.TrimSpace(out) != "123\nPurchase ID: 123" {
+	if strings.TrimSpace(out) != "123" {
 		t.Fatalf("unexpected human output: %q", out)
 	}
 }

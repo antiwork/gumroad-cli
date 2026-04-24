@@ -119,6 +119,22 @@ func TestLookupPlainOutput(t *testing.T) {
 	}
 }
 
+func TestLookupHumanOutputShowsZeroUses(t *testing.T) {
+	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{
+			"license": map[string]any{"purchase_id": "123", "uses": 0},
+		})
+	})
+
+	cmd := testutil.Command(newLookupCmd())
+	cmd.SetArgs([]string{"--key", "ABC-123"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	if !strings.Contains(out, "Uses: 0") {
+		t.Fatalf("output missing zero uses: %q", out)
+	}
+}
+
 func TestLookupRejectsEmptyKeyFlag(t *testing.T) {
 	cmd := newLookupCmd()
 	cmd.SetArgs([]string{"--key", ""})

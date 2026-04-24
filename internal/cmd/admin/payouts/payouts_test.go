@@ -138,6 +138,13 @@ func TestListPlainOutputWithNoPayouts(t *testing.T) {
 	}
 }
 
+func TestFormatAmountTrimsCurrency(t *testing.T) {
+	p := payout{AmountCents: 5000, Currency: " usd "}
+	if got := formatAmount(p); got != "5000 USD cents" {
+		t.Fatalf("got %q, want 5000 USD cents", got)
+	}
+}
+
 func TestNewPayoutsCmdWiresList(t *testing.T) {
 	cmd := NewPayoutsCmd()
 	if cmd.Use != "payouts" {

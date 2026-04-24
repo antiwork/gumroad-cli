@@ -35,12 +35,12 @@ type license struct {
 }
 
 type purchase struct {
-	ID          string      `json:"id"`
-	Email       string      `json:"email"`
-	ProductID   string      `json:"product_id"`
-	ProductName string      `json:"product_name"`
-	LinkName    string      `json:"link_name"`
-	Uses        api.JSONInt `json:"uses"`
+	ID           string      `json:"id"`
+	Email        string      `json:"email"`
+	ProductID    string      `json:"product_id"`
+	ProductName  string      `json:"product_name"`
+	ProductAlias string      `json:"link_name"`
+	Uses         api.JSONInt `json:"uses"`
 }
 
 type lookupRequest struct {
@@ -93,7 +93,7 @@ func resolveLicenseKey(cmd *cobra.Command, opts cmdutil.Options, key string) (st
 
 func renderLicense(opts cmdutil.Options, resp licenseResponse) error {
 	email := firstNonEmpty(resp.License.Email, resp.Purchase.Email)
-	product := firstNonEmpty(resp.License.ProductName, resp.Purchase.ProductName, resp.Purchase.LinkName, resp.License.ProductID, resp.Purchase.ProductID)
+	product := firstNonEmpty(resp.License.ProductName, resp.Purchase.ProductName, resp.Purchase.ProductAlias, resp.License.ProductID, resp.Purchase.ProductID)
 	purchaseID := firstNonEmpty(resp.License.PurchaseID, resp.Purchase.ID)
 	uses := resp.License.Uses
 	if uses == 0 {
@@ -131,10 +131,8 @@ func renderLicense(opts cmdutil.Options, resp licenseResponse) error {
 			return err
 		}
 	}
-	if uses != 0 {
-		if err := output.Writef(opts.Out(), "Uses: %d\n", uses); err != nil {
-			return err
-		}
+	if err := output.Writef(opts.Out(), "Uses: %d\n", uses); err != nil {
+		return err
 	}
 	if status != "" {
 		return output.Writef(opts.Out(), "Status: %s\n", status)

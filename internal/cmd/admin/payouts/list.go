@@ -125,10 +125,11 @@ func writePayoutsTable(w io.Writer, style output.Styler, payouts []payout) error
 }
 
 func formatAmount(p payout) string {
-	if p.Currency == "" {
+	currency := strings.TrimSpace(p.Currency)
+	if currency == "" {
 		return fmt.Sprintf("%d cents", p.AmountCents)
 	}
-	return strings.TrimSpace(fmt.Sprintf("%d %s cents", p.AmountCents, strings.ToUpper(p.Currency)))
+	return fmt.Sprintf("%d %s cents", p.AmountCents, strings.ToUpper(currency))
 }
 
 func payoutDestination(p payout) string {
