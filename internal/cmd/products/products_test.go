@@ -344,8 +344,11 @@ func TestView_SalesCountFloat(t *testing.T) {
 
 	cmd := newViewCmd()
 	out := testutil.CaptureStdout(func() { _ = cmd.RunE(cmd, []string{"p1"}) })
-	if !strings.Contains(out, "Sales: 3 ($15.00)") {
+	if !strings.Contains(out, "Sales: 3") {
 		t.Errorf("output missing integer-like float sales count: %q", out)
+	}
+	if !strings.Contains(out, "Revenue: $15.00") {
+		t.Errorf("output missing revenue line: %q", out)
 	}
 }
 
@@ -367,6 +370,9 @@ func TestView_MembershipUsesMembersLabel(t *testing.T) {
 	}
 	if strings.Contains(out, "Sales: 7") {
 		t.Errorf("expected membership to not use Sales label, got: %q", out)
+	}
+	if !strings.Contains(out, "Revenue: $35.00") {
+		t.Errorf("expected revenue line, got: %q", out)
 	}
 }
 

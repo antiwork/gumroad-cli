@@ -92,7 +92,10 @@ func newViewCmd() *cobra.Command {
 				if p.IsTieredMembership {
 					countLabel = "Members"
 				}
-				if err := output.Writef(opts.Out(), "%s: %d ($%.2f)\n", countLabel, p.SalesCount, p.SalesUSDCents/100); err != nil {
+				if err := output.Writef(opts.Out(), "%s: %d\n", countLabel, p.SalesCount); err != nil {
+					return err
+				}
+				if err := output.Writef(opts.Out(), "Revenue: $%.2f\n", p.SalesUSDCents/100); err != nil {
 					return err
 				}
 				if p.URL != "" {
