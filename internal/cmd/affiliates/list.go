@@ -1,18 +1,20 @@
 package affiliates
 
 import (
+	"fmt"
 	"io"
 	"net/url"
 
+	"github.com/antiwork/gumroad-cli/internal/api"
 	"github.com/antiwork/gumroad-cli/internal/cmdutil"
 	"github.com/antiwork/gumroad-cli/internal/output"
 	"github.com/spf13/cobra"
 )
 
 type affiliateListItem struct {
-	ID                   string `json:"id"`
-	Email                string `json:"email"`
-	CommissionPercentage int    `json:"commission_percentage"`
+	ID                   string      `json:"id"`
+	Email                string      `json:"email"`
+	CommissionPercentage api.JSONInt `json:"commission_percentage"`
 }
 
 type affiliatesListResponse struct {
@@ -35,7 +37,7 @@ func newListCmd() *cobra.Command {
 				if opts.PlainOutput {
 					var rows [][]string
 					for _, a := range resp.Affiliates {
-						rows = append(rows, []string{a.ID, a.Email, cmdutil.FormatInt(a.CommissionPercentage) + "%"})
+						rows = append(rows, []string{a.ID, a.Email, fmt.Sprintf("%d%%", a.CommissionPercentage)})
 					}
 					return output.PrintPlain(opts.Out(), rows)
 				}
@@ -43,7 +45,7 @@ func newListCmd() *cobra.Command {
 				style := opts.Style()
 				tbl := output.NewStyledTable(style, "ID", "EMAIL", "COMMISSION")
 				for _, a := range resp.Affiliates {
-					tbl.AddRow(a.ID, a.Email, cmdutil.FormatInt(a.CommissionPercentage)+"%")
+					tbl.AddRow(a.ID, a.Email, fmt.Sprintf("%d%%", a.CommissionPercentage))
 				}
 				return output.WithPager(opts.Out(), opts.Err(), func(w io.Writer) error {
 					return tbl.Render(w)

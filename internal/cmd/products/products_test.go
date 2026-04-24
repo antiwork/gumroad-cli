@@ -92,6 +92,132 @@ func TestList_Empty(t *testing.T) {
 	}
 }
 
+func TestList_MixedTypes_SplitsTables(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{
+			"products": []map[string]any{
+				{"id": "m1", "name": "Club", "published": true, "formatted_price": "$5 a month", "sales_count": 7, "is_tiered_membership": true},
+				{"id": "p1", "name": "Art Pack", "published": true, "formatted_price": "$10", "sales_count": 42, "is_tiered_membership": false},
+			},
+		})
+	})
+
+	cmd := newListCmd()
+	out := testutil.CaptureStdout(func() { _ = cmd.RunE(cmd, []string{}) })
+
+	if !strings.Contains(out, "Memberships") || !strings.Contains(out, "Products") {
+		t.Errorf("expected both section headers, got: %q", out)
+	}
+	if !strings.Contains(out, "MEMBERS") {
+		t.Errorf("expected MEMBERS column header for memberships, got: %q", out)
+	}
+	if !strings.Contains(out, "SALES") {
+		t.Errorf("expected SALES column header for products, got: %q", out)
+	}
+	membersIdx := strings.Index(out, "Memberships")
+	productsIdx := strings.Index(out, "\nProducts")
+	if membersIdx < 0 || productsIdx < 0 || membersIdx > productsIdx {
+		t.Errorf("expected Memberships section before Products section, got: %q", out)
+	}
+	if strings.Index(out, "m1") > strings.Index(out, "p1") {
+		t.Errorf("expected membership row before product row, got: %q", out)
+	}
+}
+
+func TestList_OnlyMemberships_UsesMembersHeader(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{
+			"products": []map[string]any{
+				{"id": "m1", "name": "Club", "published": true, "formatted_price": "$5 a month", "sales_count": 7, "is_tiered_membership": true},
+			},
+		})
+	})
+
+	cmd := newListCmd()
+	out := testutil.CaptureStdout(func() { _ = cmd.RunE(cmd, []string{}) })
+
+	if !strings.Contains(out, "MEMBERS") {
+		t.Errorf("expected MEMBERS column header, got: %q", out)
+	}
+	if strings.Contains(out, "SALES") {
+		t.Errorf("expected no SALES column when only memberships present, got: %q", out)
+	}
+	if strings.Contains(out, "\nProducts\n") || strings.Contains(out, "Memberships\n") && strings.Contains(out, "Products") {
+		// Section headers only appear when both types exist.
+		t.Errorf("expected no section headers when only memberships present, got: %q", out)
+	}
+}
+
+func TestList_OnlyProducts_UsesSalesHeader(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{
+			"products": []map[string]any{
+				{"id": "p1", "name": "Art Pack", "published": true, "formatted_price": "$10", "sales_count": 42, "is_tiered_membership": false},
+			},
+		})
+	})
+
+	cmd := newListCmd()
+	out := testutil.CaptureStdout(func() { _ = cmd.RunE(cmd, []string{}) })
+
+	if !strings.Contains(out, "SALES") {
+		t.Errorf("expected SALES column header, got: %q", out)
+	}
+	if strings.Contains(out, "MEMBERS") {
+		t.Errorf("expected no MEMBERS column when only products present, got: %q", out)
+	}
+	if strings.Contains(out, "Memberships") || strings.Contains(out, "\nProducts\n") {
+		t.Errorf("expected no section headers when only products present, got: %q", out)
+	}
+}
+
+func TestList_JSON_PreservesFlatShape(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{
+			"products": []map[string]any{
+				{"id": "m1", "name": "Club", "published": true, "formatted_price": "$5 a month", "sales_count": 7, "is_tiered_membership": true},
+				{"id": "p1", "name": "Art Pack", "published": true, "formatted_price": "$10", "sales_count": 42, "is_tiered_membership": false},
+			},
+		})
+	})
+
+	cmd := testutil.Command(newListCmd(), testutil.JSONOutput())
+	out := testutil.CaptureStdout(func() { _ = cmd.RunE(cmd, []string{}) })
+
+	var resp map[string]any
+	if err := json.Unmarshal([]byte(out), &resp); err != nil {
+		t.Fatalf("output is not valid JSON: %v\n%s", err, out)
+	}
+	products := resp["products"].([]any)
+	if len(products) != 2 {
+		t.Fatalf("got %d products, want 2 (flat)", len(products))
+	}
+	if strings.Contains(out, "Memberships") || strings.Contains(out, "\nProducts\n") {
+		t.Errorf("JSON output should not contain section headers, got: %q", out)
+	}
+}
+
+func TestList_Plain_PreservesFlatShape(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{
+			"products": []map[string]any{
+				{"id": "m1", "name": "Club", "published": true, "formatted_price": "$5 a month", "sales_count": 7, "is_tiered_membership": true},
+				{"id": "p1", "name": "Art Pack", "published": true, "formatted_price": "$10", "sales_count": 42, "is_tiered_membership": false},
+			},
+		})
+	})
+
+	cmd := testutil.Command(newListCmd(), testutil.PlainOutput())
+	out := testutil.CaptureStdout(func() { _ = cmd.RunE(cmd, []string{}) })
+
+	if strings.Contains(out, "Memberships") || strings.Contains(out, "Products\n") {
+		t.Errorf("plain output should not contain section headers, got: %q", out)
+	}
+	if !strings.Contains(out, "m1\t") || !strings.Contains(out, "p1\t") {
+		t.Errorf("plain output missing tab-separated rows: %q", out)
+	}
+}
+
 func TestView_CorrectEndpoint(t *testing.T) {
 	var gotPath string
 	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
@@ -218,8 +344,35 @@ func TestView_SalesCountFloat(t *testing.T) {
 
 	cmd := newViewCmd()
 	out := testutil.CaptureStdout(func() { _ = cmd.RunE(cmd, []string{"p1"}) })
-	if !strings.Contains(out, "Sales: 3 ($15.00)") {
+	if !strings.Contains(out, "Sales: 3") {
 		t.Errorf("output missing integer-like float sales count: %q", out)
+	}
+	if !strings.Contains(out, "Revenue: $15.00") {
+		t.Errorf("output missing revenue line: %q", out)
+	}
+}
+
+func TestView_MembershipUsesMembersLabel(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{
+			"product": map[string]any{
+				"id": "m1", "name": "Club", "published": true,
+				"formatted_price": "$5 a month", "sales_count": 7, "sales_usd_cents": 3500,
+				"is_tiered_membership": true,
+			},
+		})
+	})
+
+	cmd := newViewCmd()
+	out := testutil.CaptureStdout(func() { _ = cmd.RunE(cmd, []string{"m1"}) })
+	if !strings.Contains(out, "Members: 7") {
+		t.Errorf("expected membership to use Members label, got: %q", out)
+	}
+	if strings.Contains(out, "Sales: 7") {
+		t.Errorf("expected membership to not use Sales label, got: %q", out)
+	}
+	if !strings.Contains(out, "Revenue: $35.00") {
+		t.Errorf("expected revenue line, got: %q", out)
 	}
 }
 

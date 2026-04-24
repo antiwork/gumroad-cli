@@ -30,8 +30,16 @@ func newCreateCmd() *cobra.Command {
 				params.Set("commission_percentage", fmt.Sprintf("%d", co.CommissionPercentage))
 			}
 
-			return cmdutil.RunRequest(opts, "Creating affiliate...", "POST", "/affiliates", params, func(data []byte) error {
-				return cmdutil.PrintSuccess(opts, "Affiliate created successfully.")
+			return cmdutil.RunRequestDecoded[struct {
+				Affiliate struct {
+					ID string `json:"id"`
+				} `json:"affiliate"`
+			}](opts, "Creating affiliate...", "POST", "/affiliates", params, func(resp struct {
+				Affiliate struct {
+					ID string `json:"id"`
+				} `json:"affiliate"`
+			}) error {
+				return cmdutil.PrintMutationSuccess(opts, nil, resp.Affiliate.ID, "Affiliate created successfully.")
 			})
 		},
 	}

@@ -45,16 +45,17 @@ func newViewCmd() *cobra.Command {
 			return cmdutil.RunRequest(opts, "Fetching product...", "GET", cmdutil.JoinPath("products", args[0]), url.Values{}, func(data json.RawMessage) error {
 				var resp struct {
 					Product struct {
-						ID             string      `json:"id"`
-						Name           string      `json:"name"`
-						Published      bool        `json:"published"`
-						Description    string      `json:"description"`
-						FormattedPrice string      `json:"formatted_price"`
-						SalesCount     api.JSONInt `json:"sales_count"`
-						SalesUSDCents  float64     `json:"sales_usd_cents"`
-						URL            string      `json:"short_url"`
-						ThumbnailURL   *string     `json:"thumbnail_url"`
-						PreviewURL     *string     `json:"preview_url"`
+						ID                 string      `json:"id"`
+						Name               string      `json:"name"`
+						Published          bool        `json:"published"`
+						Description        string      `json:"description"`
+						FormattedPrice     string      `json:"formatted_price"`
+						SalesCount         api.JSONInt `json:"sales_count"`
+						SalesUSDCents      float64     `json:"sales_usd_cents"`
+						URL                string      `json:"short_url"`
+						ThumbnailURL       *string     `json:"thumbnail_url"`
+						PreviewURL         *string     `json:"preview_url"`
+						IsTieredMembership bool        `json:"is_tiered_membership"`
 					} `json:"product"`
 				}
 				if err := json.Unmarshal(data, &resp); err != nil {
@@ -87,7 +88,14 @@ func newViewCmd() *cobra.Command {
 				if err := output.Writef(opts.Out(), "ID: %s  Status: %s  Price: %s\n", p.ID, status, p.FormattedPrice); err != nil {
 					return err
 				}
-				if err := output.Writef(opts.Out(), "Sales: %d ($%.2f)\n", p.SalesCount, p.SalesUSDCents/100); err != nil {
+				countLabel := "Sales"
+				if p.IsTieredMembership {
+					countLabel = "Members"
+				}
+				if err := output.Writef(opts.Out(), "%s: %d\n", countLabel, p.SalesCount); err != nil {
+					return err
+				}
+				if err := output.Writef(opts.Out(), "Revenue: $%.2f\n", p.SalesUSDCents/100); err != nil {
 					return err
 				}
 				if p.URL != "" {
