@@ -1,8 +1,6 @@
 package users
 
 import (
-	"net/url"
-
 	"github.com/antiwork/gumroad-cli/internal/admincmd"
 	"github.com/antiwork/gumroad-cli/internal/cmdutil"
 	"github.com/antiwork/gumroad-cli/internal/output"
@@ -13,6 +11,10 @@ type suspensionResponse struct {
 	Status    string `json:"status"`
 	UpdatedAt string `json:"updated_at"`
 	AppealURL string `json:"appeal_url"`
+}
+
+type suspensionRequest struct {
+	Email string `json:"email"`
 }
 
 func newSuspensionCmd() *cobra.Command {
@@ -28,9 +30,7 @@ func newSuspensionCmd() *cobra.Command {
 				return cmdutil.MissingFlagError(c, "--email")
 			}
 
-			params := url.Values{}
-			params.Set("email", email)
-			return admincmd.RunGetDecoded[suspensionResponse](opts, "Fetching suspension info...", "/users/suspension", params, func(resp suspensionResponse) error {
+			return admincmd.RunPostJSONDecoded[suspensionResponse](opts, "Fetching suspension info...", "/users/suspension", suspensionRequest{Email: email}, func(resp suspensionResponse) error {
 				return renderSuspension(opts, email, resp)
 			})
 		},

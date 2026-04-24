@@ -10,12 +10,17 @@ import (
 )
 
 func TestSuspensionUsesInternalAdminEndpoint(t *testing.T) {
-	var gotMethod, gotPath, gotEmail, gotAuth string
+	var gotMethod, gotPath, gotQuery, gotEmail, gotAuth string
 	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
 		gotMethod = r.Method
 		gotPath = r.URL.Path
-		gotEmail = r.URL.Query().Get("email")
+		gotQuery = r.URL.RawQuery
 		gotAuth = r.Header.Get("Authorization")
+		var payload suspensionRequest
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode request body: %v", err)
+		}
+		gotEmail = payload.Email
 		testutil.JSON(t, w, map[string]any{
 			"status":     "Suspended",
 			"updated_at": "2026-04-24T12:00:00Z",
@@ -27,8 +32,11 @@ func TestSuspensionUsesInternalAdminEndpoint(t *testing.T) {
 	cmd.SetArgs([]string{"--email", "user@example.com"})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
-	if gotMethod != "GET" || gotPath != "/internal/admin/users/suspension" {
-		t.Fatalf("got %s %s, want GET /internal/admin/users/suspension", gotMethod, gotPath)
+	if gotMethod != "POST" || gotPath != "/internal/admin/users/suspension" {
+		t.Fatalf("got %s %s, want POST /internal/admin/users/suspension", gotMethod, gotPath)
+	}
+	if gotQuery != "" {
+		t.Fatalf("email should not be sent in query string, got %q", gotQuery)
 	}
 	if gotEmail != "user@example.com" {
 		t.Fatalf("got email %q, want user@example.com", gotEmail)

@@ -57,6 +57,12 @@ func RunGetDecoded[T any](opts cmdutil.Options, spinnerMessage, path string, par
 	}, render)
 }
 
+func RunPostJSONDecoded[T any](opts cmdutil.Options, spinnerMessage, path string, payload any, render func(T) error) error {
+	return RunDecoded[T](opts, spinnerMessage, func(client *adminapi.Client) (json.RawMessage, error) {
+		return client.PostJSON(path, payload)
+	}, render)
+}
+
 func runAuthenticatedData(opts cmdutil.Options, spinnerMessage string, run ClientRunner) (json.RawMessage, error) {
 	token, err := adminconfig.Token()
 	if err != nil {

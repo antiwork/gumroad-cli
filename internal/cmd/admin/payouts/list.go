@@ -3,7 +3,6 @@ package payouts
 import (
 	"fmt"
 	"io"
-	"net/url"
 	"strings"
 
 	"github.com/antiwork/gumroad-cli/internal/admincmd"
@@ -31,6 +30,10 @@ type payout struct {
 	PaypalEmail       string      `json:"paypal_email"`
 }
 
+type listRequest struct {
+	Email string `json:"email"`
+}
+
 func newListCmd() *cobra.Command {
 	var email string
 
@@ -44,9 +47,7 @@ func newListCmd() *cobra.Command {
 				return cmdutil.MissingFlagError(c, "--email")
 			}
 
-			params := url.Values{}
-			params.Set("email", email)
-			return admincmd.RunGetDecoded[payoutsResponse](opts, "Fetching payouts...", "/payouts", params, func(resp payoutsResponse) error {
+			return admincmd.RunPostJSONDecoded[payoutsResponse](opts, "Fetching payouts...", "/payouts/list", listRequest{Email: email}, func(resp payoutsResponse) error {
 				return renderPayouts(opts, email, resp)
 			})
 		},
