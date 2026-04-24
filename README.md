@@ -86,6 +86,7 @@ For CI and agents, set `GUMROAD_ACCESS_TOKEN` instead — it takes precedence ov
 
 ```
 gumroad auth          login, status, logout
+gumroad admin         Internal admin API commands
 gumroad user          View your account info
 gumroad products      create, update, list, view, delete, publish, unpublish, skus
 gumroad sales         list, view, refund, ship, resend-receipt
@@ -103,6 +104,8 @@ gumroad completion    bash, zsh, fish, powershell
 ```
 
 Run `gumroad <command> --help` for usage details and examples.
+
+Admin commands use a separate internal token. For non-interactive use, set `GUMROAD_ADMIN_ACCESS_TOKEN`; for local testing, set `GUMROAD_ADMIN_API_BASE_URL`.
 
 ## File attachments
 

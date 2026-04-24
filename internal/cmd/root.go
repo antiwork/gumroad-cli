@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/antiwork/gumroad-cli/internal/cmd/admin"
 	"github.com/antiwork/gumroad-cli/internal/cmd/auth"
 	"github.com/antiwork/gumroad-cli/internal/cmd/categories"
 	"github.com/antiwork/gumroad-cli/internal/cmd/completion"
@@ -98,6 +99,7 @@ func NewRootCmd() *cobra.Command {
 	cmd.PersistentFlags().BoolVar(&opts.Debug, "debug", false, "Enable debug logging to stderr")
 
 	// Subcommands
+	cmd.AddCommand(admin.NewAdminCmd())
 	cmd.AddCommand(auth.NewAuthCmd())
 	cmd.AddCommand(user.NewUserCmd())
 	cmd.AddCommand(products.NewProductsCmd())

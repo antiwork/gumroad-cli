@@ -1,0 +1,147 @@
+package adminconfig
+
+import (
+	"errors"
+	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"testing"
+
+	"github.com/antiwork/gumroad-cli/internal/config"
+)
+
+func TestSaveLoadAndDelete(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", tmp)
+
+	if err := Save(&Config{AccessToken: "admin-token"}); err != nil {
+		t.Fatalf("Save failed: %v", err)
+	}
+
+	loaded, err := Load()
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if loaded.AccessToken != "admin-token" {
+		t.Fatalf("got token %q, want admin-token", loaded.AccessToken)
+	}
+
+	if err := Delete(); err != nil {
+		t.Fatalf("Delete failed: %v", err)
+	}
+	loaded, err = Load()
+	if err != nil {
+		t.Fatalf("Load after Delete failed: %v", err)
+	}
+	if loaded.AccessToken != "" {
+		t.Fatalf("expected empty token after Delete, got %q", loaded.AccessToken)
+	}
+}
+
+func TestPathUsesSeparateAdminConfigFile(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", tmp)
+
+	adminPath, err := Path()
+	if err != nil {
+		t.Fatalf("Path failed: %v", err)
+	}
+	publicPath, err := config.Path()
+	if err != nil {
+		t.Fatalf("config.Path failed: %v", err)
+	}
+
+	if adminPath == publicPath {
+		t.Fatalf("admin config should not share public config path %q", adminPath)
+	}
+	if filepath.Base(adminPath) != "admin.json" {
+		t.Fatalf("got admin path %q, want admin.json file", adminPath)
+	}
+}
+
+func TestTokenUsesEnvAccessToken(t *testing.T) {
+	t.Setenv(EnvAccessToken, "env-admin-token")
+
+	info, err := ResolveToken()
+	if err != nil {
+		t.Fatalf("ResolveToken failed: %v", err)
+	}
+	if info.Value != "env-admin-token" {
+		t.Fatalf("got token %q, want env-admin-token", info.Value)
+	}
+	if info.Source != TokenSourceEnv {
+		t.Fatalf("got source %q, want %q", info.Source, TokenSourceEnv)
+	}
+}
+
+func TestTokenEnvTakesPrecedenceOverAdminConfig(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", tmp)
+	t.Setenv(EnvAccessToken, "env-admin-token")
+
+	if err := Save(&Config{AccessToken: "file-admin-token"}); err != nil {
+		t.Fatalf("Save failed: %v", err)
+	}
+
+	info, err := ResolveToken()
+	if err != nil {
+		t.Fatalf("ResolveToken failed: %v", err)
+	}
+	if info.Value != "env-admin-token" {
+		t.Fatalf("got token %q, want env-admin-token", info.Value)
+	}
+	if info.Source != TokenSourceEnv {
+		t.Fatalf("got source %q, want %q", info.Source, TokenSourceEnv)
+	}
+}
+
+func TestTokenDoesNotUsePublicConfig(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", tmp)
+	t.Setenv(EnvAccessToken, "")
+
+	if err := config.Save(&config.Config{AccessToken: "public-token"}); err != nil {
+		t.Fatalf("public config Save failed: %v", err)
+	}
+
+	_, err := Token()
+	if err == nil {
+		t.Fatal("expected missing admin token error")
+	}
+	if !errors.Is(err, ErrNotAuthenticated) {
+		t.Fatalf("expected ErrNotAuthenticated, got %v", err)
+	}
+	if !strings.Contains(err.Error(), EnvAccessToken) {
+		t.Fatalf("expected error to mention %s, got %v", EnvAccessToken, err)
+	}
+}
+
+func TestLoadInsecurePermissions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX permission checks do not apply on Windows")
+	}
+
+	tmp := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", tmp)
+
+	dir, err := Dir()
+	if err != nil {
+		t.Fatalf("Dir failed: %v", err)
+	}
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		t.Fatalf("MkdirAll failed: %v", err)
+	}
+	path := filepath.Join(dir, "admin.json")
+	if err := os.WriteFile(path, []byte(`{"access_token":"tok"}`), 0644); err != nil { //nolint:gosec // G306: intentionally insecure permissions for validation test.
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	_, err = Load()
+	if err == nil {
+		t.Fatal("expected insecure-permissions error")
+	}
+	if !strings.Contains(err.Error(), "insecure permissions 0644") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}

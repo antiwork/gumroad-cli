@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/antiwork/gumroad-cli/internal/adminconfig"
 	"github.com/antiwork/gumroad-cli/internal/api"
 	"github.com/antiwork/gumroad-cli/internal/cmd/files"
 	"github.com/antiwork/gumroad-cli/internal/cmdutil"
@@ -94,6 +95,17 @@ func TestClassifyCommandError_WrappedConfigAuth(t *testing.T) {
 func TestClassifyCommandError_ConfigAuthWithRemediationInMessage(t *testing.T) {
 	// Simulates the real error from config.ResolveToken which already embeds remediation.
 	wrapped := fmt.Errorf("%w. Run `gumroad auth login` first or set `GUMROAD_ACCESS_TOKEN`", config.ErrNotAuthenticated)
+	detail := classifyCommandError(wrapped)
+	if detail.Type != "auth_error" || detail.Code != "not_authenticated" {
+		t.Fatalf("unexpected detail: %+v", detail)
+	}
+	if detail.Hint != "" {
+		t.Errorf("expected empty hint when message already contains remediation, got %q", detail.Hint)
+	}
+}
+
+func TestClassifyCommandError_AdminAuthWithRemediationInMessage(t *testing.T) {
+	wrapped := fmt.Errorf("%w. %s", adminconfig.ErrNotAuthenticated, adminconfig.HintSetAdminToken)
 	detail := classifyCommandError(wrapped)
 	if detail.Type != "auth_error" || detail.Code != "not_authenticated" {
 		t.Fatalf("unexpected detail: %+v", detail)

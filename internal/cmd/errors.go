@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/antiwork/gumroad-cli/internal/adminconfig"
 	"github.com/antiwork/gumroad-cli/internal/api"
 	"github.com/antiwork/gumroad-cli/internal/cmd/files"
 	"github.com/antiwork/gumroad-cli/internal/cmdutil"
@@ -173,6 +174,17 @@ func classifyPrimaryCause(err error) commandErrorDetail {
 			Message:    apiErr.Error(),
 			Hint:       apiErr.GetHint(),
 			StatusCode: apiErr.StatusCode,
+		}
+	case errors.Is(err, adminconfig.ErrNotAuthenticated):
+		hint := adminconfig.HintSetAdminToken
+		if strings.Contains(err.Error(), adminconfig.EnvAccessToken) {
+			hint = ""
+		}
+		return commandErrorDetail{
+			Type:    "auth_error",
+			Code:    "not_authenticated",
+			Message: err.Error(),
+			Hint:    hint,
 		}
 	case errors.Is(err, config.ErrNotAuthenticated), errors.Is(err, api.ErrNotAuthenticated):
 		hint := api.HintRunAuthLogin

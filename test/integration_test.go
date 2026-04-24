@@ -166,7 +166,7 @@ func TestHelp(t *testing.T) {
 	if err != nil {
 		t.Fatalf("help failed: %v\n%s", err, out)
 	}
-	for _, cmd := range []string{"auth", "user", "products", "sales", "payouts", "subscribers", "licenses", "offer-codes", "webhooks", "completion"} {
+	for _, cmd := range []string{"admin", "auth", "user", "products", "sales", "payouts", "subscribers", "licenses", "offer-codes", "webhooks", "completion"} {
 		if !strings.Contains(out, cmd) {
 			t.Errorf("help missing command %q", cmd)
 		}

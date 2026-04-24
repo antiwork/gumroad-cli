@@ -77,6 +77,13 @@ func TestNewClient(t *testing.T) {
 	}
 }
 
+func TestNewClientWithBaseURL(t *testing.T) {
+	c := NewClientWithBaseURL(context.Background(), "tok-123", "1.0.0", false, "http://example.test/")
+	if c.baseURL != "http://example.test" {
+		t.Fatalf("got baseURL %q, want http://example.test", c.baseURL)
+	}
+}
+
 func TestClient_BearerHeader(t *testing.T) {
 	var gotAuth string
 	srv := setupTestServer(t, func(w http.ResponseWriter, r *http.Request) {

@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -61,6 +62,14 @@ func NewClientWithContext(ctx context.Context, token, version string, debug bool
 		debugWriter: os.Stderr,
 		sleep:       sleepContext,
 	}
+}
+
+func NewClientWithBaseURL(ctx context.Context, token, version string, debug bool, baseURL string) *Client {
+	client := NewClientWithContext(ctx, token, version, debug)
+	if baseURL != "" {
+		client.baseURL = strings.TrimRight(baseURL, "/")
+	}
+	return client
 }
 
 func (c *Client) SetDebugWriter(w io.Writer) {
