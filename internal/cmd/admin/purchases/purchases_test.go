@@ -104,6 +104,22 @@ func TestViewHumanOutputOmitsEmptyOptionalFields(t *testing.T) {
 	}
 }
 
+func TestViewHumanOutputAvoidsDuplicateIDWithAmountFallback(t *testing.T) {
+	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{
+			"purchase": map[string]any{"id": "123", "formatted_total_price": "$12"},
+		})
+	})
+
+	cmd := testutil.Command(newViewCmd())
+	cmd.SetArgs([]string{"123"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	if strings.TrimSpace(out) != "123  $12" {
+		t.Fatalf("unexpected human output: %q", out)
+	}
+}
+
 func TestViewHumanOutputUsesFormattedTotalAndReceipt(t *testing.T) {
 	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
 		testutil.JSON(t, w, map[string]any{

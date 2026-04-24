@@ -130,8 +130,8 @@ func TestLookupHumanOutputShowsZeroUses(t *testing.T) {
 	cmd.SetArgs([]string{"--key", "ABC-123"})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
-	if !strings.Contains(out, "Uses: 0") {
-		t.Fatalf("output missing zero uses: %q", out)
+	if strings.TrimSpace(out) != "123\nUses: 0" {
+		t.Fatalf("unexpected human output: %q", out)
 	}
 }
 

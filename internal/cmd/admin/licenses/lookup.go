@@ -111,9 +111,11 @@ func renderLicense(opts cmdutil.Options, resp licenseResponse) error {
 	}
 
 	style := opts.Style()
+	headlineFromPurchaseID := false
 	headline := product
-	if headline == "" {
+	if headline == "" && purchaseID != "" {
 		headline = purchaseID
+		headlineFromPurchaseID = true
 	}
 	if headline == "" {
 		headline = "License"
@@ -121,7 +123,7 @@ func renderLicense(opts cmdutil.Options, resp licenseResponse) error {
 	if err := output.Writeln(opts.Out(), style.Bold(headline)); err != nil {
 		return err
 	}
-	if purchaseID != "" {
+	if purchaseID != "" && !headlineFromPurchaseID {
 		if err := output.Writef(opts.Out(), "Purchase ID: %s\n", purchaseID); err != nil {
 			return err
 		}

@@ -74,9 +74,11 @@ func renderPurchase(opts cmdutil.Options, p purchase) error {
 	}
 
 	style := opts.Style()
+	headlineFromID := false
 	headline := product
 	if headline == "" {
 		headline = p.ID
+		headlineFromID = true
 	}
 	if amount != "" {
 		headline += "  " + amount
@@ -84,7 +86,7 @@ func renderPurchase(opts cmdutil.Options, p purchase) error {
 	if err := output.Writeln(opts.Out(), style.Bold(headline)); err != nil {
 		return err
 	}
-	if headline != p.ID {
+	if !headlineFromID {
 		if err := output.Writef(opts.Out(), "Purchase ID: %s\n", p.ID); err != nil {
 			return err
 		}
