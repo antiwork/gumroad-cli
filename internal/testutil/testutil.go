@@ -12,6 +12,8 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/antiwork/gumroad-cli/internal/adminapi"
+	"github.com/antiwork/gumroad-cli/internal/adminconfig"
 	"github.com/antiwork/gumroad-cli/internal/cmdutil"
 	"github.com/antiwork/gumroad-cli/internal/config"
 	"github.com/antiwork/gumroad-cli/internal/output"
@@ -37,6 +39,26 @@ func Setup(t *testing.T, handler http.HandlerFunc) *httptest.Server {
 
 	srv := httptest.NewServer(handler)
 	t.Setenv("GUMROAD_API_BASE_URL", srv.URL)
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+// SetupAdmin creates a mock admin HTTP server and temp admin config for
+// command tests. Cleanup is automatic via t.Cleanup.
+func SetupAdmin(t *testing.T, handler http.HandlerFunc) *httptest.Server {
+	t.Helper()
+
+	cfgDir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", cfgDir)
+	t.Setenv(config.EnvAccessToken, "")
+	t.Setenv(adminconfig.EnvAccessToken, "")
+
+	if err := adminconfig.Save(&adminconfig.Config{AccessToken: "admin-token"}); err != nil {
+		t.Fatalf("Save admin config failed: %v", err)
+	}
+
+	srv := httptest.NewServer(handler)
+	t.Setenv(adminapi.EnvAPIBaseURL, srv.URL)
 	t.Cleanup(srv.Close)
 	return srv
 }
