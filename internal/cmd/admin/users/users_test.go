@@ -117,6 +117,20 @@ func TestSuspensionHumanOutputOmitsEmptyOptionalFields(t *testing.T) {
 	}
 }
 
+func TestSuspensionHumanOutputOmitsEmptyStatus(t *testing.T) {
+	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{})
+	})
+
+	cmd := testutil.Command(newSuspensionCmd())
+	cmd.SetArgs([]string{"--email", "user@example.com"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	if strings.TrimSpace(out) != "user@example.com" {
+		t.Fatalf("unexpected human output: %q", out)
+	}
+}
+
 func TestNewUsersCmdWiresSuspension(t *testing.T) {
 	cmd := NewUsersCmd()
 	if cmd.Use != "users" {

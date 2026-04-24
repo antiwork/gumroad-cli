@@ -52,8 +52,10 @@ func renderSuspension(opts cmdutil.Options, email string, resp suspensionRespons
 	if err := output.Writeln(opts.Out(), style.Bold(email)); err != nil {
 		return err
 	}
-	if err := output.Writef(opts.Out(), "Status: %s\n", resp.Status); err != nil {
-		return err
+	if resp.Status != "" {
+		if err := output.Writef(opts.Out(), "Status: %s\n", resp.Status); err != nil {
+			return err
+		}
 	}
 	if resp.UpdatedAt != "" {
 		if err := output.Writef(opts.Out(), "Updated: %s\n", resp.UpdatedAt); err != nil {
