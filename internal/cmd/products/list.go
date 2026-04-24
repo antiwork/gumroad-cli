@@ -12,11 +12,12 @@ import (
 )
 
 type productListItem struct {
-	ID             string      `json:"id"`
-	Name           string      `json:"name"`
-	Published      bool        `json:"published"`
-	FormattedPrice string      `json:"formatted_price"`
-	SalesCount     api.JSONInt `json:"sales_count"`
+	ID                 string      `json:"id"`
+	Name               string      `json:"name"`
+	Published          bool        `json:"published"`
+	FormattedPrice     string      `json:"formatted_price"`
+	SalesCount         api.JSONInt `json:"sales_count"`
+	IsTieredMembership bool        `json:"is_tiered_membership"`
 }
 
 type productsListResponse struct {
@@ -49,17 +50,52 @@ func newListCmd() *cobra.Command {
 				}
 
 				style := opts.Style()
-				tbl := output.NewStyledTable(style, "ID", "NAME", "STATUS", "PRICE", "SALES")
+				var memberships, standard []productListItem
 				for _, p := range resp.Products {
-					status := style.Yellow("draft")
-					if p.Published {
-						status = style.Green("published")
+					if p.IsTieredMembership {
+						memberships = append(memberships, p)
+					} else {
+						standard = append(standard, p)
 					}
-					tbl.AddRow(p.ID, p.Name, status, p.FormattedPrice, fmt.Sprintf("%d", p.SalesCount))
 				}
+
+				buildTable := func(items []productListItem, countHeader string) *output.Table {
+					tbl := output.NewStyledTable(style, "ID", "NAME", "STATUS", "PRICE", countHeader)
+					for _, p := range items {
+						status := style.Yellow("draft")
+						if p.Published {
+							status = style.Green("published")
+						}
+						tbl.AddRow(p.ID, p.Name, status, p.FormattedPrice, fmt.Sprintf("%d", p.SalesCount))
+					}
+					return tbl
+				}
+
 				return output.WithPager(opts.Out(), opts.Err(), func(w io.Writer) error {
-					if err := tbl.Render(w); err != nil {
-						return err
+					split := len(memberships) > 0 && len(standard) > 0
+					if split {
+						if err := output.Writeln(w, style.Bold("Memberships")); err != nil {
+							return err
+						}
+						if err := buildTable(memberships, "MEMBERS").Render(w); err != nil {
+							return err
+						}
+						if err := output.Writeln(w, "\n"+style.Bold("Products")); err != nil {
+							return err
+						}
+						if err := buildTable(standard, "SALES").Render(w); err != nil {
+							return err
+						}
+					} else {
+						items := standard
+						header := "SALES"
+						if len(memberships) > 0 {
+							items = memberships
+							header = "MEMBERS"
+						}
+						if err := buildTable(items, header).Render(w); err != nil {
+							return err
+						}
 					}
 					if !opts.Quiet {
 						return output.Writeln(w, style.Dim("\nTip: view a product with  gumroad products view <id>"))
