@@ -133,7 +133,7 @@ func TestLoadInsecurePermissions(t *testing.T) {
 		t.Fatalf("MkdirAll failed: %v", err)
 	}
 	path := filepath.Join(dir, "admin.json")
-	if err := os.WriteFile(path, []byte(`{"access_token":"tok"}`), 0644); err != nil {
+	if err := os.WriteFile(path, []byte(`{"access_token":"tok"}`), 0644); err != nil { //nolint:gosec // G306: intentionally insecure permissions for validation test.
 		t.Fatalf("WriteFile failed: %v", err)
 	}
 

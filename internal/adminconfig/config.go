@@ -17,8 +17,8 @@ type Config struct {
 }
 
 const (
-	EnvAccessToken        = "GUMROAD_ADMIN_ACCESS_TOKEN"
-	HintSetAdminToken     = "Set GUMROAD_ADMIN_ACCESS_TOKEN."
+	EnvAccessToken        = "GUMROAD_ADMIN_ACCESS_TOKEN"      //nolint:gosec // G101: env var name, not a credential.
+	HintSetAdminToken     = "Set GUMROAD_ADMIN_ACCESS_TOKEN." //nolint:gosec // G101: remediation text, not a credential.
 	adminConfigFile       = "admin.json"
 	adminConfigTempPrefix = "admin.json.tmp-*"
 )
