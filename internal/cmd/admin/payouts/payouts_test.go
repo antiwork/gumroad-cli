@@ -92,3 +92,55 @@ func TestListJSONPreservesResponse(t *testing.T) {
 		t.Fatalf("unexpected JSON payload: %s", out)
 	}
 }
+
+func TestListPlainOutputWithPaypalDestination(t *testing.T) {
+	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{
+			"last_payouts": []map[string]any{
+				{
+					"external_id": "pay_123", "amount_cents": 5000,
+					"state": "completed", "created_at": "2026-04-24T12:00:00Z",
+					"processor": "paypal", "paypal_email": "seller@example.com",
+				},
+			},
+		})
+	})
+
+	cmd := testutil.Command(newListCmd(), testutil.PlainOutput())
+	cmd.SetArgs([]string{"--email", "seller@example.com"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	want := "seller@example.com\tpay_123\t5000 cents\tcompleted\t2026-04-24T12:00:00Z\tpaypal\tseller@example.com"
+	if strings.TrimSpace(out) != want {
+		t.Fatalf("unexpected plain output: %q", out)
+	}
+}
+
+func TestListPlainOutputWithNoPayouts(t *testing.T) {
+	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{
+			"next_payout_date":        "2026-04-30",
+			"balance_for_next_payout": "$25.00",
+			"payout_note":             "Manual review",
+		})
+	})
+
+	cmd := testutil.Command(newListCmd(), testutil.PlainOutput())
+	cmd.SetArgs([]string{"--email", "seller@example.com"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	want := "seller@example.com\t\t\t\t\t2026-04-30\t$25.00\tManual review"
+	if strings.TrimSpace(out) != want {
+		t.Fatalf("unexpected plain output: %q", out)
+	}
+}
+
+func TestNewPayoutsCmdWiresList(t *testing.T) {
+	cmd := NewPayoutsCmd()
+	if cmd.Use != "payouts" {
+		t.Fatalf("Use = %q, want payouts", cmd.Use)
+	}
+	if got := cmd.Commands(); len(got) != 1 || got[0].Use != "list" {
+		t.Fatalf("unexpected subcommands: %#v", got)
+	}
+}

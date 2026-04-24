@@ -103,6 +103,22 @@ func TestLookupJSONPreservesResponse(t *testing.T) {
 	}
 }
 
+func TestLookupPlainOutput(t *testing.T) {
+	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{
+			"purchase": map[string]any{"id": "123", "email": "buyer@example.com", "link_name": "Course", "uses": 3},
+		})
+	})
+
+	cmd := testutil.Command(newLookupCmd(), testutil.PlainOutput())
+	cmd.SetArgs([]string{"--key", "ABC-123"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	if strings.TrimSpace(out) != "123\tbuyer@example.com\tCourse\t3" {
+		t.Fatalf("unexpected plain output: %q", out)
+	}
+}
+
 func TestLookupRejectsEmptyKeyFlag(t *testing.T) {
 	cmd := newLookupCmd()
 	cmd.SetArgs([]string{"--key", ""})
@@ -113,5 +129,39 @@ func TestLookupRejectsEmptyKeyFlag(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "--key cannot be empty") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestNewLicensesCmdWiresLookup(t *testing.T) {
+	cmd := NewLicensesCmd()
+	if cmd.Use != "licenses" {
+		t.Fatalf("Use = %q, want licenses", cmd.Use)
+	}
+	if got := cmd.Commands(); len(got) != 1 || got[0].Use != "lookup" {
+		t.Fatalf("unexpected subcommands: %#v", got)
+	}
+}
+
+func TestLicenseStatusVariants(t *testing.T) {
+	enabled := true
+	disabled := true
+	falseValue := false
+
+	for _, tc := range []struct {
+		name string
+		in   license
+		want string
+	}{
+		{name: "enabled", in: license{Enabled: &enabled}, want: "enabled"},
+		{name: "explicit disabled", in: license{Disabled: &disabled}, want: "disabled"},
+		{name: "enabled false", in: license{Enabled: &falseValue}, want: "disabled"},
+		{name: "disabled false", in: license{Disabled: &falseValue}, want: "enabled"},
+		{name: "unknown", in: license{}, want: ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := licenseStatus(tc.in); got != tc.want {
+				t.Fatalf("got %q, want %q", got, tc.want)
+			}
+		})
 	}
 }

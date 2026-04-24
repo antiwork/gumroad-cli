@@ -83,3 +83,46 @@ func TestSuspensionJSONPreservesResponse(t *testing.T) {
 		t.Fatalf("unexpected JSON payload: %s", out)
 	}
 }
+
+func TestSuspensionPlainOutput(t *testing.T) {
+	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{
+			"status":     "Flagged",
+			"updated_at": "2026-04-24T12:00:00Z",
+			"appeal_url": "https://gumroad.com/appeal",
+		})
+	})
+
+	cmd := testutil.Command(newSuspensionCmd(), testutil.PlainOutput())
+	cmd.SetArgs([]string{"--email", "user@example.com"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	want := "user@example.com\tFlagged\t2026-04-24T12:00:00Z\thttps://gumroad.com/appeal"
+	if strings.TrimSpace(out) != want {
+		t.Fatalf("unexpected plain output: %q", out)
+	}
+}
+
+func TestSuspensionHumanOutputOmitsEmptyOptionalFields(t *testing.T) {
+	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{"status": "Compliant"})
+	})
+
+	cmd := testutil.Command(newSuspensionCmd())
+	cmd.SetArgs([]string{"--email", "user@example.com"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	if strings.TrimSpace(out) != "user@example.com\nStatus: Compliant" {
+		t.Fatalf("unexpected human output: %q", out)
+	}
+}
+
+func TestNewUsersCmdWiresSuspension(t *testing.T) {
+	cmd := NewUsersCmd()
+	if cmd.Use != "users" {
+		t.Fatalf("Use = %q, want users", cmd.Use)
+	}
+	if got := cmd.Commands(); len(got) != 1 || got[0].Use != "suspension" {
+		t.Fatalf("unexpected subcommands: %#v", got)
+	}
+}
