@@ -95,7 +95,7 @@ func renderPayouts(opts cmdutil.Options, email string, resp payoutsResponse) err
 
 func writePayoutsPlain(w io.Writer, email string, resp payoutsResponse) error {
 	if len(resp.LastPayouts) == 0 {
-		return output.PrintPlain(w, [][]string{{email, "", "", "", "", resp.NextPayoutDate, resp.BalanceForNextPayout, resp.PayoutNote}})
+		return output.PrintPlain(w, [][]string{{email, "", "", "", "", "", "", resp.NextPayoutDate, resp.BalanceForNextPayout, resp.PayoutNote}})
 	}
 
 	rows := make([][]string, 0, len(resp.LastPayouts))
@@ -108,6 +108,9 @@ func writePayoutsPlain(w io.Writer, email string, resp payoutsResponse) error {
 			p.CreatedAt,
 			p.Processor,
 			payoutDestination(p),
+			resp.NextPayoutDate,
+			resp.BalanceForNextPayout,
+			resp.PayoutNote,
 		})
 	}
 	return output.PrintPlain(w, rows)

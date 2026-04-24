@@ -103,6 +103,9 @@ func TestListPlainOutputWithPaypalDestination(t *testing.T) {
 					"processor": "paypal", "paypal_email": "seller@example.com",
 				},
 			},
+			"next_payout_date":        "2026-04-30",
+			"balance_for_next_payout": "$25.00",
+			"payout_note":             "Manual review",
 		})
 	})
 
@@ -110,7 +113,7 @@ func TestListPlainOutputWithPaypalDestination(t *testing.T) {
 	cmd.SetArgs([]string{"--email", "seller@example.com"})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
-	want := "seller@example.com\tpay_123\t5000 cents\tcompleted\t2026-04-24T12:00:00Z\tpaypal\tseller@example.com"
+	want := "seller@example.com\tpay_123\t5000 cents\tcompleted\t2026-04-24T12:00:00Z\tpaypal\tseller@example.com\t2026-04-30\t$25.00\tManual review"
 	if strings.TrimSpace(out) != want {
 		t.Fatalf("unexpected plain output: %q", out)
 	}
@@ -129,7 +132,7 @@ func TestListPlainOutputWithNoPayouts(t *testing.T) {
 	cmd.SetArgs([]string{"--email", "seller@example.com"})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
-	want := "seller@example.com\t\t\t\t\t2026-04-30\t$25.00\tManual review"
+	want := "seller@example.com\t\t\t\t\t\t\t2026-04-30\t$25.00\tManual review"
 	if strings.TrimSpace(out) != want {
 		t.Fatalf("unexpected plain output: %q", out)
 	}
