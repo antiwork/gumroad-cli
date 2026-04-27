@@ -74,6 +74,7 @@ func TestViewPlainOutputUsesFallbackFields(t *testing.T) {
 				"price_cents":    5000,
 				"purchase_state": "successful",
 				"created_at":     "2026-04-24T12:00:00Z",
+				"receipt_url":    "https://gumroad.com/receipts/123",
 			},
 		})
 	})
@@ -82,7 +83,7 @@ func TestViewPlainOutputUsesFallbackFields(t *testing.T) {
 	cmd.SetArgs([]string{"123"})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
-	want := "123\tbuyer@example.com\tseller@example.com\tprod_123\t5000 cents\tsuccessful\t2026-04-24T12:00:00Z"
+	want := "123\tbuyer@example.com\tseller@example.com\tprod_123\t5000 cents\tsuccessful\t2026-04-24T12:00:00Z\thttps://gumroad.com/receipts/123"
 	if strings.TrimSpace(out) != want {
 		t.Fatalf("unexpected plain output: %q", out)
 	}

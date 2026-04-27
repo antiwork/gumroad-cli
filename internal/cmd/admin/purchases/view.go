@@ -69,7 +69,7 @@ func renderPurchase(opts cmdutil.Options, p purchase) error {
 
 	if opts.PlainOutput {
 		return output.PrintPlain(opts.Out(), [][]string{
-			{p.ID, p.Email, p.SellerEmail, product, amount, status, p.CreatedAt},
+			{p.ID, p.Email, p.SellerEmail, product, amount, status, p.CreatedAt, p.ReceiptURL},
 		})
 	}
 
