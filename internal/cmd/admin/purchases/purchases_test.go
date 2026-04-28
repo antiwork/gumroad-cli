@@ -150,12 +150,24 @@ func TestViewHumanOutputUsesFormattedTotalAndReceipt(t *testing.T) {
 	}
 }
 
-func TestNewPurchasesCmdWiresView(t *testing.T) {
+func TestNewPurchasesCmdWiresSubcommands(t *testing.T) {
 	cmd := NewPurchasesCmd()
 	if cmd.Use != "purchases" {
 		t.Fatalf("Use = %q, want purchases", cmd.Use)
 	}
-	if got := cmd.Commands(); len(got) != 1 || got[0].Use != "view <purchase-id>" {
-		t.Fatalf("unexpected subcommands: %#v", got)
+
+	got := cmd.Commands()
+	if len(got) != 2 {
+		t.Fatalf("expected 2 subcommands, got %d: %#v", len(got), got)
+	}
+
+	names := map[string]bool{}
+	for _, sub := range got {
+		names[sub.Use] = true
+	}
+	for _, want := range []string{"view <purchase-id>", "refund <purchase-id>"} {
+		if !names[want] {
+			t.Errorf("missing subcommand %q in %v", want, names)
+		}
 	}
 }
