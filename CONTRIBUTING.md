@@ -44,7 +44,7 @@ End with an AI disclosure after a `---` separator. Name the specific model (e.g.
 
 ## AI models
 
-Use the latest and greatest state-of-the-art models from American AI companies like [Anthropic](https://www.anthropic.com/) and [OpenAI](https://openai.com/). As of this writing, that means Claude Opus 4.6 and GPT-5.4, but always check for the newest releases. Don't settle for last-gen models when better ones are available.
+Use the latest and greatest state-of-the-art models from American AI companies like [Anthropic](https://www.anthropic.com/) and [OpenAI](https://openai.com/). As of this writing, that means Claude Opus 4.7 and GPT-5.5, but always check for the newest releases. Don't settle for last-gen models when better ones are available.
 
 ## Before pushing
 
