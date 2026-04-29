@@ -2,11 +2,13 @@ package purchases
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
 	"testing"
 
+	"github.com/antiwork/gumroad-cli/internal/api"
 	"github.com/antiwork/gumroad-cli/internal/testutil"
 )
 
@@ -514,6 +516,67 @@ func TestRefund_PurchaseHasNoChargeSurfacesMessage(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "gumroad admin purchases view 123") {
 		t.Errorf("expected verify-state hint pointing at purchase 123: %v", err)
+	}
+}
+
+func TestRefund_JSONIncludesVerifyStateHint(t *testing.T) {
+	testutil.SetupAdmin(t, adminRefundHandler(t, nil, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"success": false,
+			"message": "Purchase has no charge to refund",
+		})
+	}))
+
+	cmd := testutil.Command(newRefundCmd(), testutil.Yes(true), testutil.JSONOutput())
+	cmd.SetArgs([]string{"123", "--email", "buyer@example.com"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected refund error to surface")
+	}
+
+	var apiErr *api.APIError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("expected wrap to keep an *api.APIError on the chain so JSON classification reads the verify hint, got %T: %v", err, err)
+	}
+	if !strings.Contains(apiErr.Error(), "refund request failed:") {
+		t.Errorf("APIError.Message must carry the wrap prefix for JSON output: %q", apiErr.Error())
+	}
+	if !strings.Contains(apiErr.Error(), "Verify status with 'gumroad admin purchases view 123'") {
+		t.Errorf("APIError.Message must carry the verify-state guidance for JSON output: %q", apiErr.Error())
+	}
+	if apiErr.StatusCode != http.StatusUnprocessableEntity {
+		t.Errorf("status code lost across the wrap: got %d, want 422", apiErr.StatusCode)
+	}
+}
+
+func TestRefund_FullyRefundedPurchaseDefersToServer(t *testing.T) {
+	var postHits int
+
+	testutil.SetupAdmin(t, adminRefundHandler(t,
+		purchaseLookupResponderWithRefundable("usd", 0),
+		func(w http.ResponseWriter, r *http.Request) {
+			postHits++
+			w.WriteHeader(http.StatusUnprocessableEntity)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"success": false,
+				"message": "Refund amount cannot be greater than the purchase price.",
+			})
+		}))
+
+	cmd := testutil.Command(newRefundCmd(), testutil.Yes(true))
+	cmd.SetArgs([]string{"123", "--email", "buyer@example.com", "--amount", "5.00"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected the server-side rejection to surface")
+	}
+	if postHits != 1 {
+		t.Errorf("AmountRefundableCentsInCurrency=0 currently defers to the server; expected one refund POST, got %d", postHits)
+	}
+	if !strings.Contains(err.Error(), "Refund amount cannot be greater") {
+		t.Errorf("expected the server's 422 message to surface: %v", err)
 	}
 }
 

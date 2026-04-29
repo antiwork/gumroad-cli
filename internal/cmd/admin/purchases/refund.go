@@ -1,6 +1,7 @@
 package purchases
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -8,6 +9,7 @@ import (
 
 	"github.com/antiwork/gumroad-cli/internal/adminapi"
 	"github.com/antiwork/gumroad-cli/internal/admincmd"
+	"github.com/antiwork/gumroad-cli/internal/api"
 	"github.com/antiwork/gumroad-cli/internal/cmdutil"
 	"github.com/antiwork/gumroad-cli/internal/output"
 	"github.com/spf13/cobra"
@@ -150,7 +152,24 @@ cancels the linked subscription after a successful refund.`,
 // wrapRefundError adds an explicit verification hint to refund POST failures.
 // Unlike list/lookup commands, a failed refund could still have partially
 // landed server-side, so the operator should confirm state before retrying.
+//
+// For api.APIError causes, we re-wrap as a new APIError so the structured
+// JSON error path (cmd.classifyPrimaryCause) reads the wrapped message and
+// hint via apiErr.Error() / apiErr.GetHint(). A plain fmt.Errorf wrap is
+// invisible to that classifier — it walks the chain past wrappers — and the
+// safety hint silently disappears in --json mode.
 func wrapRefundError(purchaseID string, err error) error {
+	var apiErr *api.APIError
+	if errors.As(err, &apiErr) {
+		return &api.APIError{
+			StatusCode: apiErr.StatusCode,
+			Message: fmt.Sprintf(
+				"refund request failed: %s. Verify status with 'gumroad admin purchases view %s' before retrying to avoid duplicate refunds",
+				apiErr.Message, purchaseID,
+			),
+			Hint: apiErr.Hint,
+		}
+	}
 	return fmt.Errorf("refund request failed: %w. Verify status with 'gumroad admin purchases view %s' before retrying to avoid duplicate refunds", err, purchaseID)
 }
 
