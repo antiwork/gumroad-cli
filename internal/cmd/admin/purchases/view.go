@@ -16,20 +16,20 @@ type purchaseResponse struct {
 }
 
 type purchase struct {
-	ID                    string      `json:"id"`
-	Email                 string      `json:"email"`
-	SellerEmail           string      `json:"seller_email"`
-	ProductName           string      `json:"product_name"`
-	ProductAlias          string      `json:"link_name"`
-	ProductID             string      `json:"product_id"`
-	FormattedTotalPrice   string      `json:"formatted_total_price"`
-	PriceCents            api.JSONInt `json:"price_cents"`
-	CurrencyType          string      `json:"currency_type"`
-	AmountRefundableCents api.JSONInt `json:"amount_refundable_cents"`
-	PurchaseState         string      `json:"purchase_state"`
-	RefundStatus          string      `json:"refund_status"`
-	CreatedAt             string      `json:"created_at"`
-	ReceiptURL            string      `json:"receipt_url"`
+	ID                              string      `json:"id"`
+	Email                           string      `json:"email"`
+	SellerEmail                     string      `json:"seller_email"`
+	ProductName                     string      `json:"product_name"`
+	ProductAlias                    string      `json:"link_name"`
+	ProductID                       string      `json:"product_id"`
+	FormattedTotalPrice             string      `json:"formatted_total_price"`
+	PriceCents                      api.JSONInt `json:"price_cents"`
+	CurrencyType                    string      `json:"currency_type"`
+	AmountRefundableCentsInCurrency api.JSONInt `json:"amount_refundable_cents_in_currency"`
+	PurchaseState                   string      `json:"purchase_state"`
+	RefundStatus                    string      `json:"refund_status"`
+	CreatedAt                       string      `json:"created_at"`
+	ReceiptURL                      string      `json:"receipt_url"`
 }
 
 func newViewCmd() *cobra.Command {

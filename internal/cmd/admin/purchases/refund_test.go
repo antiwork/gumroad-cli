@@ -44,7 +44,7 @@ func purchaseLookupResponderWithRefundable(currency string, refundableCents int)
 			"currency_type": currency,
 		}
 		if refundableCents > 0 {
-			payload["amount_refundable_cents"] = refundableCents
+			payload["amount_refundable_cents_in_currency"] = refundableCents
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"purchase": payload})
 	}
