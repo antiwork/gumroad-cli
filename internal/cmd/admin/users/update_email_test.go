@@ -87,6 +87,27 @@ func TestUpdateEmail_PostsBothEmails(t *testing.T) {
 	}
 }
 
+func TestUpdateEmail_StyledOutputOmitsPendingLineWhenNotPending(t *testing.T) {
+	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{
+			"message":              "Email change applied",
+			"unconfirmed_email":    "",
+			"pending_confirmation": false,
+		})
+	})
+
+	cmd := testutil.Command(newUpdateEmailCmd(), testutil.Yes(true), testutil.Quiet(false))
+	cmd.SetArgs([]string{"--current-email", "old@example.com", "--new-email", "new@example.com"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	if strings.Contains(out, "Pending:") {
+		t.Errorf("must not print Pending line when pending_confirmation=false (would contradict 'Confirmed by user: yes'), got: %q", out)
+	}
+	if !strings.Contains(out, "Confirmed by user: yes") {
+		t.Errorf("expected confirmed-yes when pending_confirmation=false, got: %q", out)
+	}
+}
+
 func TestUpdateEmail_DryRunDoesNotPost(t *testing.T) {
 	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
 		t.Error("dry-run must not POST")

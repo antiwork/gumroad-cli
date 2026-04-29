@@ -109,8 +109,10 @@ func renderUpdateEmail(opts cmdutil.Options, currentEmail, newEmail string, resp
 	if err := output.Writef(opts.Out(), "Current: %s\n", currentEmail); err != nil {
 		return err
 	}
-	if err := output.Writef(opts.Out(), "Pending: %s\n", unconfirmed); err != nil {
-		return err
+	if resp.PendingConfirmation {
+		if err := output.Writef(opts.Out(), "Pending: %s\n", unconfirmed); err != nil {
+			return err
+		}
 	}
 	return output.Writef(opts.Out(), "Confirmed by user: %s\n", boolLabel(!resp.PendingConfirmation))
 }
