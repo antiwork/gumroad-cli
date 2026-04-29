@@ -2,6 +2,7 @@ package users
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"strings"
 	"testing"
@@ -103,9 +104,10 @@ func TestTwoFactor_DisableSendsEnabledFalse(t *testing.T) {
 	var bodyKeys map[string]json.RawMessage
 
 	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
-		raw := make([]byte, 1024)
-		n, _ := r.Body.Read(raw)
-		raw = raw[:n]
+		raw, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("read body: %v", err)
+		}
 		if err := json.Unmarshal(raw, &body); err != nil {
 			t.Fatalf("decode body: %v", err)
 		}

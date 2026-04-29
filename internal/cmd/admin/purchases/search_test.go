@@ -2,6 +2,7 @@ package purchases
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"strings"
 	"testing"
@@ -25,15 +26,14 @@ func TestSearch_RequiresEmail(t *testing.T) {
 func TestSearch_PostsEmailInBody(t *testing.T) {
 	var gotMethod, gotPath, gotAuth, gotQuery string
 	var body searchRequest
-	var bodyKeys map[string]json.RawMessage
 
 	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
 		gotMethod = r.Method
 		gotPath = r.URL.Path
 		gotAuth = r.Header.Get("Authorization")
 		gotQuery = r.URL.RawQuery
-		if err := json.NewDecoder(r.Body).Decode(&body); err == nil {
-			_ = json.NewDecoder(r.Body).Decode(&bodyKeys)
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode body: %v", err)
 		}
 		testutil.JSON(t, w, map[string]any{
 			"purchases": []map[string]any{
@@ -80,16 +80,9 @@ func TestSearch_OmitsLimitWhenNotSet(t *testing.T) {
 	var bodyKeys map[string]json.RawMessage
 
 	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
-		raw := make([]byte, 0)
-		buf := make([]byte, 1024)
-		for {
-			n, err := r.Body.Read(buf)
-			if n > 0 {
-				raw = append(raw, buf[:n]...)
-			}
-			if err != nil {
-				break
-			}
+		raw, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("read body: %v", err)
 		}
 		if err := json.Unmarshal(raw, &body); err != nil {
 			t.Fatalf("decode body: %v", err)

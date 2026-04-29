@@ -47,14 +47,18 @@ func newViewCmd() *cobra.Command {
 	}
 }
 
+func productLabel(p purchase) string {
+	if p.ProductName != "" {
+		return p.ProductName
+	}
+	if p.ProductAlias != "" {
+		return p.ProductAlias
+	}
+	return p.ProductID
+}
+
 func renderPurchase(opts cmdutil.Options, p purchase) error {
-	product := p.ProductName
-	if product == "" {
-		product = p.ProductAlias
-	}
-	if product == "" {
-		product = p.ProductID
-	}
+	product := productLabel(p)
 
 	amount := p.FormattedTotalPrice
 	if amount == "" && p.PriceCents != 0 {
