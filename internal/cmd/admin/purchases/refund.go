@@ -70,6 +70,9 @@ cancels the linked subscription after a successful refund.`,
 					return err
 				}
 				currency = lookup.Purchase.CurrencyType
+				if currency == "" {
+					return fmt.Errorf("could not determine purchase currency from admin lookup; refusing --amount to avoid mis-scaled refund (re-run without --amount for a full refund, or upgrade the server to expose currency_type)")
+				}
 				if lookup.Purchase.AmountRefundableCents > 0 {
 					refundableCents = int(lookup.Purchase.AmountRefundableCents)
 					haveRefundable = true

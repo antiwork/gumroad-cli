@@ -207,6 +207,56 @@ func TestRefund_PartialUsesPurchaseCurrencyForJPY(t *testing.T) {
 	}
 }
 
+func TestRefund_RejectsMissingCurrencyTypeFromLookup(t *testing.T) {
+	testutil.SetupAdmin(t, adminRefundHandler(t,
+		func(w http.ResponseWriter, r *http.Request) {
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"purchase": map[string]any{"id": "123", "email": "buyer@example.com"},
+			})
+		},
+		func(w http.ResponseWriter, r *http.Request) {
+			t.Error("refund POST must not fire when currency cannot be determined")
+		}))
+
+	cmd := testutil.Command(newRefundCmd(), testutil.Yes(true))
+	cmd.SetArgs([]string{"123", "--email", "buyer@example.com", "--amount", "500"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error when currency_type is missing from lookup")
+	}
+	if !strings.Contains(err.Error(), "could not determine purchase currency") {
+		t.Errorf("expected currency-missing guard, got: %v", err)
+	}
+	if strings.Contains(err.Error(), "Verify status") {
+		t.Errorf("guard fires before the POST so it must not include the verify-state hint: %v", err)
+	}
+}
+
+func TestRefund_RejectsEmptyCurrencyTypeFromLookup(t *testing.T) {
+	testutil.SetupAdmin(t, adminRefundHandler(t,
+		func(w http.ResponseWriter, r *http.Request) {
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"purchase": map[string]any{
+					"id":            "123",
+					"email":         "buyer@example.com",
+					"currency_type": "",
+				},
+			})
+		},
+		func(w http.ResponseWriter, r *http.Request) {
+			t.Error("refund POST must not fire when currency is empty")
+		}))
+
+	cmd := testutil.Command(newRefundCmd(), testutil.Yes(true))
+	cmd.SetArgs([]string{"123", "--email", "buyer@example.com", "--amount", "500"})
+
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "could not determine purchase currency") {
+		t.Fatalf("expected currency-empty guard, got: %v", err)
+	}
+}
+
 func TestRefund_RejectsDecimalAmountForJPY(t *testing.T) {
 	testutil.SetupAdmin(t, adminRefundHandler(t,
 		purchaseLookupResponder("jpy"),
