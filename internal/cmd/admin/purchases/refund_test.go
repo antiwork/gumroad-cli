@@ -551,6 +551,30 @@ func TestRefund_JSONIncludesVerifyStateHint(t *testing.T) {
 	}
 }
 
+func TestRefund_MalformedSuccessResponseIsNotWrappedAsRequestFailed(t *testing.T) {
+	testutil.SetupAdmin(t, adminRefundHandler(t, nil, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("not json"))
+	}))
+
+	cmd := testutil.Command(newRefundCmd(), testutil.Yes(true))
+	cmd.SetArgs([]string{"123", "--email", "buyer@example.com"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected decode error to surface")
+	}
+	if !strings.Contains(err.Error(), "could not parse response") {
+		t.Errorf("expected decode-error message: %v", err)
+	}
+	if strings.Contains(err.Error(), "refund request failed:") {
+		t.Errorf("post-POST decode error must not be wrapped as a transport failure: %v", err)
+	}
+	if strings.Contains(err.Error(), "Verify status") {
+		t.Errorf("post-POST decode error must not advertise duplicate-refund risk — the refund already landed: %v", err)
+	}
+}
+
 func TestRefund_FullyRefundedPurchaseDefersToServer(t *testing.T) {
 	var postHits int
 

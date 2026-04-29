@@ -131,13 +131,20 @@ cancels the linked subscription after a successful refund.`,
 				return cmdutil.PrintDryRunRequest(opts, http.MethodPost, adminapi.AdminPath(refundPath), refundDryRunParams(req))
 			}
 
-			err = admincmd.RunPostJSONDecoded[refundResponse](opts, "Refunding purchase...", refundPath, req, func(resp refundResponse) error {
-				return renderRefund(opts, args[0], resp)
-			})
+			data, err := admincmd.FetchPostJSON(opts, "Refunding purchase...", refundPath, req)
 			if err != nil {
 				return wrapRefundError(args[0], err)
 			}
-			return nil
+
+			if opts.UsesJSONOutput() {
+				return cmdutil.PrintJSONResponse(opts, data)
+			}
+
+			decoded, err := cmdutil.DecodeJSON[refundResponse](data)
+			if err != nil {
+				return err
+			}
+			return renderRefund(opts, args[0], decoded)
 		},
 	}
 
