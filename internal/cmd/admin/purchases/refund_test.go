@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/antiwork/gumroad-cli/internal/api"
+	"github.com/antiwork/gumroad-cli/internal/cmdutil"
 	"github.com/antiwork/gumroad-cli/internal/testutil"
 )
 
@@ -233,6 +234,10 @@ func TestRefund_RejectsMissingCurrencyTypeFromLookup(t *testing.T) {
 	if strings.Contains(err.Error(), "Verify status") {
 		t.Errorf("guard fires before the POST so it must not include the verify-state hint: %v", err)
 	}
+	var usageErr *cmdutil.UsageError
+	if !errors.As(err, &usageErr) {
+		t.Errorf("guard must be a *cmdutil.UsageError so --json classifies it as usage_error like its sibling pre-flight guards, got %T", err)
+	}
 }
 
 func TestRefund_RejectsEmptyCurrencyTypeFromLookup(t *testing.T) {
@@ -256,6 +261,10 @@ func TestRefund_RejectsEmptyCurrencyTypeFromLookup(t *testing.T) {
 	err := cmd.Execute()
 	if err == nil || !strings.Contains(err.Error(), "could not determine purchase currency") {
 		t.Fatalf("expected currency-empty guard, got: %v", err)
+	}
+	var usageErr *cmdutil.UsageError
+	if !errors.As(err, &usageErr) {
+		t.Errorf("guard must be a *cmdutil.UsageError, got %T", err)
 	}
 }
 
