@@ -39,32 +39,32 @@ func (c *Client) SetDebugWriter(w io.Writer) {
 }
 
 func (c *Client) Get(path string, params url.Values) (json.RawMessage, error) {
-	data, err := c.api.Get(adminPath(path), params)
+	data, err := c.api.Get(AdminPath(path), params)
 	return data, rewriteAdminError(err)
 }
 
 func (c *Client) Post(path string, params url.Values) (json.RawMessage, error) {
-	data, err := c.api.Post(adminPath(path), params)
+	data, err := c.api.Post(AdminPath(path), params)
 	return data, rewriteAdminError(err)
 }
 
 func (c *Client) PostJSON(path string, payload any) (json.RawMessage, error) {
-	data, err := c.api.PostJSON(adminPath(path), payload)
+	data, err := c.api.PostJSON(AdminPath(path), payload)
 	return data, rewriteAdminError(err)
 }
 
 func (c *Client) Put(path string, params url.Values) (json.RawMessage, error) {
-	data, err := c.api.Put(adminPath(path), params)
+	data, err := c.api.Put(AdminPath(path), params)
 	return data, rewriteAdminError(err)
 }
 
 func (c *Client) PutJSON(path string, payload any) (json.RawMessage, error) {
-	data, err := c.api.PutJSON(adminPath(path), payload)
+	data, err := c.api.PutJSON(AdminPath(path), payload)
 	return data, rewriteAdminError(err)
 }
 
 func (c *Client) Delete(path string, params url.Values) (json.RawMessage, error) {
-	data, err := c.api.Delete(adminPath(path), params)
+	data, err := c.api.Delete(AdminPath(path), params)
 	return data, rewriteAdminError(err)
 }
 
@@ -75,7 +75,8 @@ func defaultBaseURL() string {
 	return defaultAPIBaseURL
 }
 
-func adminPath(path string) string {
+// AdminPath returns the absolute admin-prefixed path for path.
+func AdminPath(path string) string {
 	if path == "" || path == "/" {
 		return adminAPIPathPrefix
 	}

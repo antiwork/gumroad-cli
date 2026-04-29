@@ -2,7 +2,11 @@ package purchases
 
 import (
 	"fmt"
+	"net/http"
+	"net/url"
+	"strconv"
 
+	"github.com/antiwork/gumroad-cli/internal/adminapi"
 	"github.com/antiwork/gumroad-cli/internal/admincmd"
 	"github.com/antiwork/gumroad-cli/internal/cmdutil"
 	"github.com/antiwork/gumroad-cli/internal/output"
@@ -52,20 +56,41 @@ cancels the linked subscription after a successful refund.`,
 				return cmdutil.MissingFlagError(c, "--email")
 			}
 
-			var cents int
+			refundPath := cmdutil.JoinPath("purchases", args[0], "refund")
+
+			var (
+				cents           int
+				currency        string
+				refundableCents int
+				haveRefundable  bool
+			)
 			if c.Flags().Changed("amount") {
-				parsed, err := cmdutil.ParseMoney("amount", amount, "amount", "")
+				lookup, err := admincmd.FetchGetDecoded[purchaseResponse](opts, "Looking up purchase...", cmdutil.JoinPath("purchases", args[0]), url.Values{})
+				if err != nil {
+					return err
+				}
+				currency = lookup.Purchase.CurrencyType
+				if lookup.Purchase.AmountRefundableCents > 0 {
+					refundableCents = int(lookup.Purchase.AmountRefundableCents)
+					haveRefundable = true
+				}
+
+				parsed, err := cmdutil.ParseMoney("amount", amount, "amount", currency)
 				if err != nil {
 					return cmdutil.UsageErrorf(c, "%s", err.Error())
 				}
 				if parsed <= 0 {
 					return cmdutil.UsageErrorf(c, "--amount must be greater than 0")
 				}
+				if haveRefundable && parsed > refundableCents {
+					return cmdutil.UsageErrorf(c, "--amount %s exceeds the refundable balance of %s",
+						cmdutil.FormatMoney(parsed, currency), cmdutil.FormatMoney(refundableCents, currency))
+				}
 				cents = parsed
 			}
 
 			isPartial := cents > 0
-			amountDesc := cmdutil.FormatMoney(cents, "")
+			amountDesc := cmdutil.FormatMoney(cents, currency)
 
 			msg := "Refund purchase " + args[0] + "?"
 			if isPartial {
@@ -97,10 +122,17 @@ cancels the linked subscription after a successful refund.`,
 				CancelSubscription: cancelSubscription,
 			}
 
-			path := cmdutil.JoinPath("purchases", args[0], "refund")
-			return admincmd.RunPostJSONDecoded[refundResponse](opts, "Refunding purchase...", path, req, func(resp refundResponse) error {
+			if opts.DryRun {
+				return cmdutil.PrintDryRunRequest(opts, http.MethodPost, adminapi.AdminPath(refundPath), refundDryRunParams(req))
+			}
+
+			err = admincmd.RunPostJSONDecoded[refundResponse](opts, "Refunding purchase...", refundPath, req, func(resp refundResponse) error {
 				return renderRefund(opts, args[0], resp)
 			})
+			if err != nil {
+				return wrapRefundError(args[0], err)
+			}
+			return nil
 		},
 	}
 
@@ -110,6 +142,28 @@ cancels the linked subscription after a successful refund.`,
 	cmd.Flags().BoolVar(&cancelSubscription, "cancel-subscription", false, "Cancel the linked subscription after the refund succeeds")
 
 	return cmd
+}
+
+// wrapRefundError adds an explicit verification hint to refund POST failures.
+// Unlike list/lookup commands, a failed refund could still have partially
+// landed server-side, so the operator should confirm state before retrying.
+func wrapRefundError(purchaseID string, err error) error {
+	return fmt.Errorf("refund request failed: %w. Verify status with 'gumroad admin purchases view %s' before retrying to avoid duplicate refunds", err, purchaseID)
+}
+
+func refundDryRunParams(req refundRequest) url.Values {
+	params := url.Values{}
+	params.Set("email", req.Email)
+	if req.AmountCents > 0 {
+		params.Set("amount_cents", strconv.Itoa(req.AmountCents))
+	}
+	if req.Force {
+		params.Set("force", "true")
+	}
+	if req.CancelSubscription {
+		params.Set("cancel_subscription", "true")
+	}
+	return params
 }
 
 func renderRefund(opts cmdutil.Options, purchaseID string, resp refundResponse) error {
