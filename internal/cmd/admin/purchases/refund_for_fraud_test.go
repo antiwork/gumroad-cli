@@ -112,6 +112,39 @@ func TestRefundForFraud_WithoutSubscriptionOmitsCancelledLine(t *testing.T) {
 	}
 }
 
+func TestRefundForFraud_SubscriptionCancelErrorSurfacesInHumanAndPlainOutput(t *testing.T) {
+	handler := func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{
+			"message":                   "Successfully refunded purchase number 123 for fraud and blocked the buyer",
+			"purchase":                  map[string]any{"id": "123"},
+			"subscription_cancelled":    false,
+			"subscription_cancel_error": "Subscription update failed: payment_method_invalid",
+		})
+	}
+
+	testutil.SetupAdmin(t, handler)
+	humanCmd := testutil.Command(newRefundForFraudCmd(), testutil.Yes(true), testutil.Quiet(false))
+	humanCmd.SetArgs([]string{"123", "--email", "buyer@example.com"})
+	humanOut := testutil.CaptureStdout(func() { testutil.MustExecute(t, humanCmd) })
+
+	if !strings.Contains(humanOut, "Subscription cancel failed: Subscription update failed: payment_method_invalid") {
+		t.Errorf("expected human output to surface subscription_cancel_error, got: %q", humanOut)
+	}
+	if strings.Contains(humanOut, "Subscription: cancelled") {
+		t.Errorf("Subscription: cancelled line must not appear when cancel failed: %q", humanOut)
+	}
+
+	testutil.SetupAdmin(t, handler)
+	plainCmd := testutil.Command(newRefundForFraudCmd(), testutil.Yes(true), testutil.PlainOutput())
+	plainCmd.SetArgs([]string{"123", "--email", "buyer@example.com"})
+	plainOut := testutil.CaptureStdout(func() { testutil.MustExecute(t, plainCmd) })
+
+	want := "true\tSuccessfully refunded purchase number 123 for fraud and blocked the buyer\t123\tcancel_failed\tSubscription update failed: payment_method_invalid"
+	if strings.TrimSpace(plainOut) != want {
+		t.Fatalf("unexpected plain output: %q", plainOut)
+	}
+}
+
 func TestRefundForFraud_DryRunDoesNotContactEndpoint(t *testing.T) {
 	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
 		t.Error("dry-run must not POST to the refund_for_fraud endpoint")

@@ -19,9 +19,10 @@ type refundForFraudRequest struct {
 }
 
 type refundForFraudResponse struct {
-	Message               string   `json:"message"`
-	Purchase              purchase `json:"purchase"`
-	SubscriptionCancelled bool     `json:"subscription_cancelled"`
+	Message                 string   `json:"message"`
+	Purchase                purchase `json:"purchase"`
+	SubscriptionCancelled   bool     `json:"subscription_cancelled"`
+	SubscriptionCancelError string   `json:"subscription_cancel_error"`
 }
 
 func newRefundForFraudCmd() *cobra.Command {
@@ -104,10 +105,7 @@ func wrapRefundForFraudError(purchaseID string, err error) error {
 }
 
 func renderRefundForFraud(opts cmdutil.Options, purchaseID string, resp refundForFraudResponse) error {
-	subscriptionStatus := "not_cancelled"
-	if resp.SubscriptionCancelled {
-		subscriptionStatus = "cancelled"
-	}
+	subscriptionStatus := refundForFraudSubscriptionStatusLabel(resp)
 	headline := fallback(resp.Message, "Refunded purchase "+purchaseID+" for fraud and blocked the buyer")
 
 	if opts.PlainOutput {
@@ -116,7 +114,7 @@ func renderRefundForFraud(opts cmdutil.Options, purchaseID string, resp refundFo
 			headline,
 			fallback(resp.Purchase.ID, purchaseID),
 			subscriptionStatus,
-			"",
+			resp.SubscriptionCancelError,
 		}
 		return output.PrintPlain(opts.Out(), [][]string{row})
 	}
@@ -137,5 +135,19 @@ func renderRefundForFraud(opts cmdutil.Options, purchaseID string, resp refundFo
 	if resp.SubscriptionCancelled {
 		return output.Writeln(opts.Out(), "Subscription: cancelled")
 	}
+	if resp.SubscriptionCancelError != "" {
+		return output.Writef(opts.Out(), "Subscription cancel failed: %s\n", resp.SubscriptionCancelError)
+	}
 	return nil
+}
+
+func refundForFraudSubscriptionStatusLabel(resp refundForFraudResponse) string {
+	switch {
+	case resp.SubscriptionCancelled:
+		return "cancelled"
+	case resp.SubscriptionCancelError != "":
+		return "cancel_failed"
+	default:
+		return "not_cancelled"
+	}
 }

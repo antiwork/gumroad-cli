@@ -17,11 +17,9 @@ type cancelSubscriptionRequest struct {
 }
 
 type cancelSubscriptionResponse struct {
-	Status            string `json:"status"`
-	Message           string `json:"message"`
-	CancelledAt       string `json:"cancelled_at"`
-	CancelledByAdmin  bool   `json:"cancelled_by_admin"`
-	CancelledBySeller bool   `json:"cancelled_by_seller"`
+	Status      string `json:"status"`
+	Message     string `json:"message"`
+	CancelledAt string `json:"cancelled_at"`
 }
 
 func newCancelSubscriptionCmd() *cobra.Command {
@@ -51,9 +49,9 @@ always attributed to the admin actor regardless of the by-seller flag.`,
 
 			path := cmdutil.JoinPath("purchases", args[0], "cancel_subscription")
 
-			confirmMsg := "Cancel subscription for purchase " + args[0] + "? (buyer-initiated)"
+			confirmMsg := "Cancel subscription for buyer " + email + " on purchase " + args[0] + "? (buyer-initiated)"
 			if bySeller {
-				confirmMsg = "Cancel subscription for purchase " + args[0] + "? (seller-initiated)"
+				confirmMsg = "Cancel subscription for buyer " + email + " on purchase " + args[0] + "? (seller-initiated)"
 			}
 			ok, err := cmdutil.ConfirmAction(opts, confirmMsg)
 			if err != nil {
