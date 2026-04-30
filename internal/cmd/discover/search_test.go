@@ -483,3 +483,17 @@ func TestSearch_HTTP5xxSurfaces(t *testing.T) {
 		t.Fatal("expected error from 500 response")
 	}
 }
+
+func TestPublicBaseURLDefaultsToGumroadCom(t *testing.T) {
+	t.Setenv("GUMROAD_API_BASE_URL", "")
+	if got := publicBaseURL(); got != defaultPublicBaseURL {
+		t.Errorf("publicBaseURL() = %q, want %q — search must hit the public host, not the v2 API", got, defaultPublicBaseURL)
+	}
+}
+
+func TestPublicBaseURLRespectsEnvOverride(t *testing.T) {
+	t.Setenv("GUMROAD_API_BASE_URL", "https://staging.example.com")
+	if got := publicBaseURL(); got != "https://staging.example.com" {
+		t.Errorf("publicBaseURL() = %q, want env override to win", got)
+	}
+}

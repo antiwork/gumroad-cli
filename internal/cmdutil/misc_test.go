@@ -466,6 +466,56 @@ func TestRunWithTokenData_DebugSkipsSpinner(t *testing.T) {
 	}
 }
 
+func TestRunWithTokenAndBaseURL_EmptyDelegatesToTokenRunner(t *testing.T) {
+	events := []string{}
+	defer installFakeSpinner(&events)()
+
+	opts := DefaultOptions()
+	opts.Version = "test"
+	opts.Quiet = true
+
+	called := false
+	_, err := runWithTokenAndBaseURL(opts, "test-token", "", "Reading...", func(*api.Client) (json.RawMessage, error) {
+		called = true
+		return json.RawMessage(`{"ok":true}`), nil
+	})
+	if err != nil {
+		t.Fatalf("runWithTokenAndBaseURL: %v", err)
+	}
+	if !called {
+		t.Fatal("client runner was not invoked")
+	}
+}
+
+func TestRunWithTokenAndBaseURL_OverridesClientBaseURL(t *testing.T) {
+	var gotHost string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotHost = r.Host
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"success":true}`))
+	}))
+	defer srv.Close()
+
+	t.Setenv("GUMROAD_API_BASE_URL", "https://api.gumroad.example/v2")
+
+	opts := DefaultOptions()
+	opts.Version = "test"
+	opts.Quiet = true
+
+	data, err := runWithTokenAndBaseURL(opts, "", srv.URL, "Reading...", requestRunner("GET", "/products/search.json", url.Values{}))
+	if err != nil {
+		t.Fatalf("runWithTokenAndBaseURL: %v", err)
+	}
+	if string(data) == "" {
+		t.Fatal("expected response body")
+	}
+
+	wantHost := strings.TrimPrefix(srv.URL, "http://")
+	if gotHost != wantHost {
+		t.Fatalf("request hit %q, want %q — env var override should not win over explicit baseURL", gotHost, wantHost)
+	}
+}
+
 func setupAuthedAPI(t *testing.T, handler http.HandlerFunc) {
 	t.Helper()
 

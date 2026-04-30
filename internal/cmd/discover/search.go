@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 
@@ -13,14 +14,26 @@ import (
 )
 
 const (
-	defaultLimit   = 30
-	maxLimit       = 500
-	maxNameWidth   = 50
-	centsPerDollar = 100
-	minRating      = 1
-	maxRating      = 5
-	searchPath     = "/products/search.json"
+	defaultLimit         = 30
+	maxLimit             = 500
+	maxNameWidth         = 50
+	centsPerDollar       = 100
+	minRating            = 1
+	maxRating            = 5
+	searchPath           = "/products/search.json"
+	defaultPublicBaseURL = "https://gumroad.com"
 )
+
+// publicBaseURL returns the host that serves the public discover index. The
+// v2 API at api.gumroad.com requires a bearer token on every endpoint, so
+// search must hit the gumroad.com web host instead. GUMROAD_API_BASE_URL
+// remains an override for tests and staging environments.
+func publicBaseURL() string {
+	if v := os.Getenv("GUMROAD_API_BASE_URL"); v != "" {
+		return v
+	}
+	return defaultPublicBaseURL
+}
 
 var allowedSorts = []string{
 	"default",
@@ -190,7 +203,7 @@ restricts results to that type; --flag=false excludes that type entirely.`,
 				params.Set("from", strconv.Itoa(from))
 			}
 
-			return cmdutil.RunRequestDecodedWithToken[searchResponse](opts, "", "Searching products...", "GET", searchPath, params, func(resp searchResponse) error {
+			return cmdutil.RunRequestDecodedWithToken[searchResponse](opts, "", publicBaseURL(), "Searching products...", "GET", searchPath, params, func(resp searchResponse) error {
 				if len(resp.Products) == 0 {
 					return cmdutil.PrintInfo(opts, "No products found.")
 				}
