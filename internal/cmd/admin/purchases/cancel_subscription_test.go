@@ -140,6 +140,46 @@ func TestCancelSubscription_AlreadyCancelledShortCircuit(t *testing.T) {
 	}
 }
 
+func TestCancelSubscription_AlreadyInactiveSurfacesTerminationReasonAndDeactivatedAt(t *testing.T) {
+	handler := func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{
+			"status":             "already_inactive",
+			"message":            "Subscription is no longer active",
+			"termination_reason": "failed_payment",
+			"deactivated_at":     "2026-04-28T11:00:00Z",
+		})
+	}
+
+	testutil.SetupAdmin(t, handler)
+	humanCmd := testutil.Command(newCancelSubscriptionCmd(), testutil.Yes(true), testutil.Quiet(false))
+	humanCmd.SetArgs([]string{"123", "--email", "buyer@example.com"})
+	humanOut := testutil.CaptureStdout(func() { testutil.MustExecute(t, humanCmd) })
+
+	for _, want := range []string{
+		"Subscription is no longer active",
+		"Status: already_inactive",
+		"Termination reason: failed_payment",
+		"Deactivated at: 2026-04-28T11:00:00Z",
+	} {
+		if !strings.Contains(humanOut, want) {
+			t.Errorf("output missing %q: %q", want, humanOut)
+		}
+	}
+	if strings.Contains(humanOut, "Cancelled at:") {
+		t.Errorf("must not print 'Cancelled at:' when only deactivated_at is set: %q", humanOut)
+	}
+
+	testutil.SetupAdmin(t, handler)
+	plainCmd := testutil.Command(newCancelSubscriptionCmd(), testutil.Yes(true), testutil.PlainOutput())
+	plainCmd.SetArgs([]string{"123", "--email", "buyer@example.com"})
+	plainOut := testutil.CaptureStdout(func() { testutil.MustExecute(t, plainCmd) })
+
+	want := "true\tSubscription is no longer active\t123\talready_inactive\t2026-04-28T11:00:00Z"
+	if strings.TrimSpace(plainOut) != want {
+		t.Fatalf("unexpected plain output: %q", plainOut)
+	}
+}
+
 func TestCancelSubscription_DryRunDoesNotContactEndpoint(t *testing.T) {
 	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
 		t.Error("dry-run must not POST to the cancel_subscription endpoint")

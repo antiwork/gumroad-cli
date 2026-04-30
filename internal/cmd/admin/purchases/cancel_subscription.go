@@ -17,9 +17,11 @@ type cancelSubscriptionRequest struct {
 }
 
 type cancelSubscriptionResponse struct {
-	Status      string `json:"status"`
-	Message     string `json:"message"`
-	CancelledAt string `json:"cancelled_at"`
+	Status            string `json:"status"`
+	Message           string `json:"message"`
+	CancelledAt       string `json:"cancelled_at"`
+	DeactivatedAt     string `json:"deactivated_at"`
+	TerminationReason string `json:"termination_reason"`
 }
 
 func newCancelSubscriptionCmd() *cobra.Command {
@@ -105,9 +107,14 @@ func renderCancelSubscription(opts cmdutil.Options, purchaseID string, resp canc
 		message = "Cancelled subscription for purchase " + purchaseID
 	}
 
+	timestamp := resp.CancelledAt
+	if timestamp == "" {
+		timestamp = resp.DeactivatedAt
+	}
+
 	if opts.PlainOutput {
 		return output.PrintPlain(opts.Out(), [][]string{
-			{"true", message, purchaseID, resp.Status, resp.CancelledAt},
+			{"true", message, purchaseID, resp.Status, timestamp},
 		})
 	}
 
@@ -124,8 +131,16 @@ func renderCancelSubscription(opts cmdutil.Options, purchaseID string, resp canc
 			return err
 		}
 	}
+	if resp.TerminationReason != "" {
+		if err := output.Writef(opts.Out(), "Termination reason: %s\n", resp.TerminationReason); err != nil {
+			return err
+		}
+	}
 	if resp.CancelledAt != "" {
 		return output.Writef(opts.Out(), "Cancelled at: %s\n", resp.CancelledAt)
+	}
+	if resp.DeactivatedAt != "" {
+		return output.Writef(opts.Out(), "Deactivated at: %s\n", resp.DeactivatedAt)
 	}
 	return nil
 }
