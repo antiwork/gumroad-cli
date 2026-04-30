@@ -145,12 +145,21 @@ func TestFormatAmountTrimsCurrency(t *testing.T) {
 	}
 }
 
-func TestNewPayoutsCmdWiresList(t *testing.T) {
+func TestNewPayoutsCmdWiresAllSubcommands(t *testing.T) {
 	cmd := NewPayoutsCmd()
 	if cmd.Use != "payouts" {
 		t.Fatalf("Use = %q, want payouts", cmd.Use)
 	}
-	if got := cmd.Commands(); len(got) != 1 || got[0].Use != "list" {
-		t.Fatalf("unexpected subcommands: %#v", got)
+	want := map[string]bool{"list": false, "pause": false, "resume": false}
+	for _, sub := range cmd.Commands() {
+		if _, ok := want[sub.Use]; !ok {
+			t.Fatalf("unexpected subcommand %q", sub.Use)
+		}
+		want[sub.Use] = true
+	}
+	for name, found := range want {
+		if !found {
+			t.Errorf("missing subcommand %q", name)
+		}
 	}
 }
