@@ -93,6 +93,7 @@ func NewRootCmd() *cobra.Command {
 	cmd.PersistentFlags().BoolVar(&opts.DryRun, "dry-run", false, "Preview mutating requests without executing them")
 	cmd.PersistentFlags().BoolVar(&opts.NoColor, "no-color", false, "Disable color output")
 	cmd.PersistentFlags().BoolVar(&opts.NoInput, "no-input", false, "Disable interactive prompts")
+	cmd.PersistentFlags().BoolVar(&opts.NoTUI, "no-tui", false, "Disable interactive full-screen views; print scriptable output instead")
 	cmd.PersistentFlags().BoolVar(&opts.Yes, "yes", false, "Skip confirmation prompts")
 	cmd.PersistentFlags().BoolVar(&opts.NoImage, "no-image", false, "Disable image rendering")
 	cmd.PersistentFlags().DurationVar(&opts.PageDelay, "page-delay", 0, "Wait between paginated --all requests (e.g. 200ms, 1s)")

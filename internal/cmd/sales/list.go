@@ -8,6 +8,7 @@ import (
 	"github.com/antiwork/gumroad-cli/internal/cmdutil"
 	"github.com/antiwork/gumroad-cli/internal/config"
 	"github.com/antiwork/gumroad-cli/internal/output"
+	tuisales "github.com/antiwork/gumroad-cli/internal/tui/sales"
 	"github.com/spf13/cobra"
 )
 
@@ -97,6 +98,10 @@ func renderSalesList(opts cmdutil.Options, resp salesListResponse, product, emai
 		return writeSalesPlain(opts.Out(), resp.Sales)
 	}
 
+	if opts.InteractiveTUIAllowed() {
+		return runSalesTUI(opts, resp.Sales)
+	}
+
 	style := opts.Style()
 	hint := salesPaginationHint(product, email, orderID, before, after, resp.NextPageKey)
 	return output.WithPager(opts.Out(), opts.Err(), func(w io.Writer) error {
@@ -108,6 +113,21 @@ func renderSalesList(opts cmdutil.Options, resp salesListResponse, product, emai
 		}
 		return nil
 	})
+}
+
+func runSalesTUI(opts cmdutil.Options, sales []saleListItem) error {
+	model := make([]tuisales.Sale, 0, len(sales))
+	for _, s := range sales {
+		model = append(model, tuisales.Sale{
+			ID:            s.ID,
+			Email:         s.Email,
+			Product:       s.ProductName,
+			FormattedCost: s.FormattedTotal,
+			CreatedAt:     s.CreatedAt,
+			Refunded:      s.Refunded,
+		})
+	}
+	return tuisales.Run(opts.In(), opts.Out(), model)
 }
 
 func streamSalesListAll(opts cmdutil.Options, params url.Values) error {
