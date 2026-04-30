@@ -57,6 +57,13 @@ func NewRootCmd() *cobra.Command {
   echo "$LICENSE_KEY" | gumroad licenses verify --product <id> --no-increment`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
+		RunE: func(c *cobra.Command, args []string) error {
+			o := cmdutil.OptionsFrom(c)
+			if !o.InteractiveTUIAllowed() {
+				return c.Help()
+			}
+			return sales.RunDefaultList(o)
+		},
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			ctx := commandContext(cmd)
 			opts.Context = ctx
@@ -93,6 +100,7 @@ func NewRootCmd() *cobra.Command {
 	cmd.PersistentFlags().BoolVar(&opts.DryRun, "dry-run", false, "Preview mutating requests without executing them")
 	cmd.PersistentFlags().BoolVar(&opts.NoColor, "no-color", false, "Disable color output")
 	cmd.PersistentFlags().BoolVar(&opts.NoInput, "no-input", false, "Disable interactive prompts")
+	cmd.PersistentFlags().BoolVar(&opts.NoTUI, "no-tui", false, "Disable interactive full-screen views; print scriptable output instead")
 	cmd.PersistentFlags().BoolVar(&opts.Yes, "yes", false, "Skip confirmation prompts")
 	cmd.PersistentFlags().BoolVar(&opts.NoImage, "no-image", false, "Disable image rendering")
 	cmd.PersistentFlags().DurationVar(&opts.PageDelay, "page-delay", 0, "Wait between paginated --all requests (e.g. 200ms, 1s)")

@@ -32,6 +32,13 @@ func IsTTY() bool {
 	return stdoutIsTerminal()
 }
 
+func IsFileTerminal(f *os.File) bool {
+	if f == nil {
+		return false
+	}
+	return term.IsTerminal(int(f.Fd()))
+}
+
 func NewStyler(noColor bool) Styler {
 	return NewStylerForWriter(os.Stdout, noColor)
 }
