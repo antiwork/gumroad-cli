@@ -153,7 +153,11 @@ func dryRunParamLines(params url.Values) []string {
 	keys := sortedDryRunKeys(params)
 	lines := make([]string, 0, len(keys))
 	for _, key := range keys {
-		lines = append(lines, fmt.Sprintf("%s: %s", key, strings.Join(params[key], ", ")))
+		escaped := make([]string, len(params[key]))
+		for i, v := range params[key] {
+			escaped[i] = output.EscapePlainField(v)
+		}
+		lines = append(lines, fmt.Sprintf("%s: %s", key, strings.Join(escaped, ", ")))
 	}
 	return lines
 }

@@ -11,7 +11,7 @@ func PrintPlain(w io.Writer, rows [][]string) error {
 	for _, row := range rows {
 		escaped := make([]string, len(row))
 		for i, cell := range row {
-			escaped[i] = escapePlainField(cell)
+			escaped[i] = EscapePlainField(cell)
 		}
 		if _, err := fmt.Fprintln(w, strings.Join(escaped, "\t")); err != nil {
 			return err
@@ -20,7 +20,10 @@ func PrintPlain(w io.Writer, rows [][]string) error {
 	return nil
 }
 
-func escapePlainField(value string) string {
+// EscapePlainField escapes control characters in value so it can be rendered
+// safely on a single line. Used by both --plain output and the styled
+// --dry-run preview so an embedded newline does not break the layout.
+func EscapePlainField(value string) string {
 	var b strings.Builder
 	b.Grow(len(value))
 

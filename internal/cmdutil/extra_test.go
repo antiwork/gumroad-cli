@@ -94,6 +94,28 @@ func TestPrintDryRunRequest_PlainOutput(t *testing.T) {
 	}
 }
 
+func TestPrintDryRunRequest_StyledEscapesNewlinesInValues(t *testing.T) {
+	opts := DefaultOptions()
+	var out bytes.Buffer
+	opts.Stdout = &out
+
+	err := PrintDryRunRequest(opts, "POST", "/users/create_comment", url.Values{
+		"email":   {"u@example.com"},
+		"content": {"line 1\nline 2"},
+	})
+	if err != nil {
+		t.Fatalf("PrintDryRunRequest returned error: %v", err)
+	}
+
+	got := out.String()
+	if strings.Count(got, "\n") != 3 {
+		t.Errorf("styled dry-run preview must escape embedded newlines so multi-line values do not produce orphan lines without a key prefix; got %d lines:\n%q", strings.Count(got, "\n"), got)
+	}
+	if !strings.Contains(got, `content: line 1\nline 2`) {
+		t.Errorf("expected content value to render with literal \\n escape, got: %q", got)
+	}
+}
+
 func TestPrintDryRunRequest_PlainOutputRedactsSensitiveParams(t *testing.T) {
 	opts := DefaultOptions()
 	opts.PlainOutput = true

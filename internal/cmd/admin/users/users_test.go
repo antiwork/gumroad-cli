@@ -131,19 +131,34 @@ func TestSuspensionHumanOutputOmitsEmptyStatus(t *testing.T) {
 	}
 }
 
-func TestNewUsersCmdWiresSuspension(t *testing.T) {
+func TestNewUsersCmdWiresSubcommands(t *testing.T) {
 	cmd := NewUsersCmd()
 	if cmd.Use != "users" {
 		t.Fatalf("Use = %q, want users", cmd.Use)
 	}
 
-	uses := map[string]bool{}
-	for _, child := range cmd.Commands() {
-		uses[child.Use] = true
+	got := cmd.Commands()
+	want := []string{
+		"suspension",
+		"mark-compliant",
+		"suspend",
+		"reset-password",
+		"update-email",
+		"two-factor",
+		"add-comment",
 	}
-	for _, want := range []string{"suspension", "mark-compliant", "suspend"} {
-		if !uses[want] {
-			t.Fatalf("missing %q subcommand; got %#v", want, cmd.Commands())
+
+	if len(got) != len(want) {
+		t.Fatalf("expected %d subcommands, got %d: %#v", len(want), len(got), got)
+	}
+
+	names := map[string]bool{}
+	for _, sub := range got {
+		names[sub.Use] = true
+	}
+	for _, name := range want {
+		if !names[name] {
+			t.Errorf("missing subcommand %q in %v", name, names)
 		}
 	}
 }

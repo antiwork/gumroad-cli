@@ -157,17 +157,27 @@ func TestNewPurchasesCmdWiresSubcommands(t *testing.T) {
 	}
 
 	got := cmd.Commands()
-	if len(got) != 2 {
-		t.Fatalf("expected 2 subcommands, got %d: %#v", len(got), got)
+	want := []string{
+		"view <purchase-id>",
+		"search",
+		"refund <purchase-id>",
+		"refund-taxes <purchase-id>",
+		"resend-receipt <purchase-id>",
+		"resend-all-receipts",
+		"reassign",
+	}
+
+	if len(got) != len(want) {
+		t.Fatalf("expected %d subcommands, got %d: %#v", len(want), len(got), got)
 	}
 
 	names := map[string]bool{}
 	for _, sub := range got {
 		names[sub.Use] = true
 	}
-	for _, want := range []string{"view <purchase-id>", "refund <purchase-id>"} {
-		if !names[want] {
-			t.Errorf("missing subcommand %q in %v", want, names)
+	for _, name := range want {
+		if !names[name] {
+			t.Errorf("missing subcommand %q in %v", name, names)
 		}
 	}
 }

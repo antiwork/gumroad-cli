@@ -47,20 +47,27 @@ func newViewCmd() *cobra.Command {
 	}
 }
 
-func renderPurchase(opts cmdutil.Options, p purchase) error {
-	product := p.ProductName
-	if product == "" {
-		product = p.ProductAlias
+func productLabel(p purchase) string {
+	if p.ProductName != "" {
+		return p.ProductName
 	}
-	if product == "" {
-		product = p.ProductID
+	if p.ProductAlias != "" {
+		return p.ProductAlias
 	}
+	return p.ProductID
+}
 
-	amount := p.FormattedTotalPrice
-	if amount == "" && p.PriceCents != 0 {
-		amount = fmt.Sprintf("%d cents", p.PriceCents)
+func amountLabel(p purchase) string {
+	if p.FormattedTotalPrice != "" {
+		return p.FormattedTotalPrice
 	}
+	if p.PriceCents != 0 {
+		return fmt.Sprintf("%d cents", p.PriceCents)
+	}
+	return ""
+}
 
+func statusLabel(p purchase) string {
 	status := p.PurchaseState
 	if p.RefundStatus != "" {
 		if status != "" {
@@ -68,6 +75,13 @@ func renderPurchase(opts cmdutil.Options, p purchase) error {
 		}
 		status += p.RefundStatus
 	}
+	return status
+}
+
+func renderPurchase(opts cmdutil.Options, p purchase) error {
+	product := productLabel(p)
+	amount := amountLabel(p)
+	status := statusLabel(p)
 
 	if opts.PlainOutput {
 		return output.PrintPlain(opts.Out(), [][]string{
