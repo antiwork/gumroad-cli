@@ -56,7 +56,7 @@ full remaining balance.`,
 				return err
 			}
 			if !ok {
-				return cmdutil.PrintCancelledAction(opts, "refund purchase "+args[0]+" for fraud", args[0])
+				return cmdutil.PrintCancelledAction(opts, "refund purchase "+args[0]+" for fraud and block buyer "+email, args[0])
 			}
 
 			req := refundForFraudRequest{Email: email}
