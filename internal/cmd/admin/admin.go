@@ -17,6 +17,7 @@ func NewAdminCmd() *cobra.Command {
   gumroad admin purchases refund <purchase-id> --email <email>
   gumroad admin purchases cancel-subscription <purchase-id> --email <email>
   gumroad admin licenses lookup --key <license-key>
+  gumroad admin users info --email <email>
   gumroad admin users suspension --email <email>
   gumroad admin payouts list --email <email>
   gumroad admin payouts pause --email <email>`,
