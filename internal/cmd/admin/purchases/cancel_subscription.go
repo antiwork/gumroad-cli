@@ -58,7 +58,7 @@ always attributed to the admin actor regardless of the by-seller flag.`,
 				return err
 			}
 			if !ok {
-				return cmdutil.PrintCancelledAction(opts, "cancel subscription on purchase "+args[0], args[0])
+				return cmdutil.PrintCancelledAction(opts, "cancel subscription for buyer "+email+" on purchase "+args[0], args[0])
 			}
 
 			req := cancelSubscriptionRequest{Email: email, BySeller: bySeller}
