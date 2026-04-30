@@ -160,6 +160,40 @@ func TestInfoFlagsSuspendedUserAndPausedPayouts(t *testing.T) {
 	}
 }
 
+func TestInfoFallsBackToUserRiskStateWhenStatusIsEmpty(t *testing.T) {
+	payload := sampleInfoPayload()
+	risk := payload["user"].(map[string]any)["risk_state"].(map[string]any)
+	risk["status"] = ""
+	risk["user_risk_state"] = "suspended_for_fraud"
+
+	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, payload)
+	})
+
+	cmd := testutil.Command(newInfoCmd(), testutil.Quiet(false))
+	cmd.SetArgs([]string{"--email", "seller@example.com"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	if !strings.Contains(out, "Risk: suspended_for_fraud") {
+		t.Errorf("expected headline to fall back to user_risk_state: %q", out)
+	}
+	if strings.Contains(out, "user_risk_state: suspended_for_fraud") {
+		t.Errorf("dedupe should suppress the indented line when it equals the headline: %q", out)
+	}
+
+	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, payload)
+	})
+	plainCmd := testutil.Command(newInfoCmd(), testutil.PlainOutput())
+	plainCmd.SetArgs([]string{"--email", "seller@example.com"})
+	plainOut := testutil.CaptureStdout(func() { testutil.MustExecute(t, plainCmd) })
+
+	cols := strings.Split(strings.TrimSpace(plainOut), "\t")
+	if len(cols) < 4 || cols[3] != "suspended_for_fraud" {
+		t.Errorf("plain column 4 must fall back to user_risk_state when status is empty, got: %q", plainOut)
+	}
+}
+
 func TestInfoMarksSelfPausedPayouts(t *testing.T) {
 	payload := sampleInfoPayload()
 	payouts := payload["user"].(map[string]any)["payouts"].(map[string]any)

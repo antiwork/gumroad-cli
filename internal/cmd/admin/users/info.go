@@ -20,7 +20,6 @@ type infoResponse struct {
 }
 
 type userInfo struct {
-	ID                             string      `json:"id"`
 	Email                          string      `json:"email"`
 	Name                           string      `json:"name"`
 	Username                       string      `json:"username"`
@@ -41,7 +40,6 @@ type riskState struct {
 	FlaggedForFraud        bool   `json:"flagged_for_fraud"`
 	FlaggedForTOSViolation bool   `json:"flagged_for_tos_violation"`
 	OnProbation            bool   `json:"on_probation"`
-	Compliant              bool   `json:"compliant"`
 	LastStatusChangedAt    string `json:"last_status_changed_at"`
 }
 
@@ -97,7 +95,7 @@ func renderInfo(opts cmdutil.Options, email string, info userInfo) error {
 			fallback(info.Email, email),
 			info.Name,
 			info.Username,
-			info.RiskState.Status,
+			fallback(info.RiskState.Status, info.RiskState.UserRiskState),
 			strconv.FormatBool(info.TwoFactorAuthenticationEnabled),
 			strconv.FormatBool(info.Payouts.PausedInternally),
 			strconv.FormatBool(info.Payouts.PausedByUser),
@@ -159,7 +157,7 @@ func writeRiskState(b *strings.Builder, risk riskState) {
 	if status != "" {
 		fmt.Fprintf(b, "Risk: %s\n", status)
 	}
-	if risk.UserRiskState != "" && risk.UserRiskState != risk.Status {
+	if risk.UserRiskState != "" && risk.UserRiskState != status {
 		fmt.Fprintf(b, "  user_risk_state: %s\n", risk.UserRiskState)
 	}
 	for _, flag := range []struct {
