@@ -140,6 +140,8 @@ func TestNewUsersCmdWiresSubcommands(t *testing.T) {
 	got := cmd.Commands()
 	want := []string{
 		"suspension",
+		"mark-compliant",
+		"suspend",
 		"reset-password",
 		"update-email",
 		"two-factor",
