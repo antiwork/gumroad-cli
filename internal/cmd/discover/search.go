@@ -9,7 +9,6 @@ import (
 
 	"github.com/antiwork/gumroad-cli/internal/cmdutil"
 	"github.com/antiwork/gumroad-cli/internal/output"
-	"github.com/antiwork/gumroad-cli/internal/publiccmd"
 	"github.com/spf13/cobra"
 )
 
@@ -191,7 +190,7 @@ restricts results to that type; --flag=false excludes that type entirely.`,
 				params.Set("from", strconv.Itoa(from))
 			}
 
-			return publiccmd.RunGetDecoded[searchResponse](opts, "Searching products...", searchPath, params, func(resp searchResponse) error {
+			return cmdutil.RunRequestDecodedWithToken[searchResponse](opts, "", "Searching products...", "GET", searchPath, params, func(resp searchResponse) error {
 				if len(resp.Products) == 0 {
 					return cmdutil.PrintInfo(opts, "No products found.")
 				}

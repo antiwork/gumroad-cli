@@ -17,7 +17,6 @@ import (
 	"github.com/antiwork/gumroad-cli/internal/cmdutil"
 	"github.com/antiwork/gumroad-cli/internal/config"
 	"github.com/antiwork/gumroad-cli/internal/output"
-	"github.com/antiwork/gumroad-cli/internal/publicapi"
 	"github.com/spf13/cobra"
 )
 
@@ -60,22 +59,6 @@ func SetupAdmin(t *testing.T, handler http.HandlerFunc) *httptest.Server {
 
 	srv := httptest.NewServer(handler)
 	t.Setenv(adminapi.EnvAPIBaseURL, srv.URL)
-	t.Cleanup(srv.Close)
-	return srv
-}
-
-// SetupPublic creates a mock HTTP server for unauthenticated consumer-side
-// commands. No config or token is provisioned because public endpoints don't
-// require auth. Cleanup is automatic via t.Cleanup.
-func SetupPublic(t *testing.T, handler http.HandlerFunc) *httptest.Server {
-	t.Helper()
-
-	cfgDir := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", cfgDir)
-	t.Setenv(config.EnvAccessToken, "")
-
-	srv := httptest.NewServer(handler)
-	t.Setenv(publicapi.EnvAPIBaseURL, srv.URL)
 	t.Cleanup(srv.Close)
 	return srv
 }

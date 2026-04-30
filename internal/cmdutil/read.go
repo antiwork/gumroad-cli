@@ -99,6 +99,27 @@ func RunRequestDecoded[T any](opts Options, spinnerMessage, method, path string,
 	return RunDecoded[T](opts, spinnerMessage, requestRunner(method, path, params), render)
 }
 
+// RunRequestDecodedWithToken executes an API request with a caller-supplied
+// token (use "" for unauthenticated public endpoints) and decodes the response
+// for human/plain rendering while preserving the shared JSON/JQ fast-path.
+func RunRequestDecodedWithToken[T any](opts Options, token, spinnerMessage, method, path string, params url.Values, render func(T) error) error {
+	if opts.DryRun && method != http.MethodGet {
+		return PrintDryRunRequest(opts, method, path, params)
+	}
+	data, err := runWithTokenData(opts, token, spinnerMessage, requestRunner(method, path, params))
+	if err != nil {
+		return err
+	}
+	if opts.UsesJSONOutput() {
+		return PrintJSONResponse(opts, data)
+	}
+	decoded, err := DecodeJSON[T](data)
+	if err != nil {
+		return err
+	}
+	return render(decoded)
+}
+
 // RunRequestWithSuccess executes a mutating API request and prints a success
 // message in human mode. The id identifies the affected resource in JSON output.
 func RunRequestWithSuccess(opts Options, spinnerMessage, method, path string, params url.Values, id, successMessage string) error {

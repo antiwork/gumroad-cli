@@ -87,6 +87,7 @@ For CI and agents, set `GUMROAD_ACCESS_TOKEN` instead — it takes precedence ov
 ```
 gumroad auth          login, status, logout
 gumroad admin         Internal admin API commands
+gumroad discover      search
 gumroad user          View your account info
 gumroad products      create, update, list, view, delete, publish, unpublish, skus
 gumroad sales         list, view, refund, ship, resend-receipt
@@ -131,6 +132,89 @@ gumroad products update <product_id> --replace-files --keep-file <file_id> --fil
 ```
 
 `gumroad files upload` and `gumroad files complete` both print the canonical `file_url`. Product create/update accept repeatable `--file` flags, with matching `--file-name` and `--file-description` values when you need custom attachment metadata. `gumroad products update` also supports `--remove-file`, and `--replace-files` with `--keep-file`, when you need to remove existing attachments.
+
+## Discover
+
+`gumroad discover search` queries the public catalog that powers gumroad.com/discover. The endpoint is unauthenticated — nothing in `~/.config/gumroad/config.json` is read, and no `Authorization` header is sent even when `GUMROAD_ACCESS_TOKEN` is set.
+
+```sh
+# Bare keyword search
+gumroad discover search "machine learning"
+
+# Filter by tag, taxonomy, and file type
+gumroad discover search --tag productivity --taxonomy design/illustration --filetypes pdf,epub
+
+# Price range with a minimum rating
+gumroad discover search "icons" --min-price 5 --max-price 30 --rating 4
+
+# Tri-state booleans: omit for "no filter", --flag (or =true) to require, =false to exclude
+gumroad discover search --subscription           # only subscriptions
+gumroad discover search --bundle=false           # exclude bundles
+gumroad discover search --call=true --rating 5   # only top-rated calls
+
+# Sort and limit
+gumroad discover search "design" --sort best_sellers --limit 50
+
+# JSON + jq for scripting
+gumroad discover search "writing" --json --jq '.products[] | {name, url, price_cents}'
+```
+
+| Flag | Description |
+|------|-------------|
+| `--tag` | Filter by tag(s); comma-separated for multiple (e.g. `design,productivity`). |
+| `--taxonomy` | Filter by category slug path (e.g. `3d/games`, `design/illustration`). |
+| `--filetypes` | Filter by file type(s); comma-separated (e.g. `pdf,epub,zip`). |
+| `--min-price` | Minimum price in dollars. Must be non-negative. |
+| `--max-price` | Maximum price in dollars. Must be non-negative and >= `--min-price`. |
+| `--rating` | Minimum average rating. Must be between 1 and 5. |
+| `--min-reviews` | Minimum number of reviews. Must be non-negative. |
+| `--staff-picked` | Only staff-picked products. |
+| `--subscription` | Tri-state: unset = mixed, `--subscription` / `=true` = only, `=false` = exclude. |
+| `--bundle` | Tri-state: unset = mixed, `--bundle` / `=true` = only, `=false` = exclude. |
+| `--call` | Tri-state: unset = mixed, `--call` / `=true` = only, `=false` = exclude. |
+| `--exclude-ids` | Exclude product IDs; comma-separated. |
+| `--sort` | One of `default`, `best_sellers`, `curated`, `hot_and_new`, `newest`, `price_asc`, `price_desc`, `most_reviewed`, `highest_rated`, `recently_updated`, `staff_picked`. |
+| `--limit` | Number of results to return. Must be 1–500. Defaults to 30. |
+| `--from` | Offset for pagination. Must be non-negative. |
+
+JSON response shape:
+
+```json
+{
+  "total": 1284,
+  "products": [
+    {
+      "id": "abc123",
+      "permalink": "art-pack",
+      "name": "Art Pack",
+      "seller": {
+        "id": "u_98765",
+        "name": "Jane Doe",
+        "avatar_url": "https://public-files.gumroad.com/avatar.jpg",
+        "profile_url": "https://janedoe.gumroad.com",
+        "is_verified": true
+      },
+      "ratings": {
+        "count": 142,
+        "average": 4.7
+      },
+      "native_type": "digital",
+      "price_cents": 1500,
+      "currency_code": "usd",
+      "is_pay_what_you_want": false,
+      "url": "https://janedoe.gumroad.com/l/art-pack",
+      "thumbnail_url": "https://public-files.gumroad.com/thumb.jpg",
+      "recurrence": "",
+      "duration_in_months": null,
+      "quantity_remaining": null,
+      "is_sales_limited": false,
+      "description": "A curated set of brushes, palettes, and reference sheets."
+    }
+  ]
+}
+```
+
+If the public endpoint rate-limits the request, the CLI surfaces the `429` response with a `Wait a moment and retry` hint.
 
 ## Output modes
 
