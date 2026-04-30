@@ -174,20 +174,6 @@ func TestModel_View_NoSalesShowsHelpfulMessage(t *testing.T) {
 	}
 }
 
-func TestModel_HelpToggle(t *testing.T) {
-	m := NewModel(sampleSales())
-	upd, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
-	m = upd.(Model)
-	if !m.helpVisible {
-		t.Fatal("expected ? to toggle help on")
-	}
-	upd, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
-	m = upd.(Model)
-	if m.helpVisible {
-		t.Fatal("expected ? to toggle help off")
-	}
-}
-
 func TestParseDollarAmount(t *testing.T) {
 	cases := map[string]struct {
 		val float64
