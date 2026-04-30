@@ -160,6 +160,30 @@ func TestInfoFlagsSuspendedUserAndPausedPayouts(t *testing.T) {
 	}
 }
 
+func TestInfoSuppressesDuplicateEmailLineWhenNameIsEmpty(t *testing.T) {
+	payload := sampleInfoPayload()
+	user := payload["user"].(map[string]any)
+	user["name"] = ""
+
+	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, payload)
+	})
+
+	cmd := testutil.Command(newInfoCmd(), testutil.Quiet(false))
+	cmd.SetArgs([]string{"--email", "seller@example.com"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	if !strings.Contains(out, "seller@example.com") {
+		t.Fatalf("expected email in headline: %q", out)
+	}
+	if strings.Contains(out, "Email: seller@example.com") {
+		t.Errorf("Email: line must be suppressed when headline already shows the email: %q", out)
+	}
+	if !strings.Contains(out, "Username: sellerone") {
+		t.Errorf("downstream lines must still render: %q", out)
+	}
+}
+
 func TestInfoFallsBackToUserRiskStateWhenStatusIsEmpty(t *testing.T) {
 	payload := sampleInfoPayload()
 	risk := payload["user"].(map[string]any)["risk_state"].(map[string]any)

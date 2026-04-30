@@ -118,7 +118,9 @@ func renderInfo(opts cmdutil.Options, email string, info userInfo) error {
 		headline = fallback(info.Email, email)
 	}
 	fmt.Fprintln(&b, style.Bold(headline))
-	writeOptional(&b, "Email", info.Email)
+	if info.Email != headline {
+		writeOptional(&b, "Email", info.Email)
+	}
 	writeOptional(&b, "Username", info.Username)
 	writeOptional(&b, "Profile", info.ProfileURL)
 	writeOptional(&b, "Country", info.Country)
