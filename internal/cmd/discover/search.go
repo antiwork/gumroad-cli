@@ -14,9 +14,11 @@ import (
 )
 
 const (
-	defaultLimit = 30
-	maxLimit     = 500
-	searchPath   = "/products/search.json"
+	defaultLimit   = 30
+	maxLimit       = 500
+	maxNameWidth   = 50
+	centsPerDollar = 100
+	searchPath     = "/products/search.json"
 )
 
 var allowedSorts = []string{
@@ -144,9 +146,9 @@ trending picks. Filters and sort match the gumroad.com/discover surface.`,
 
 				style := opts.Style()
 				return output.WithPager(opts.Out(), opts.Err(), func(w io.Writer) error {
-					tbl := output.NewStyledTable(style, "NAME", "CREATOR", "PRICE", "RATING", "URL")
+					tbl := output.NewStyledTable(style, "NAME", "SELLER", "PRICE", "RATING", "URL")
 					for _, p := range resp.Products {
-						tbl.AddRow(truncate(p.Name, 50), p.Seller.Name, formatPrice(p), formatRating(p.Ratings), p.URL)
+						tbl.AddRow(truncate(p.Name, maxNameWidth), p.Seller.Name, formatPrice(p), formatRating(p.Ratings), p.URL)
 					}
 					if err := tbl.Render(w); err != nil {
 						return err
@@ -184,7 +186,7 @@ func formatPrice(p searchProduct) string {
 	if p.IsPayWhatYouWant {
 		return "PWYW"
 	}
-	dollars := float64(p.PriceCents) / 100
+	dollars := float64(p.PriceCents) / centsPerDollar
 	if p.PriceCents == 0 {
 		return "Free"
 	}

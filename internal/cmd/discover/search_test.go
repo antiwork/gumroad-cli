@@ -100,7 +100,7 @@ func TestSearch_Plain(t *testing.T) {
 		t.Errorf("plain output missing tab-separated name: %q", out)
 	}
 	if !strings.Contains(out, "Crashsune") {
-		t.Errorf("plain output missing creator name: %q", out)
+		t.Errorf("plain output missing seller name: %q", out)
 	}
 }
 

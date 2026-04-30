@@ -13,8 +13,10 @@ import (
 )
 
 const (
-	EnvAPIBaseURL     = "GUMROAD_DISCOVER_API_BASE_URL"
-	defaultAPIBaseURL = "https://gumroad.com"
+	EnvAPIBaseURL         = "GUMROAD_DISCOVER_API_BASE_URL"
+	defaultAPIBaseURL     = "https://gumroad.com"
+	statusNotFound        = 404
+	statusTooManyRequests = 429
 )
 
 type Client struct {
@@ -60,10 +62,10 @@ func rewritePublicError(err error) error {
 
 	replacement := *apiErr
 	switch apiErr.StatusCode {
-	case 404:
+	case statusNotFound:
 		replacement.Hint = "Discover endpoint not found — Gumroad may have changed the API."
-	case 429:
-		replacement.Hint = "Rate limited — slow paginated requests with --page-delay."
+	case statusTooManyRequests:
+		replacement.Hint = "Rate limited — wait a moment and retry."
 	}
 	return &replacement
 }
