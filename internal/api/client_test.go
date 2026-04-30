@@ -103,6 +103,24 @@ func TestClient_BearerHeader(t *testing.T) {
 	}
 }
 
+func TestClient_OmitsBearerHeaderWhenTokenEmpty(t *testing.T) {
+	authHeaderSeen := false
+	srv := setupTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		_, authHeaderSeen = r.Header["Authorization"]
+		if err := json.NewEncoder(w).Encode(map[string]any{"success": true}); err != nil {
+			t.Fatalf("encode response: %v", err)
+		}
+	})
+	c := &Client{token: "", httpClient: srv.Client(), baseURL: srv.URL, version: "test"}
+
+	if _, err := c.Get("/products/search.json", nil); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if authHeaderSeen {
+		t.Errorf("Authorization header was sent with empty token; expected it to be omitted")
+	}
+}
+
 func TestClient_UserAgent(t *testing.T) {
 	var gotUA string
 	srv := setupTestServer(t, func(w http.ResponseWriter, r *http.Request) {

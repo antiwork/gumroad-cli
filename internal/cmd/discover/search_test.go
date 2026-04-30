@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/antiwork/gumroad-cli/internal/testutil"
@@ -57,7 +58,7 @@ func sampleProduct(overrides map[string]any) map[string]any {
 }
 
 func TestSearch_JSON(t *testing.T) {
-	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+	testutil.SetupPublic(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet || r.URL.Path != searchPath {
 			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
 		}
@@ -87,7 +88,7 @@ func TestSearch_JSON(t *testing.T) {
 }
 
 func TestSearch_Plain(t *testing.T) {
-	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+	testutil.SetupPublic(t, func(w http.ResponseWriter, r *http.Request) {
 		testutil.JSON(t, w, sampleResponse([]map[string]any{
 			sampleProduct(map[string]any{"name": "Plain Row"}),
 		}))
@@ -99,12 +100,12 @@ func TestSearch_Plain(t *testing.T) {
 		t.Errorf("plain output missing tab-separated name: %q", out)
 	}
 	if !strings.Contains(out, "Crashsune") {
-		t.Errorf("plain output missing seller name: %q", out)
+		t.Errorf("plain output missing creator name: %q", out)
 	}
 }
 
 func TestSearch_Table(t *testing.T) {
-	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+	testutil.SetupPublic(t, func(w http.ResponseWriter, r *http.Request) {
 		testutil.JSON(t, w, sampleResponse([]map[string]any{
 			sampleProduct(map[string]any{"name": "Table Row", "price_cents": 1500}),
 		}))
@@ -118,7 +119,7 @@ func TestSearch_Table(t *testing.T) {
 }
 
 func TestSearch_Empty(t *testing.T) {
-	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+	testutil.SetupPublic(t, func(w http.ResponseWriter, r *http.Request) {
 		testutil.JSON(t, w, sampleResponse(nil))
 	})
 
@@ -131,7 +132,7 @@ func TestSearch_Empty(t *testing.T) {
 
 func TestSearch_ForwardsFilters(t *testing.T) {
 	var gotQuery url.Values
-	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+	testutil.SetupPublic(t, func(w http.ResponseWriter, r *http.Request) {
 		gotQuery = r.URL.Query()
 		testutil.JSON(t, w, sampleResponse(nil))
 	})
@@ -178,7 +179,7 @@ func TestSearch_ForwardsFilters(t *testing.T) {
 
 func TestSearch_DefaultSortOmitsParam(t *testing.T) {
 	var gotQuery url.Values
-	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+	testutil.SetupPublic(t, func(w http.ResponseWriter, r *http.Request) {
 		gotQuery = r.URL.Query()
 		testutil.JSON(t, w, sampleResponse(nil))
 	})
@@ -194,7 +195,7 @@ func TestSearch_DefaultSortOmitsParam(t *testing.T) {
 
 func TestSearch_NoQueryOmitsParam(t *testing.T) {
 	var gotQuery url.Values
-	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+	testutil.SetupPublic(t, func(w http.ResponseWriter, r *http.Request) {
 		gotQuery = r.URL.Query()
 		testutil.JSON(t, w, sampleResponse(nil))
 	})
@@ -209,7 +210,7 @@ func TestSearch_NoQueryOmitsParam(t *testing.T) {
 }
 
 func TestSearch_RejectsInvalidSort(t *testing.T) {
-	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+	testutil.SetupPublic(t, func(w http.ResponseWriter, r *http.Request) {
 		t.Errorf("unexpected request: %s %s — invalid sort should fail before HTTP call", r.Method, r.URL.Path)
 	})
 
@@ -224,7 +225,7 @@ func TestSearch_RejectsInvalidSort(t *testing.T) {
 }
 
 func TestSearch_RejectsInvalidLimit(t *testing.T) {
-	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+	testutil.SetupPublic(t, func(w http.ResponseWriter, r *http.Request) {
 		t.Errorf("unexpected request: limit validation should run before HTTP")
 	})
 
@@ -238,7 +239,7 @@ func TestSearch_RejectsInvalidLimit(t *testing.T) {
 }
 
 func TestSearch_RejectsMinAboveMax(t *testing.T) {
-	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+	testutil.SetupPublic(t, func(w http.ResponseWriter, r *http.Request) {
 		t.Errorf("unexpected request")
 	})
 
@@ -255,7 +256,7 @@ func TestSearch_RejectsMinAboveMax(t *testing.T) {
 }
 
 func TestSearch_PaywhatyouwantRendersInPlain(t *testing.T) {
-	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+	testutil.SetupPublic(t, func(w http.ResponseWriter, r *http.Request) {
 		testutil.JSON(t, w, sampleResponse([]map[string]any{
 			sampleProduct(map[string]any{"is_pay_what_you_want": true, "price_cents": 0, "name": "PWYW Item"}),
 		}))
@@ -269,7 +270,7 @@ func TestSearch_PaywhatyouwantRendersInPlain(t *testing.T) {
 }
 
 func TestSearch_FreeProduct(t *testing.T) {
-	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+	testutil.SetupPublic(t, func(w http.ResponseWriter, r *http.Request) {
 		testutil.JSON(t, w, sampleResponse([]map[string]any{
 			sampleProduct(map[string]any{"price_cents": 0, "name": "Freebie"}),
 		}))
@@ -283,7 +284,7 @@ func TestSearch_FreeProduct(t *testing.T) {
 }
 
 func TestSearch_RecurringSubscriptionShowsCadence(t *testing.T) {
-	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+	testutil.SetupPublic(t, func(w http.ResponseWriter, r *http.Request) {
 		testutil.JSON(t, w, sampleResponse([]map[string]any{
 			sampleProduct(map[string]any{"price_cents": 2000, "recurrence": "monthly", "name": "Sub"}),
 		}))
@@ -296,9 +297,27 @@ func TestSearch_RecurringSubscriptionShowsCadence(t *testing.T) {
 	}
 }
 
+func TestSearch_NoAuthorizationHeaderEverSent(t *testing.T) {
+	var sawAuth atomic.Bool
+	testutil.SetupPublic(t, func(w http.ResponseWriter, r *http.Request) {
+		if _, ok := r.Header["Authorization"]; ok {
+			sawAuth.Store(true)
+		}
+		testutil.JSON(t, w, sampleResponse(nil))
+	})
+
+	cmd := testutil.Command(newSearchCmd(), testutil.Quiet(true))
+	if err := cmd.RunE(cmd, []string{"design"}); err != nil {
+		t.Fatalf("RunE: %v", err)
+	}
+	if sawAuth.Load() {
+		t.Fatalf("Authorization header was sent to discover endpoint; expected anonymous request")
+	}
+}
+
 func TestSearch_TruncatesLongName(t *testing.T) {
 	long := strings.Repeat("A", 80)
-	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+	testutil.SetupPublic(t, func(w http.ResponseWriter, r *http.Request) {
 		testutil.JSON(t, w, sampleResponse([]map[string]any{
 			sampleProduct(map[string]any{"name": long}),
 		}))
@@ -315,7 +334,7 @@ func TestSearch_TruncatesLongName(t *testing.T) {
 }
 
 func TestSearch_NonUSDCurrencyFormats(t *testing.T) {
-	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+	testutil.SetupPublic(t, func(w http.ResponseWriter, r *http.Request) {
 		testutil.JSON(t, w, sampleResponse([]map[string]any{
 			sampleProduct(map[string]any{"price_cents": 1234, "currency_code": "eur", "name": "Euro Item"}),
 			sampleProduct(map[string]any{"price_cents": 1500, "currency_code": "eur", "recurrence": "yearly", "name": "Euro Sub"}),
@@ -337,7 +356,7 @@ func TestSearch_NonUSDCurrencyFormats(t *testing.T) {
 }
 
 func TestSearch_RatingZeroCountShowsDash(t *testing.T) {
-	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+	testutil.SetupPublic(t, func(w http.ResponseWriter, r *http.Request) {
 		testutil.JSON(t, w, sampleResponse([]map[string]any{
 			sampleProduct(map[string]any{"name": "Unrated", "ratings": map[string]any{"count": 0, "average": 0.0}}),
 		}))
@@ -369,7 +388,7 @@ func TestNewDiscoverCmd_RegistersSearch(t *testing.T) {
 }
 
 func TestSearch_HTTP5xxSurfaces(t *testing.T) {
-	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+	testutil.SetupPublic(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte(`{"success":false,"message":"oh no"}`))
 	})
