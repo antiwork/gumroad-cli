@@ -136,7 +136,14 @@ func TestNewUsersCmdWiresSuspension(t *testing.T) {
 	if cmd.Use != "users" {
 		t.Fatalf("Use = %q, want users", cmd.Use)
 	}
-	if got := cmd.Commands(); len(got) != 1 || got[0].Use != "suspension" {
-		t.Fatalf("unexpected subcommands: %#v", got)
+
+	uses := map[string]bool{}
+	for _, child := range cmd.Commands() {
+		uses[child.Use] = true
+	}
+	for _, want := range []string{"suspension", "mark-compliant", "suspend"} {
+		if !uses[want] {
+			t.Fatalf("missing %q subcommand; got %#v", want, cmd.Commands())
+		}
 	}
 }
