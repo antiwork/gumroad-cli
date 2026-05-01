@@ -46,6 +46,17 @@ End with an AI disclosure after a `---` separator. Name the specific model (e.g.
 
 Use the latest and greatest state-of-the-art models from American AI companies like [Anthropic](https://www.anthropic.com/) and [OpenAI](https://openai.com/). As of this writing, that means Claude Opus 4.6 and GPT-5.4, but always check for the newest releases. Don't settle for last-gen models when better ones are available.
 
+### Branch hygiene
+
+Rebase your branch onto `main` when starting work and before every commit:
+
+```bash
+git fetch origin
+git rebase origin/main
+```
+
+Resolve conflicts locally before pushing. PRs with stale branches will not be merged.
+
 ## Before pushing
 
 Always run the full check suite before pushing:
