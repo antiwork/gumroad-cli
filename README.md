@@ -59,6 +59,7 @@ gumroad user
 # List products, then inspect one
 gumroad products list
 gumroad products view abc123
+gumroad products readiness abc123
 
 # Fetch all sales, filter with jq
 gumroad sales list --all --json --jq '.sales[] | {email, formatted_total_price}'
@@ -88,7 +89,7 @@ For CI and agents, set `GUMROAD_ACCESS_TOKEN` instead — it takes precedence ov
 gumroad auth          login, status, logout
 gumroad admin         Internal admin API commands
 gumroad user          View your account info
-gumroad products      create, update, list, view, delete, publish, unpublish, skus
+gumroad products      create, update, list, view, readiness, delete, publish, unpublish, skus
 gumroad sales         list, view, refund, ship, resend-receipt
 gumroad payouts       list, view, upcoming
 gumroad subscribers   list, view
