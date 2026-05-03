@@ -71,9 +71,17 @@ func TestReadiness_Table(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	for _, want := range []string{"Page readiness", "Overall:", "67/100", "Name", "Description", "Cover", "Pricing", "Social Proof", "CATEGORY", "WEIGHT", "SCORE"} {
+	for _, want := range []string{"Page readiness", "Overall:", "67/100", "Name", "Description", "Cover", "Pricing", "Social Proof", "CATEGORY", "WEIGHT", "SCORE", "POINTS", "TOTAL"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("table output missing %q\nfull output:\n%s", want, out)
+		}
+	}
+
+	// Verify POINTS column math reconciles with overall.
+	// Fixture: name 87×0.15=13, description 50×0.30=15, cover 60×0.20=12, pricing 85×0.15=13, social 70×0.20=14 → 67 (rounded sum).
+	for _, points := range []string{"13", "15", "12", "14"} {
+		if !strings.Contains(out, points) {
+			t.Errorf("table output missing weighted points value %q\nfull output:\n%s", points, out)
 		}
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/url"
 
 	"github.com/antiwork/gumroad-cli/internal/cmdutil"
@@ -75,24 +76,36 @@ func renderReadiness(opts cmdutil.Options, r readinessPayload, showDetails bool)
 
 	style := opts.Style()
 	overallColored := colorBySeverity(style, r.Severity, fmt.Sprintf("%d/100", r.Overall))
-	if err := output.Writeln(opts.Out(), style.Bold("Page readiness")); err != nil {
-		return err
-	}
-	if err := output.Writef(opts.Out(), "Overall: %s  (%s)\n\n", overallColored, severityLabel(r.Severity)); err != nil {
-		return err
-	}
 
-	tbl := output.NewTable("CATEGORY", "WEIGHT", "SCORE", "SEVERITY", "NOTE")
+	tbl := output.NewTable("CATEGORY", "WEIGHT", "SCORE", "POINTS", "SEVERITY", "NOTE")
+	totalPoints := 0
 	for _, cat := range r.Categories {
+		points := int(math.Round(float64(cat.Score*cat.Weight) / 100.0))
+		totalPoints += points
 		tbl.AddRow(
 			cat.Label,
 			fmt.Sprintf("%d%%", cat.Weight),
 			fmt.Sprintf("%d", cat.Score),
+			fmt.Sprintf("%d", points),
 			colorBySeverity(style, cat.Severity, cat.Severity),
 			cat.Note,
 		)
 	}
+	tbl.AddRow(
+		style.Bold("TOTAL"),
+		"",
+		"",
+		colorBySeverity(style, r.Severity, fmt.Sprintf("%d", totalPoints)),
+		colorBySeverity(style, r.Severity, severityLabel(r.Severity)),
+		"",
+	)
 	if err := output.WithPager(opts.Out(), opts.Err(), func(w io.Writer) error {
+		if _, err := fmt.Fprintln(w, style.Bold("Page readiness")); err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintf(w, "Overall: %s  (%s)\n\n", overallColored, severityLabel(r.Severity)); err != nil {
+			return err
+		}
 		return tbl.Render(w)
 	}); err != nil {
 		return err
