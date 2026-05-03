@@ -19,6 +19,7 @@ func NewProductsCmd() *cobra.Command {
   gumroad products update <product_id> --file ./pack.zip
   gumroad products update <product_id> --replace-files --keep-file file_123 --file ./new-pack.zip
   gumroad products view <id>
+  gumroad products readiness <id>
   gumroad products publish <id>
   gumroad products unpublish <id>
   gumroad products delete <id>
@@ -29,6 +30,7 @@ func NewProductsCmd() *cobra.Command {
 	cmd.AddCommand(newUpdateCmd())
 	cmd.AddCommand(newListCmd())
 	cmd.AddCommand(newViewCmd())
+	cmd.AddCommand(newReadinessCmd())
 	cmd.AddCommand(newDeleteCmd())
 	cmd.AddCommand(newPublishCmd())
 	cmd.AddCommand(newUnpublishCmd())
