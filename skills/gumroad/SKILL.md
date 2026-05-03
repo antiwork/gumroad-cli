@@ -10,7 +10,10 @@ description: >
   "refund a sale", "create a product", "upload a file", "attach a file to a product",
   "finish a failed upload", "abort an upload", "manage webhooks",
   "check my earnings", "see my revenue", "who subscribed", "manage my store",
-  "discount code", "coupon", "shipping status", "payout schedule", or any
+  "discount code", "coupon", "shipping status", "payout schedule",
+  "improve my product page", "review my listing", "score my product",
+  "make my product convert better", "get feedback on a product",
+  "rate my product page", "is my product page good", or any
   request to query or act on Gumroad data — even if the user doesn't say
   "Gumroad" explicitly but is clearly referring to their creator store or
   digital product sales.
@@ -84,6 +87,10 @@ gumroad products list --json --no-input
 
 # View a product
 gumroad products view <id> --json --no-input
+
+# Score a product page across 5 weighted dimensions (deterministic, no LLM)
+gumroad products readiness <id> --json --no-input
+gumroad products readiness <id> --jq '.readiness | {overall, weak: [.categories[] | select(.score < 60) | .key]}' --no-input
 
 # Create a product (created as draft)
 gumroad products create --name "Art Pack" --price 10.00 --json --no-input
@@ -273,6 +280,39 @@ gumroad webhooks create --resource sale --url https://example.com/hook --json --
 # Delete
 gumroad webhooks delete <id> --yes --json --no-input
 ```
+
+## Page readiness scoring
+
+When the user asks to **improve a product page**, **review their listing**, **make their product convert better**, **get feedback on a product**, or anything similar, run `gumroad products readiness <id> --json` first. The endpoint returns a deterministic score across five weighted dimensions:
+
+| Category | Weight | Server-side rubric |
+|---|---:|---|
+| `name` | 15% | Length 30-60 chars, has digit, contains action verb |
+| `description` | 30% | Word count 200-800, has list, has heading, FAQ, "for X who Y" phrasing |
+| `cover` | 20% | At least one cover, multiple covers bonus, video preview bonus |
+| `pricing` | 15% | Priced (not free), 2+ variants, charm pricing ($X.99/$X.97/$X9) |
+| `social_proof` | 20% | log10-scaled review count + bucketed avg rating, ×0.7 if hidden |
+
+The deterministic score is your floor. **Layer your own AI judgment on top** for the categories that benefit from it — name, description, and cover — using the seller's product data:
+
+```sh
+# Get the deterministic score
+gumroad products readiness <id> --json --no-input > /tmp/readiness.json
+
+# Get the underlying product data
+gumroad products view <id> --json --no-input > /tmp/product.json
+```
+
+Then apply these sub-rubrics with your LLM judgment:
+
+- **Name** (when score < 80): is the name evocative, specific, and outcome-oriented? Generic names like "Photoshop course" score lower than "Master Lightroom in 14 days for first-time wedding photographers" even at the same length.
+- **Description** (when score < 80): does it lead with a clear value proposition, name the audience, and include concrete deliverables? Length and structure are deterministic; voice and clarity need LLM judgment.
+- **Cover** (when score < 80): the deterministic check only knows count and presence of video. You can't grade image content from the JSON — suggest the seller upload a higher-contrast cover, or call out if the existing cover URL would benefit from a redesign.
+- **Pricing**, **social_proof**: skip LLM grading. The deterministic score captures everything useful.
+
+Surface results as **prioritized actions**, not raw scores. Pick the 2-3 lowest-scoring categories and propose concrete, specific changes the seller can make in `gumroad products update` or in the dashboard. Always show the current score next to each suggestion so the seller sees the gap.
+
+Don't run readiness against products the user hasn't asked about, and don't auto-apply rewrites — propose changes and let the seller approve before calling `gumroad products update`.
 
 ## Tips
 
