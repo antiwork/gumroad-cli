@@ -64,13 +64,24 @@ func newStatusCmd() *cobra.Command {
 					return err
 				}
 				status := unauthenticatedStatus(statusReasonNotLoggedIn)
+				adminStatus, err := lookupAdminStatusIfStored(opts)
+				if err != nil {
+					return err
+				}
+				status.Admin = adminStatus
 				if opts.UsesJSONOutput() {
 					return printAuthJSON(opts, status)
 				}
 				if opts.PlainOutput {
 					return printStatusPlain(opts, status)
 				}
-				return output.Writeln(opts.Out(), "Not logged in. Run "+style.Bold("gumroad auth login")+" or set "+style.Bold(config.EnvAccessToken)+" to authenticate.")
+				if err := output.Writeln(opts.Out(), "Not logged in. Run "+style.Bold("gumroad auth login")+" or set "+style.Bold(config.EnvAccessToken)+" to authenticate."); err != nil {
+					return err
+				}
+				if status.Admin != nil {
+					return writeAdminStatusMessage(opts, *status.Admin)
+				}
+				return nil
 			}
 
 			status, err := lookupStatus(opts, tokenInfo)
@@ -228,6 +239,9 @@ func writeAuthenticatedMessage(w io.Writer, style output.Styler, user authUser, 
 func writeAdminStatusMessage(opts cmdutil.Options, status adminStatusOutput) error {
 	style := opts.Style()
 	if !status.Authenticated {
+		if status.Reason == statusReasonAccessDenied {
+			return output.Writeln(opts.Out(), "Admin token was accepted but admin access is denied. Request admin access for this account.")
+		}
 		return output.Writeln(opts.Out(), "Admin token is invalid or expired. Run "+style.Bold("gumroad auth login")+" and check the admin box.")
 	}
 

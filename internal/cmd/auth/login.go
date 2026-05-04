@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/url"
 	"os"
+	"strings"
 
 	"github.com/antiwork/gumroad-cli/internal/adminapi"
 	"github.com/antiwork/gumroad-cli/internal/adminconfig"
@@ -159,11 +160,11 @@ func loginCredentialsFromOAuthResult(opts cmdutil.Options, result oauth.FlowResu
 }
 
 func adminConfigFromOAuth(token *oauth.AdminTokenResponse) *adminconfig.Config {
-	if token == nil {
+	if token == nil || strings.TrimSpace(token.Token) == "" {
 		return nil
 	}
 	return &adminconfig.Config{
-		Token:           token.Token,
+		Token:           strings.TrimSpace(token.Token),
 		TokenExternalID: token.TokenExternalID,
 		Actor: adminconfig.Actor{
 			Name:  token.Actor.Name,
@@ -174,8 +175,11 @@ func adminConfigFromOAuth(token *oauth.AdminTokenResponse) *adminconfig.Config {
 }
 
 func adminConfigFromExchange(token adminapi.AdminToken) *adminconfig.Config {
+	if strings.TrimSpace(token.Token) == "" {
+		return nil
+	}
 	return &adminconfig.Config{
-		Token:           token.Token,
+		Token:           strings.TrimSpace(token.Token),
 		TokenExternalID: token.TokenExternalID,
 		Actor:           token.Actor,
 		ExpiresAt:       token.ExpiresAt,
@@ -204,17 +208,16 @@ func verifyAndSave(c *cobra.Command, opts cmdutil.Options, creds loginCredential
 		return err
 	}
 
-	if creds.AdminToken != nil {
-		if creds.AdminToken.Token == "" {
-			return fmt.Errorf("admin token response did not contain a token")
-		}
-		if err := revokeExistingAdminToken(opts); err != nil {
-			return err
-		}
-	}
-
 	if err := config.Save(&config.Config{AccessToken: creds.SellerToken}); err != nil {
 		return fmt.Errorf("could not save token: %w", err)
+	}
+	if creds.AdminToken != nil {
+		creds.AdminToken.Token = strings.TrimSpace(creds.AdminToken.Token)
+		if creds.AdminToken.Token == "" {
+			creds.AdminToken = nil
+		} else if err := revokeExistingAdminToken(opts); err != nil {
+			warnAdminRevokeFailure(opts, err)
+		}
 	}
 	if creds.AdminToken != nil {
 		if err := adminconfig.Save(creds.AdminToken); err != nil {
@@ -259,6 +262,10 @@ func verifyAndSave(c *cobra.Command, opts cmdutil.Options, creds loginCredential
 		return output.Writeln(opts.Out(), opts.Style().Green("✓")+" Admin operations authorized as "+opts.Style().Bold(adminActorName(creds.AdminToken.Actor)))
 	}
 	return nil
+}
+
+func warnAdminRevokeFailure(opts cmdutil.Options, err error) {
+	_, _ = fmt.Fprintf(opts.Err(), "warning: %v\n", err)
 }
 
 func revokeExistingAdminToken(opts cmdutil.Options) error {

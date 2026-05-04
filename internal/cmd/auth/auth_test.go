@@ -267,6 +267,92 @@ func TestLogin_JSONOutputIncludesAdminTokenFromSameApproval(t *testing.T) {
 	}
 }
 
+func TestLogin_SavesSellerTokenWhenAdminTokenIsEmpty(t *testing.T) {
+	setupAuth(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.RawJSON(t, w, testutil.Fixture(t, "testdata/login_success.json"))
+	})
+	cfgDir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", cfgDir)
+	opts := testutil.TestOptions()
+	cmd := testutil.WithOptions(newLoginCmd(), opts)
+
+	if err := verifyAndSave(cmd, opts, loginCredentials{
+		SellerToken: "good-token",
+		AdminToken:  &adminconfig.Config{},
+	}); err != nil {
+		t.Fatalf("verifyAndSave failed: %v", err)
+	}
+
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("Load config failed: %v", err)
+	}
+	if cfg.AccessToken != "good-token" {
+		t.Fatalf("got seller token %q, want good-token", cfg.AccessToken)
+	}
+	adminCfg, err := adminconfig.Load()
+	if err != nil {
+		t.Fatalf("Load admin config failed: %v", err)
+	}
+	if adminCfg.Token != "" {
+		t.Fatalf("expected no admin token to be saved, got %q", adminCfg.Token)
+	}
+}
+
+func TestLogin_SavesSellerAndAdminWhenPreviousAdminRevokeFails(t *testing.T) {
+	setupAuth(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.RawJSON(t, w, testutil.Fixture(t, "testdata/login_success.json"))
+	})
+	cfgDir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", cfgDir)
+	if err := adminconfig.Save(&adminconfig.Config{Token: "old-admin-token"}); err != nil {
+		t.Fatalf("Save old admin config failed: %v", err)
+	}
+	adminSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/internal/admin/auth/revoke" {
+			t.Fatalf("got path %q, want /internal/admin/auth/revoke", r.URL.Path)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer old-admin-token" {
+			t.Fatalf("got Authorization=%q, want Bearer old-admin-token", got)
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+		testutil.JSON(t, w, map[string]any{"success": false, "message": "temporary failure"})
+	}))
+	t.Cleanup(adminSrv.Close)
+	t.Setenv(adminapi.EnvAPIBaseURL, adminSrv.URL)
+	var errOut bytes.Buffer
+	opts := testutil.TestOptions(testutil.Stderr(&errOut))
+	cmd := testutil.WithOptions(newLoginCmd(), opts)
+
+	if err := verifyAndSave(cmd, opts, loginCredentials{
+		SellerToken: "good-token",
+		AdminToken: &adminconfig.Config{
+			Token: "new-admin-token",
+			Actor: adminconfig.Actor{Email: "admin@example.com"},
+		},
+	}); err != nil {
+		t.Fatalf("verifyAndSave failed: %v", err)
+	}
+
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("Load config failed: %v", err)
+	}
+	if cfg.AccessToken != "good-token" {
+		t.Fatalf("got seller token %q, want good-token", cfg.AccessToken)
+	}
+	adminCfg, err := adminconfig.Load()
+	if err != nil {
+		t.Fatalf("Load admin config failed: %v", err)
+	}
+	if adminCfg.Token != "new-admin-token" {
+		t.Fatalf("got admin token %q, want new-admin-token", adminCfg.Token)
+	}
+	if !strings.Contains(errOut.String(), "warning: could not revoke previous admin token") {
+		t.Fatalf("expected admin revoke warning, got %q", errOut.String())
+	}
+}
+
 func TestLogin_PlainOutput(t *testing.T) {
 	setupAuth(t, func(w http.ResponseWriter, r *http.Request) {
 		testutil.RawJSON(t, w, testutil.Fixture(t, "testdata/login_success.json"))
@@ -318,6 +404,22 @@ func TestLoginCredentialsFromOAuthResultExchangesAdminCode(t *testing.T) {
 	}
 	if creds.AdminToken.Token != "admin-token-from-code" || creds.AdminToken.Actor.Email != "code-admin@example.com" {
 		t.Fatalf("unexpected admin token: %+v", creds.AdminToken)
+	}
+}
+
+func TestLoginCredentialsFromOAuthResultIgnoresEmptyAdminToken(t *testing.T) {
+	creds, err := loginCredentialsFromOAuthResult(testutil.TestOptions(), oauth.FlowResult{
+		AccessToken: "seller-token",
+		AdminToken:  &oauth.AdminTokenResponse{},
+	})
+	if err != nil {
+		t.Fatalf("loginCredentialsFromOAuthResult failed: %v", err)
+	}
+	if creds.SellerToken != "seller-token" {
+		t.Fatalf("got seller token %q, want seller-token", creds.SellerToken)
+	}
+	if creds.AdminToken != nil {
+		t.Fatalf("expected empty admin token to be ignored, got %+v", creds.AdminToken)
 	}
 }
 
@@ -512,6 +614,39 @@ func TestStatus_ShowsStoredAdminWhoami(t *testing.T) {
 	}
 }
 
+func TestStatus_NotLoggedInShowsStoredAdminWhoami(t *testing.T) {
+	setupAuth(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Error("should not reach seller API when not logged in")
+	})
+	cfgDir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", cfgDir)
+	if err := adminconfig.Save(&adminconfig.Config{Token: "admin-token"}); err != nil {
+		t.Fatalf("Save admin config failed: %v", err)
+	}
+	adminSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/internal/admin/whoami" {
+			t.Fatalf("got path %q, want /internal/admin/whoami", r.URL.Path)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer admin-token" {
+			t.Fatalf("got Authorization=%q, want Bearer admin-token", got)
+		}
+		testutil.JSON(t, w, map[string]any{
+			"actor": map[string]any{"name": "Live Admin", "email": "admin@example.com"},
+			"token": map[string]any{
+				"external_id": "adm_123",
+				"expires_at":  "2026-06-01T00:00:00Z",
+			},
+		})
+	}))
+	t.Cleanup(adminSrv.Close)
+	t.Setenv(adminapi.EnvAPIBaseURL, adminSrv.URL)
+
+	out := runStatus(t)
+	if !strings.Contains(out, "Not logged in.") || !strings.Contains(out, "Admin: Live Admin") {
+		t.Fatalf("expected not-logged-in output with admin status, got %q", out)
+	}
+}
+
 func TestStatus_JSONOutputShowsInvalidStoredAdminToken(t *testing.T) {
 	setupAuth(t, func(w http.ResponseWriter, r *http.Request) {
 		testutil.JSON(t, w, map[string]any{
@@ -576,6 +711,34 @@ func TestStatus_PlainOutputIncludesStoredAdminToken(t *testing.T) {
 	}
 }
 
+func TestStatus_PlainOutput_NotLoggedInIncludesStoredAdminToken(t *testing.T) {
+	setupAuth(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Error("should not reach seller API when not logged in")
+	})
+	cfgDir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", cfgDir)
+	if err := adminconfig.Save(&adminconfig.Config{Token: "admin-token"}); err != nil {
+		t.Fatalf("Save admin config failed: %v", err)
+	}
+	adminSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{
+			"actor": map[string]any{"email": "admin@example.com"},
+			"token": map[string]any{
+				"external_id": "adm_123",
+				"expires_at":  "2026-06-01T00:00:00Z",
+			},
+		})
+	}))
+	t.Cleanup(adminSrv.Close)
+	t.Setenv(adminapi.EnvAPIBaseURL, adminSrv.URL)
+
+	out := runStatus(t, testutil.PlainOutput())
+	want := "false\t\t\t" + statusReasonNotLoggedIn + "\ttrue\tadmin@example.com\tadmin@example.com\t2026-06-01T00:00:00Z\t"
+	if strings.TrimSuffix(out, "\n") != want {
+		t.Fatalf("unexpected plain output: %q", out)
+	}
+}
+
 func TestStatus_StoredAdminAccessDenied(t *testing.T) {
 	setupAuth(t, func(w http.ResponseWriter, r *http.Request) {
 		testutil.JSON(t, w, map[string]any{
@@ -607,6 +770,14 @@ func TestStatus_StoredAdminAccessDenied(t *testing.T) {
 	admin := resp["admin"].(map[string]any)
 	if admin["authenticated"] != false || admin["reason"] != statusReasonAccessDenied {
 		t.Fatalf("unexpected admin status: %#v", admin)
+	}
+
+	textOut := runStatus(t)
+	if !strings.Contains(textOut, "admin access is denied") {
+		t.Fatalf("expected access denied guidance, got %q", textOut)
+	}
+	if strings.Contains(textOut, "invalid or expired") {
+		t.Fatalf("access denied should not be reported as invalid or expired: %q", textOut)
 	}
 }
 
@@ -736,6 +907,45 @@ func TestStatus_JSONOutput_NotLoggedIn(t *testing.T) {
 	}
 	if resp["reason"] != statusReasonNotLoggedIn {
 		t.Errorf("got reason=%v, want %s", resp["reason"], statusReasonNotLoggedIn)
+	}
+}
+
+func TestStatus_JSONOutput_NotLoggedInIncludesStoredAdminToken(t *testing.T) {
+	setupAuth(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Error("should not reach seller API when not logged in")
+	})
+	cfgDir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", cfgDir)
+	if err := adminconfig.Save(&adminconfig.Config{Token: "admin-token"}); err != nil {
+		t.Fatalf("Save admin config failed: %v", err)
+	}
+	adminSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{
+			"actor": map[string]any{"name": "Live Admin", "email": "admin@example.com"},
+			"token": map[string]any{
+				"external_id": "adm_123",
+				"expires_at":  "2026-06-01T00:00:00Z",
+			},
+		})
+	}))
+	t.Cleanup(adminSrv.Close)
+	t.Setenv(adminapi.EnvAPIBaseURL, adminSrv.URL)
+
+	out := runStatus(t, testutil.JSONOutput())
+	var resp map[string]any
+	if err := json.Unmarshal([]byte(out), &resp); err != nil {
+		t.Fatalf("status JSON output is invalid: %v\n%s", err, out)
+	}
+	if resp["authenticated"] != false || resp["reason"] != statusReasonNotLoggedIn {
+		t.Fatalf("unexpected seller status: %#v", resp)
+	}
+	admin := resp["admin"].(map[string]any)
+	if admin["authenticated"] != true {
+		t.Fatalf("unexpected admin status: %#v", admin)
+	}
+	actor := admin["actor"].(map[string]any)
+	if actor["email"] != "admin@example.com" {
+		t.Fatalf("got admin actor email=%v, want admin@example.com", actor["email"])
 	}
 }
 
