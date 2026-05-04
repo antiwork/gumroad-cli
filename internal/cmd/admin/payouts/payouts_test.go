@@ -150,7 +150,7 @@ func TestNewPayoutsCmdWiresAllSubcommands(t *testing.T) {
 	if cmd.Use != "payouts" {
 		t.Fatalf("Use = %q, want payouts", cmd.Use)
 	}
-	want := map[string]bool{"list": false, "pause": false, "resume": false}
+	want := map[string]bool{"list": false, "pause": false, "resume": false, "issue": false, "scheduled": false}
 	for _, sub := range cmd.Commands() {
 		if _, ok := want[sub.Use]; !ok {
 			t.Fatalf("unexpected subcommand %q", sub.Use)
