@@ -105,7 +105,7 @@ gumroad completion    bash, zsh, fish, powershell
 
 Run `gumroad <command> --help` for usage details and examples.
 
-Admin commands use a separate internal token. Run `gumroad auth login` and check the admin box to store one locally, or set `GUMROAD_ADMIN_ACCESS_TOKEN` for CI and agents. For local testing, set `GUMROAD_ADMIN_API_BASE_URL`.
+Admin commands use a separate internal token. Run `gumroad auth login` and check the admin box to store one locally. Mutating admin commands use that stored token in normal interactive runs so the acting admin can be shown before the request; CI and agents can pass `--non-interactive` with `GUMROAD_ADMIN_TOKEN`. For local testing, set `GUMROAD_ADMIN_API_BASE_URL`.
 
 ## File attachments
 
@@ -146,7 +146,7 @@ Paginated commands (`sales list`, `payouts list`, `subscribers list`) accept `--
 
 ## AI agents
 
-`gumroad` is built to work with AI agents. The `--json`, `--jq`, and `--no-input` flags make it easy to query Gumroad data programmatically, and `GUMROAD_ACCESS_TOKEN` gives agents a no-persistence seller auth path.
+`gumroad` is built to work with AI agents. The `--json`, `--jq`, `--no-input`, and `--non-interactive` flags make it easy to query Gumroad data programmatically, and `GUMROAD_ACCESS_TOKEN` gives agents a no-persistence seller auth path.
 
 A [Claude Code skill](skills/gumroad/SKILL.md) is included. Run `gumroad skill` to install or refresh it.
 

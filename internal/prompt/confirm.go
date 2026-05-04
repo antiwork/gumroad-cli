@@ -10,7 +10,7 @@ import (
 )
 
 var (
-	ErrConfirmationNoInput        = errors.New("confirmation required but --no-input is set")
+	ErrConfirmationNoInput        = errors.New("confirmation required but interactive prompts are disabled")
 	ErrConfirmationNonInteractive = errors.New("confirmation required but stdin is not interactive")
 )
 

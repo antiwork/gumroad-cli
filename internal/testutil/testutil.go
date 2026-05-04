@@ -146,6 +146,15 @@ func NoInput(value bool) OptionsMutator {
 	return func(opts *cmdutil.Options) { opts.NoInput = value }
 }
 
+func NonInteractive(value bool) OptionsMutator {
+	return func(opts *cmdutil.Options) {
+		opts.NonInteractive = value
+		if value {
+			opts.NoInput = true
+		}
+	}
+}
+
 func NoColor(value bool) OptionsMutator {
 	return func(opts *cmdutil.Options) { opts.NoColor = value }
 }

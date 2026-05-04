@@ -155,6 +155,22 @@ func TestRootCmd_HelpIncludesDryRunFlag(t *testing.T) {
 	}
 }
 
+func TestRootCmd_HelpIncludesNonInteractiveFlag(t *testing.T) {
+	cmd := NewRootCmd()
+	cmd.SetArgs([]string{"--help"})
+
+	var out strings.Builder
+	cmd.SetOut(&out)
+
+	err := cmd.Execute()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(out.String(), "--non-interactive") {
+		t.Fatalf("expected --non-interactive in help output, got %q", out.String())
+	}
+}
+
 func TestRootCmd_HelpIncludesPageDelayFlag(t *testing.T) {
 	cmd := NewRootCmd()
 	cmd.SetArgs([]string{"--help"})
@@ -313,7 +329,41 @@ func TestExecuteCommand_JSONNoInputConfirmationIsUsageError(t *testing.T) {
 	if payload.Error.Type != "usage_error" || payload.Error.Code != "invalid_input" {
 		t.Fatalf("unexpected structured error: %+v", payload.Error)
 	}
-	if payload.Error.Message != "confirmation required but --no-input is set. Use --yes to skip confirmation" {
+	if payload.Error.Message != "confirmation required but interactive prompts are disabled. Use --yes to skip confirmation" {
+		t.Fatalf("unexpected error message %q", payload.Error.Message)
+	}
+}
+
+func TestExecuteCommand_JSONNonInteractiveConfirmationIsUsageError(t *testing.T) {
+	cmd := NewRootCmd()
+	cmd.SetArgs([]string{"auth", "logout", "--json", "--non-interactive"})
+
+	var stdout, stderr bytes.Buffer
+	if code := executeCommand(cmd, &stdout, &stderr); code != 1 {
+		t.Fatalf("got exit code %d, want 1", code)
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("expected no stderr output, got %q", stderr.String())
+	}
+
+	var payload struct {
+		Success bool `json:"success"`
+		Error   struct {
+			Type    string `json:"type"`
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &payload); err != nil {
+		t.Fatalf("expected JSON output, got error %v with %q", err, stdout.String())
+	}
+	if payload.Success {
+		t.Fatal("expected success=false")
+	}
+	if payload.Error.Type != "usage_error" || payload.Error.Code != "invalid_input" {
+		t.Fatalf("unexpected structured error: %+v", payload.Error)
+	}
+	if payload.Error.Message != "confirmation required but interactive prompts are disabled. Use --yes to skip confirmation" {
 		t.Fatalf("unexpected error message %q", payload.Error.Message)
 	}
 }
