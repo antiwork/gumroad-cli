@@ -152,7 +152,8 @@ func loginCredentialsFromOAuthResult(opts cmdutil.Options, result oauth.FlowResu
 	case result.AdminAuthorizationCode != "":
 		adminToken, err := adminapi.ExchangeAuthorizationCode(opts.Context, result.AdminAuthorizationCode, result.CodeVerifier, opts.Version, opts.DebugEnabled())
 		if err != nil {
-			return loginCredentials{}, fmt.Errorf("could not authorize admin token: %w", err)
+			warnAdminAuthorizationFailure(opts, err)
+			return creds, nil
 		}
 		creds.AdminToken = adminConfigFromExchange(adminToken)
 	}
@@ -266,6 +267,10 @@ func verifyAndSave(c *cobra.Command, opts cmdutil.Options, creds loginCredential
 
 func warnAdminRevokeFailure(opts cmdutil.Options, err error) {
 	_, _ = fmt.Fprintf(opts.Err(), "warning: %v\n", err)
+}
+
+func warnAdminAuthorizationFailure(opts cmdutil.Options, err error) {
+	_, _ = fmt.Fprintf(opts.Err(), "warning: could not authorize admin token: %v\n", err)
 }
 
 func revokeExistingAdminToken(opts cmdutil.Options) error {

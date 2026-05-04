@@ -21,6 +21,7 @@ const (
 	statusReasonNotLoggedIn      = "not_logged_in"
 	statusReasonInvalidOrExpired = "invalid_or_expired"
 	statusReasonAccessDenied     = "access_denied"
+	statusReasonUnreachable      = "unreachable"
 )
 
 type statusOutput struct {
@@ -102,12 +103,20 @@ func newStatusCmd() *cobra.Command {
 			}
 
 			if !status.Authenticated {
+				var message string
 				switch status.Reason {
 				case statusReasonAccessDenied:
-					return output.Writeln(opts.Out(), authSourceMessage(status.Source, "Token was accepted but access is denied. Check that it has the required scope.", "GUMROAD_ACCESS_TOKEN was accepted but access is denied. Check that it has the required scope."))
+					message = authSourceMessage(status.Source, "Token was accepted but access is denied. Check that it has the required scope.", "GUMROAD_ACCESS_TOKEN was accepted but access is denied. Check that it has the required scope.")
 				default:
-					return output.Writeln(opts.Out(), authSourceMessage(status.Source, "Token is invalid or expired. Run "+style.Bold("gumroad auth login")+" to re-authenticate.", "GUMROAD_ACCESS_TOKEN is invalid or expired. Update it in your shell and try again."))
+					message = authSourceMessage(status.Source, "Token is invalid or expired. Run "+style.Bold("gumroad auth login")+" to re-authenticate.", "GUMROAD_ACCESS_TOKEN is invalid or expired. Update it in your shell and try again.")
 				}
+				if err := output.Writeln(opts.Out(), message); err != nil {
+					return err
+				}
+				if status.Admin != nil {
+					return writeAdminStatusMessage(opts, *status.Admin)
+				}
+				return nil
 			}
 
 			user, err := decodeAuthUser(status.User)
@@ -185,7 +194,8 @@ func lookupAdminStatusIfStored(opts cmdutil.Options) (*adminStatusOutput, error)
 				return &status, nil
 			}
 		}
-		return nil, fmt.Errorf("could not verify admin token: %w", err)
+		status := adminStatusFromTokenInfo(tokenInfo, false, statusReasonUnreachable)
+		return &status, nil
 	}
 
 	status := adminStatusOutput{
@@ -239,8 +249,11 @@ func writeAuthenticatedMessage(w io.Writer, style output.Styler, user authUser, 
 func writeAdminStatusMessage(opts cmdutil.Options, status adminStatusOutput) error {
 	style := opts.Style()
 	if !status.Authenticated {
-		if status.Reason == statusReasonAccessDenied {
+		switch status.Reason {
+		case statusReasonAccessDenied:
 			return output.Writeln(opts.Out(), "Admin token was accepted but admin access is denied. Request admin access for this account.")
+		case statusReasonUnreachable:
+			return output.Writeln(opts.Out(), "Could not reach the admin API to verify admin token. Try again later.")
 		}
 		return output.Writeln(opts.Out(), "Admin token is invalid or expired. Run "+style.Bold("gumroad auth login")+" and check the admin box.")
 	}
