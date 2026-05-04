@@ -30,7 +30,7 @@ func TestScheduledList_Default(t *testing.T) {
 		}
 		testutil.JSON(t, w, map[string]any{
 			"scheduled_payouts": []map[string]any{
-				{"external_id": "pay_1", "email": "seller@example.com", "amount_cents": 1000, "currency": "usd", "status": "flagged", "processor": "stripe", "scheduled_at": "2026-05-01"},
+				{"external_id": "pay_1", "user": map[string]any{"email": "seller@example.com"}, "payout_amount_cents": 1000, "status": "flagged", "action": "payout", "scheduled_at": "2026-05-01"},
 			},
 			"limit": 20,
 		})
@@ -49,7 +49,7 @@ func TestScheduledList_Default(t *testing.T) {
 	if _, hasLimit := bodyKeys["limit"]; hasLimit {
 		t.Errorf("limit must be omitted when not provided, got: %v", bodyKeys)
 	}
-	for _, want := range []string{"pay_1", "flagged", "1000 USD cents"} {
+	for _, want := range []string{"pay_1", "flagged", "1000 cents"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output missing %q: %q", want, out)
 		}
@@ -216,7 +216,7 @@ func TestScheduledList_PlainOutput(t *testing.T) {
 	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
 		testutil.JSON(t, w, map[string]any{
 			"scheduled_payouts": []map[string]any{
-				{"external_id": "pay_1", "email": "seller@example.com", "amount_cents": 1000, "status": "flagged", "processor": "stripe", "scheduled_at": "2026-05-01", "created_at": "2026-04-30"},
+				{"external_id": "pay_1", "user": map[string]any{"email": "seller@example.com"}, "payout_amount_cents": 1000, "status": "flagged", "action": "payout", "scheduled_at": "2026-05-01", "created_at": "2026-04-30"},
 			},
 		})
 	})
@@ -225,7 +225,7 @@ func TestScheduledList_PlainOutput(t *testing.T) {
 	cmd.SetArgs([]string{})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
-	want := "pay_1\tseller@example.com\t1000 cents\tflagged\tstripe\t2026-05-01\t2026-04-30"
+	want := "pay_1\tseller@example.com\t1000 cents\tflagged\tpayout\t2026-05-01\t2026-04-30"
 	if strings.TrimSpace(out) != want {
 		t.Fatalf("unexpected plain output: %q", out)
 	}

@@ -19,14 +19,25 @@ type scheduledListRequest struct {
 }
 
 type scheduledPayout struct {
-	ExternalID  string      `json:"external_id"`
-	Email       string      `json:"email"`
-	AmountCents api.JSONInt `json:"amount_cents"`
-	Currency    string      `json:"currency"`
-	Status      string      `json:"status"`
-	Processor   string      `json:"processor"`
-	ScheduledAt string      `json:"scheduled_at"`
-	CreatedAt   string      `json:"created_at"`
+	ExternalID  string                 `json:"external_id"`
+	User        scheduledPayoutUser    `json:"user"`
+	AmountCents api.JSONInt            `json:"payout_amount_cents"`
+	Status      string                 `json:"status"`
+	Action      string                 `json:"action"`
+	ScheduledAt string                 `json:"scheduled_at"`
+	ExecutedAt  string                 `json:"executed_at"`
+	CreatedAt   string                 `json:"created_at"`
+	CreatedBy   scheduledPayoutCreator `json:"created_by"`
+}
+
+type scheduledPayoutUser struct {
+	Email      string `json:"email"`
+	ExternalID string `json:"external_id"`
+	Name       string `json:"name"`
+}
+
+type scheduledPayoutCreator struct {
+	Name string `json:"name"`
 }
 
 type scheduledListResponse struct {
@@ -93,7 +104,7 @@ func renderScheduledList(opts cmdutil.Options, status string, resp scheduledList
 		rows := make([][]string, 0, len(resp.ScheduledPayouts))
 		for _, p := range resp.ScheduledPayouts {
 			rows = append(rows, []string{
-				p.ExternalID, p.Email, formatScheduledAmount(p), p.Status, p.Processor, p.ScheduledAt, p.CreatedAt,
+				p.ExternalID, p.User.Email, formatScheduledAmount(p), p.Status, p.Action, p.ScheduledAt, p.CreatedAt,
 			})
 		}
 		return output.PrintPlain(opts.Out(), rows)
@@ -123,18 +134,14 @@ func renderScheduledList(opts cmdutil.Options, status string, resp scheduledList
 			return err
 		}
 
-		tbl := output.NewStyledTable(style, "ID", "EMAIL", "AMOUNT", "STATUS", "PROCESSOR", "SCHEDULED")
+		tbl := output.NewStyledTable(style, "ID", "EMAIL", "AMOUNT", "STATUS", "ACTION", "SCHEDULED")
 		for _, p := range resp.ScheduledPayouts {
-			tbl.AddRow(p.ExternalID, p.Email, formatScheduledAmount(p), p.Status, p.Processor, p.ScheduledAt)
+			tbl.AddRow(p.ExternalID, p.User.Email, formatScheduledAmount(p), p.Status, p.Action, p.ScheduledAt)
 		}
 		return tbl.Render(w)
 	})
 }
 
 func formatScheduledAmount(p scheduledPayout) string {
-	currency := strings.TrimSpace(p.Currency)
-	if currency == "" {
-		return fmt.Sprintf("%d cents", p.AmountCents)
-	}
-	return fmt.Sprintf("%d %s cents", p.AmountCents, strings.ToUpper(currency))
+	return fmt.Sprintf("%d cents", p.AmountCents)
 }
