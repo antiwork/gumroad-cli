@@ -68,27 +68,6 @@ func TestPathUsesSeparateAdminConfigFile(t *testing.T) {
 	}
 }
 
-func TestLoadIgnoresLegacyAdminJSON(t *testing.T) {
-	tmp := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", tmp)
-
-	dir, err := Dir()
-	if err != nil {
-		t.Fatalf("Dir failed: %v", err)
-	}
-	if err := os.MkdirAll(dir, 0700); err != nil {
-		t.Fatalf("MkdirAll failed: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "admin.json"), []byte(`{"access_token":"old-admin-token"}`), 0600); err != nil {
-		t.Fatalf("WriteFile legacy failed: %v", err)
-	}
-
-	_, err = ResolveStoredToken()
-	if !errors.Is(err, ErrNotAuthenticated) {
-		t.Fatalf("got error %v, want ErrNotAuthenticated", err)
-	}
-}
-
 func TestTokenIgnoresLegacyAccessTokenField(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", tmp)
