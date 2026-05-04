@@ -192,6 +192,60 @@ func TestIssue_JSONPreservesResponse(t *testing.T) {
 	}
 }
 
+func TestIssue_PlainOutput(t *testing.T) {
+	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{
+			"success": true,
+			"payout": map[string]any{
+				"external_id":  "pay_abc",
+				"amount_cents": 5000,
+				"currency":     "usd",
+				"state":        "processing",
+				"processor":    "stripe",
+			},
+		})
+	})
+
+	cmd := testutil.Command(newIssueCmd(), testutil.Yes(true), testutil.PlainOutput())
+	cmd.SetArgs([]string{"--email", "seller@example.com", "--through", "2020-01-01", "--processor", "stripe"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	if !strings.Contains(out, "pay_abc") || !strings.Contains(out, "5000 USD cents") || !strings.Contains(out, "processing") {
+		t.Errorf("unexpected plain output: %q", out)
+	}
+}
+
+func TestIssue_RendersAmountWithoutCurrency(t *testing.T) {
+	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{
+			"success": true,
+			"payout":  map[string]any{"external_id": "pay_abc", "amount_cents": 5000, "state": "processing"},
+		})
+	})
+
+	cmd := testutil.Command(newIssueCmd(), testutil.Yes(true), testutil.Quiet(false))
+	cmd.SetArgs([]string{"--email", "seller@example.com", "--through", "2020-01-01", "--processor", "stripe"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	if !strings.Contains(out, "5000 cents") {
+		t.Errorf("expected currency-less amount formatting: %q", out)
+	}
+}
+
+func TestIssue_CancelledByUser(t *testing.T) {
+	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Error("should not POST when user declines")
+	})
+
+	cmd := testutil.Command(newIssueCmd(), testutil.NoInput(true), testutil.DryRun(false))
+	cmd.SetArgs([]string{"--email", "seller@example.com", "--through", "2020-01-01", "--processor", "stripe"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected confirmation-required error without --yes")
+	}
+}
+
 func TestIssue_DryRunDoesNotContactEndpoint(t *testing.T) {
 	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
 		t.Error("dry-run must not POST to the issue endpoint")

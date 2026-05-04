@@ -212,6 +212,151 @@ func TestScheduledCancel_ServerError(t *testing.T) {
 	}
 }
 
+func TestScheduledList_PlainOutput(t *testing.T) {
+	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{
+			"scheduled_payouts": []map[string]any{
+				{"external_id": "pay_1", "email": "seller@example.com", "amount_cents": 1000, "status": "flagged", "processor": "stripe", "scheduled_at": "2026-05-01", "created_at": "2026-04-30"},
+			},
+		})
+	})
+
+	cmd := testutil.Command(newScheduledListCmd(), testutil.PlainOutput())
+	cmd.SetArgs([]string{})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	want := "pay_1\tseller@example.com\t1000 cents\tflagged\tstripe\t2026-05-01\t2026-04-30"
+	if strings.TrimSpace(out) != want {
+		t.Fatalf("unexpected plain output: %q", out)
+	}
+}
+
+func TestScheduledList_JSONPreservesResponse(t *testing.T) {
+	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{
+			"scheduled_payouts": []map[string]any{{"external_id": "pay_1"}},
+			"limit":             20,
+		})
+	})
+
+	cmd := testutil.Command(newScheduledListCmd(), testutil.JSONOutput())
+	cmd.SetArgs([]string{})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	var resp scheduledListResponse
+	if err := json.Unmarshal([]byte(out), &resp); err != nil {
+		t.Fatalf("not valid JSON: %v\n%s", err, out)
+	}
+	if len(resp.ScheduledPayouts) != 1 || resp.ScheduledPayouts[0].ExternalID != "pay_1" {
+		t.Fatalf("unexpected JSON: %s", out)
+	}
+}
+
+func TestScheduledList_EmptyDefaultMessage(t *testing.T) {
+	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{"scheduled_payouts": []any{}})
+	})
+
+	cmd := testutil.Command(newScheduledListCmd(), testutil.Quiet(false))
+	cmd.SetArgs([]string{})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	if !strings.Contains(out, "No scheduled payouts found.") {
+		t.Errorf("expected default empty-state, got %q", out)
+	}
+}
+
+func TestScheduledExecute_DryRun(t *testing.T) {
+	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Error("dry-run must not POST")
+	})
+
+	cmd := testutil.Command(newScheduledExecuteCmd(), testutil.DryRun(true), testutil.NoInput(true))
+	cmd.SetArgs([]string{"pay_abc"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	if !strings.Contains(out, "POST") || !strings.Contains(out, "/internal/admin/payouts/pay_abc/scheduled_execute") {
+		t.Errorf("dry-run output unexpected: %q", out)
+	}
+}
+
+func TestScheduledExecute_PlainAndJSON(t *testing.T) {
+	handler := func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{
+			"success":          true,
+			"result":           "executed",
+			"message":          "Done",
+			"scheduled_payout": map[string]any{"external_id": "pay_abc", "status": "executed"},
+		})
+	}
+
+	testutil.SetupAdmin(t, handler)
+	plain := testutil.Command(newScheduledExecuteCmd(), testutil.Yes(true), testutil.PlainOutput())
+	plain.SetArgs([]string{"pay_abc"})
+	plainOut := testutil.CaptureStdout(func() { testutil.MustExecute(t, plain) })
+	if !strings.Contains(plainOut, "true\tDone\tpay_abc\texecuted\texecuted") {
+		t.Errorf("unexpected plain: %q", plainOut)
+	}
+
+	testutil.SetupAdmin(t, handler)
+	js := testutil.Command(newScheduledExecuteCmd(), testutil.Yes(true), testutil.JSONOutput())
+	js.SetArgs([]string{"pay_abc"})
+	jsOut := testutil.CaptureStdout(func() { testutil.MustExecute(t, js) })
+	var resp scheduledExecuteResponse
+	if err := json.Unmarshal([]byte(jsOut), &resp); err != nil {
+		t.Fatalf("not JSON: %v\n%s", err, jsOut)
+	}
+	if !resp.Success || resp.Result != "executed" {
+		t.Fatalf("unexpected JSON: %s", jsOut)
+	}
+}
+
+func TestScheduledCancel_DryRun(t *testing.T) {
+	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Error("dry-run must not POST")
+	})
+
+	cmd := testutil.Command(newScheduledCancelCmd(), testutil.DryRun(true), testutil.NoInput(true))
+	cmd.SetArgs([]string{"pay_abc"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	if !strings.Contains(out, "POST") || !strings.Contains(out, "/internal/admin/payouts/pay_abc/scheduled_cancel") {
+		t.Errorf("dry-run output unexpected: %q", out)
+	}
+}
+
+func TestScheduledCancel_RequiresConfirmation(t *testing.T) {
+	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Error("should not reach API without confirmation")
+	})
+
+	cmd := testutil.Command(newScheduledCancelCmd(), testutil.NoInput(true))
+	cmd.SetArgs([]string{"pay_abc"})
+
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "--yes") {
+		t.Fatalf("expected --yes error, got %v", err)
+	}
+}
+
+func TestScheduledCancel_PlainOutput(t *testing.T) {
+	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{
+			"success":          true,
+			"message":          "Cancelled",
+			"scheduled_payout": map[string]any{"external_id": "pay_abc", "status": "cancelled"},
+		})
+	})
+
+	cmd := testutil.Command(newScheduledCancelCmd(), testutil.Yes(true), testutil.PlainOutput())
+	cmd.SetArgs([]string{"pay_abc"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	if !strings.Contains(out, "true\tCancelled\tpay_abc\tcancelled") {
+		t.Errorf("unexpected plain: %q", out)
+	}
+}
+
 func TestScheduledCmdWiresChildren(t *testing.T) {
 	cmd := newScheduledCmd()
 	want := map[string]bool{"list": false, "execute <external_id>": false, "cancel <external_id>": false}
