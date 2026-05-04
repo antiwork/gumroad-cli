@@ -35,7 +35,7 @@ Always follow these rules:
 - Prices are in whole currency units (e.g. `--price 10.00` for $10), not cents. The CLI converts internally. Use `--currency eur` to change currency.
 - Products are created as drafts — use `gumroad products publish <id>` to make them live.
 - If a command fails with a seller auth error, tell the user to run `gumroad auth login` interactively — agents cannot do this step.
-- For admin commands in agents/CI, set `GUMROAD_ADMIN_ACCESS_TOKEN`; interactive shells can store an admin token with `gumroad auth login`.
+- For admin commands in agents/CI, pass `--non-interactive` and set `GUMROAD_ADMIN_TOKEN`; interactive shells can store an admin token with `gumroad auth login`.
 
 ## Response shapes
 

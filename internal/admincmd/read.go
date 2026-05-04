@@ -2,6 +2,8 @@ package admincmd
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/url"
 
 	"github.com/antiwork/gumroad-cli/internal/adminapi"
@@ -81,17 +83,63 @@ func RunPostJSONDecoded[T any](opts cmdutil.Options, spinnerMessage, path string
 // failures distinguishable from post-success render/decode errors (e.g. so
 // only the POST failure gets a "request failed" wrapper).
 func FetchPostJSON(opts cmdutil.Options, spinnerMessage, path string, payload any) (json.RawMessage, error) {
-	return runAuthenticatedData(opts, spinnerMessage, func(client *adminapi.Client) (json.RawMessage, error) {
+	return runMutationData(opts, spinnerMessage, func(client *adminapi.Client) (json.RawMessage, error) {
 		return client.PostJSON(path, payload)
 	})
 }
 
 func runAuthenticatedData(opts cmdutil.Options, spinnerMessage string, run ClientRunner) (json.RawMessage, error) {
-	token, err := adminconfig.Token()
+	info, err := adminconfig.ResolveToken()
 	if err != nil {
 		return nil, err
 	}
-	return runWithTokenData(opts, token, spinnerMessage, run)
+	return runWithTokenData(opts, info.Value, spinnerMessage, run)
+}
+
+func runMutationData(opts cmdutil.Options, spinnerMessage string, run ClientRunner) (json.RawMessage, error) {
+	info, err := resolveMutationToken(opts)
+	if err != nil {
+		return nil, err
+	}
+	if err := writeActorBanner(opts, info); err != nil {
+		return nil, err
+	}
+	return runWithTokenData(opts, info.Value, spinnerMessage, run)
+}
+
+func resolveMutationToken(opts cmdutil.Options) (adminconfig.TokenInfo, error) {
+	if opts.NonInteractive {
+		return adminconfig.ResolveToken()
+	}
+	info, err := adminconfig.ResolveStoredToken()
+	if err == nil {
+		return info, nil
+	}
+	if errors.Is(err, adminconfig.ErrNotAuthenticated) && adminconfig.HasEnvToken() {
+		return adminconfig.TokenInfo{}, fmt.Errorf("%w. mutating admin commands require stored admin auth unless --non-interactive is set; run 'gumroad auth login' and check the admin box, or pass --non-interactive to use %s", adminconfig.ErrNotAuthenticated, adminconfig.EnvAccessToken)
+	}
+	return adminconfig.TokenInfo{}, err
+}
+
+func writeActorBanner(opts cmdutil.Options, info adminconfig.TokenInfo) error {
+	if opts.NonInteractive {
+		return nil
+	}
+	style := output.NewStylerForWriter(opts.Err(), opts.NoColor)
+	return output.Writeln(opts.Err(), style.Yellow("Admin actor: ")+adminActorLabel(info.Actor))
+}
+
+func adminActorLabel(actor adminconfig.Actor) string {
+	switch {
+	case actor.Name != "" && actor.Email != "":
+		return actor.Name + " (" + actor.Email + ")"
+	case actor.Name != "":
+		return actor.Name
+	case actor.Email != "":
+		return actor.Email
+	default:
+		return "stored admin token"
+	}
 }
 
 func runWithTokenData(opts cmdutil.Options, token, spinnerMessage string, run ClientRunner) (json.RawMessage, error) {

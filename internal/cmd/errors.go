@@ -177,7 +177,7 @@ func classifyPrimaryCause(err error) commandErrorDetail {
 		}
 	case errors.Is(err, adminconfig.ErrNotAuthenticated):
 		hint := adminconfig.HintSetAdminToken
-		if strings.Contains(err.Error(), adminconfig.EnvAccessToken) {
+		if strings.Contains(err.Error(), adminconfig.EnvAccessToken) || strings.Contains(err.Error(), adminconfig.LegacyEnvAccessToken) {
 			hint = ""
 		}
 		return commandErrorDetail{

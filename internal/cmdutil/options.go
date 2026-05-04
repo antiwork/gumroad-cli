@@ -15,22 +15,23 @@ type contextKey string
 const optionsContextKey contextKey = "gumroad-cmd-options"
 
 type Options struct {
-	Context     context.Context
-	Stdin       io.Reader
-	Stdout      io.Writer
-	Stderr      io.Writer
-	JSONOutput  bool
-	PlainOutput bool
-	JQExpr      string
-	Quiet       bool
-	DryRun      bool
-	NoColor     bool
-	NoInput     bool
-	Yes         bool
-	NoImage     bool
-	PageDelay   time.Duration
-	Debug       bool
-	Version     string
+	Context        context.Context
+	Stdin          io.Reader
+	Stdout         io.Writer
+	Stderr         io.Writer
+	JSONOutput     bool
+	PlainOutput    bool
+	JQExpr         string
+	Quiet          bool
+	DryRun         bool
+	NoColor        bool
+	NoInput        bool
+	NonInteractive bool
+	Yes            bool
+	NoImage        bool
+	PageDelay      time.Duration
+	Debug          bool
+	Version        string
 }
 
 func DefaultOptions() Options {

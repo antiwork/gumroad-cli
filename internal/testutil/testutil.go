@@ -52,6 +52,7 @@ func SetupAdmin(t *testing.T, handler http.HandlerFunc) *httptest.Server {
 	t.Setenv("XDG_CONFIG_HOME", cfgDir)
 	t.Setenv(config.EnvAccessToken, "")
 	t.Setenv(adminconfig.EnvAccessToken, "")
+	t.Setenv(adminconfig.LegacyEnvAccessToken, "")
 
 	if err := adminconfig.Save(&adminconfig.Config{
 		Token: "admin-token",
@@ -144,6 +145,15 @@ func DryRun(value bool) OptionsMutator {
 
 func NoInput(value bool) OptionsMutator {
 	return func(opts *cmdutil.Options) { opts.NoInput = value }
+}
+
+func NonInteractive(value bool) OptionsMutator {
+	return func(opts *cmdutil.Options) {
+		opts.NonInteractive = value
+		if value {
+			opts.NoInput = true
+		}
+	}
 }
 
 func NoColor(value bool) OptionsMutator {
