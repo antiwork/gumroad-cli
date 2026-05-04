@@ -22,8 +22,6 @@ type Config struct {
 	TokenExternalID string `json:"token_external_id,omitempty"`
 	Actor           Actor  `json:"actor,omitempty"`
 	ExpiresAt       string `json:"expires_at,omitempty"`
-
-	AccessToken string `json:"access_token,omitempty"`
 }
 
 const (
@@ -31,7 +29,6 @@ const (
 	HintSetAdminToken = "Run `gumroad auth login` and check the admin box. For CI/agents, set GUMROAD_ADMIN_TOKEN and pass --non-interactive for mutating admin commands." //nolint:gosec // G101: remediation text, not a credential.
 
 	adminConfigFile       = "admin.token"
-	legacyAdminConfigFile = "admin.json"
 	adminConfigTempPrefix = "admin.token.tmp-*"
 )
 
@@ -67,29 +64,12 @@ func Path() (string, error) {
 	return filepath.Join(dir, adminConfigFile), nil
 }
 
-func LegacyPath() (string, error) {
-	dir, err := Dir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(dir, legacyAdminConfigFile), nil
-}
-
 func Load() (*Config, error) {
 	p, err := Path()
 	if err != nil {
 		return nil, err
 	}
-	cfg, found, err := loadConfigFile(p)
-	if err != nil || found {
-		return cfg, err
-	}
-
-	legacyPath, err := LegacyPath()
-	if err != nil {
-		return nil, err
-	}
-	cfg, _, err = loadConfigFile(legacyPath)
+	cfg, _, err := loadConfigFile(p)
 	if err != nil {
 		return nil, err
 	}
@@ -141,9 +121,6 @@ func Save(cfg *Config) error {
 	if err := writeConfigAtomically(p, data); err != nil {
 		return fmt.Errorf("could not write admin config: %w", err)
 	}
-	if err := deleteLegacyConfigFiles(); err != nil {
-		return err
-	}
 	return nil
 }
 
@@ -157,20 +134,6 @@ func Delete() error {
 	}
 	if err := os.Remove(p + ".bak"); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("could not delete admin config backup: %w", err)
-	}
-	return deleteLegacyConfigFiles()
-}
-
-func deleteLegacyConfigFiles() error {
-	legacyPath, err := LegacyPath()
-	if err != nil {
-		return err
-	}
-	if err := os.Remove(legacyPath); err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("could not delete legacy admin config: %w", err)
-	}
-	if err := os.Remove(legacyPath + ".bak"); err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("could not delete legacy admin config backup: %w", err)
 	}
 	return nil
 }
@@ -212,7 +175,7 @@ func (cfg *Config) tokenValue() string {
 	if strings.TrimSpace(cfg.Token) != "" {
 		return strings.TrimSpace(cfg.Token)
 	}
-	return strings.TrimSpace(cfg.AccessToken)
+	return ""
 }
 
 func (cfg *Config) tokenInfo() TokenInfo {

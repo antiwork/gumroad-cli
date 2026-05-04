@@ -47,47 +47,6 @@ func TestSaveLoadAndDelete(t *testing.T) {
 	}
 }
 
-func TestSaveRemovesLegacyConfigFiles(t *testing.T) {
-	tmp := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", tmp)
-
-	dir, err := Dir()
-	if err != nil {
-		t.Fatalf("Dir failed: %v", err)
-	}
-	if err := os.MkdirAll(dir, 0700); err != nil {
-		t.Fatalf("MkdirAll failed: %v", err)
-	}
-	legacyPath, err := LegacyPath()
-	if err != nil {
-		t.Fatalf("LegacyPath failed: %v", err)
-	}
-	if err := os.WriteFile(legacyPath, []byte(`{"access_token":"old-admin-token"}`), 0600); err != nil {
-		t.Fatalf("WriteFile legacy failed: %v", err)
-	}
-	if err := os.WriteFile(legacyPath+".bak", []byte(`{"access_token":"backup-admin-token"}`), 0600); err != nil {
-		t.Fatalf("WriteFile legacy backup failed: %v", err)
-	}
-
-	if err := Save(&Config{Token: "new-admin-token"}); err != nil {
-		t.Fatalf("Save failed: %v", err)
-	}
-
-	if _, err := os.Stat(legacyPath); !os.IsNotExist(err) {
-		t.Fatalf("legacy config should be removed, got err=%v", err)
-	}
-	if _, err := os.Stat(legacyPath + ".bak"); !os.IsNotExist(err) {
-		t.Fatalf("legacy backup should be removed, got err=%v", err)
-	}
-	loaded, err := Load()
-	if err != nil {
-		t.Fatalf("Load failed: %v", err)
-	}
-	if loaded.Token != "new-admin-token" {
-		t.Fatalf("got token %q, want new-admin-token", loaded.Token)
-	}
-}
-
 func TestPathUsesSeparateAdminConfigFile(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", tmp)
@@ -106,6 +65,52 @@ func TestPathUsesSeparateAdminConfigFile(t *testing.T) {
 	}
 	if filepath.Base(adminPath) != "admin.token" {
 		t.Fatalf("got admin path %q, want admin.token file", adminPath)
+	}
+}
+
+func TestLoadIgnoresLegacyAdminJSON(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", tmp)
+
+	dir, err := Dir()
+	if err != nil {
+		t.Fatalf("Dir failed: %v", err)
+	}
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		t.Fatalf("MkdirAll failed: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "admin.json"), []byte(`{"access_token":"old-admin-token"}`), 0600); err != nil {
+		t.Fatalf("WriteFile legacy failed: %v", err)
+	}
+
+	_, err = ResolveStoredToken()
+	if !errors.Is(err, ErrNotAuthenticated) {
+		t.Fatalf("got error %v, want ErrNotAuthenticated", err)
+	}
+}
+
+func TestTokenIgnoresLegacyAccessTokenField(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", tmp)
+
+	dir, err := Dir()
+	if err != nil {
+		t.Fatalf("Dir failed: %v", err)
+	}
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		t.Fatalf("MkdirAll failed: %v", err)
+	}
+	path, err := Path()
+	if err != nil {
+		t.Fatalf("Path failed: %v", err)
+	}
+	if err := os.WriteFile(path, []byte(`{"access_token":"old-admin-token"}`), 0600); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	_, err = ResolveStoredToken()
+	if !errors.Is(err, ErrNotAuthenticated) {
+		t.Fatalf("got error %v, want ErrNotAuthenticated", err)
 	}
 }
 
@@ -192,8 +197,11 @@ func TestLoadInsecurePermissions(t *testing.T) {
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		t.Fatalf("MkdirAll failed: %v", err)
 	}
-	path := filepath.Join(dir, "admin.json")
-	if err := os.WriteFile(path, []byte(`{"access_token":"tok"}`), 0644); err != nil { //nolint:gosec // G306: intentionally insecure permissions for validation test.
+	path, err := Path()
+	if err != nil {
+		t.Fatalf("Path failed: %v", err)
+	}
+	if err := os.WriteFile(path, []byte(`{"token":"tok"}`), 0644); err != nil { //nolint:gosec // G306: intentionally insecure permissions for validation test.
 		t.Fatalf("WriteFile failed: %v", err)
 	}
 
