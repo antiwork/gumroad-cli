@@ -12,15 +12,27 @@ import (
 	"github.com/antiwork/gumroad-cli/internal/config"
 )
 
+type Actor struct {
+	Name  string `json:"name,omitempty"`
+	Email string `json:"email,omitempty"`
+}
+
 type Config struct {
-	AccessToken string `json:"access_token"`
+	Token           string `json:"token,omitempty"`
+	TokenExternalID string `json:"token_external_id,omitempty"`
+	Actor           Actor  `json:"actor,omitempty"`
+	ExpiresAt       string `json:"expires_at,omitempty"`
+
+	AccessToken string `json:"access_token,omitempty"`
 }
 
 const (
-	EnvAccessToken        = "GUMROAD_ADMIN_ACCESS_TOKEN"      //nolint:gosec // G101: env var name, not a credential.
-	HintSetAdminToken     = "Set GUMROAD_ADMIN_ACCESS_TOKEN." //nolint:gosec // G101: remediation text, not a credential.
-	adminConfigFile       = "admin.json"
-	adminConfigTempPrefix = "admin.json.tmp-*"
+	EnvAccessToken    = "GUMROAD_ADMIN_ACCESS_TOKEN"                                                           //nolint:gosec // G101: env var name, not a credential.
+	HintSetAdminToken = "Run `gumroad auth login` and check the admin box, or set GUMROAD_ADMIN_ACCESS_TOKEN." //nolint:gosec // G101: remediation text, not a credential.
+
+	adminConfigFile       = "admin.token"
+	legacyAdminConfigFile = "admin.json"
+	adminConfigTempPrefix = "admin.token.tmp-*"
 )
 
 var (
@@ -36,8 +48,11 @@ const (
 )
 
 type TokenInfo struct {
-	Value  string
-	Source TokenSource
+	Value           string
+	Source          TokenSource
+	TokenExternalID string
+	Actor           Actor
+	ExpiresAt       string
 }
 
 func Dir() (string, error) {
@@ -52,11 +67,36 @@ func Path() (string, error) {
 	return filepath.Join(dir, adminConfigFile), nil
 }
 
+func LegacyPath() (string, error) {
+	dir, err := Dir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, legacyAdminConfigFile), nil
+}
+
 func Load() (*Config, error) {
 	p, err := Path()
 	if err != nil {
 		return nil, err
 	}
+	cfg, found, err := loadConfigFile(p)
+	if err != nil || found {
+		return cfg, err
+	}
+
+	legacyPath, err := LegacyPath()
+	if err != nil {
+		return nil, err
+	}
+	cfg, _, err = loadConfigFile(legacyPath)
+	if err != nil {
+		return nil, err
+	}
+	return cfg, nil
+}
+
+func loadConfigFile(p string) (*Config, bool, error) {
 	info, err := os.Stat(p)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -66,24 +106,24 @@ func Load() (*Config, error) {
 				}
 			}
 			if err != nil {
-				return &Config{}, nil
+				return &Config{}, false, nil
 			}
 		} else {
-			return nil, fmt.Errorf("could not read admin config: %w", err)
+			return nil, false, fmt.Errorf("could not read admin config: %w", err)
 		}
 	}
 	if err := validateConfigPermissions(p, info.Mode()); err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	data, err := os.ReadFile(p)
 	if err != nil {
-		return nil, fmt.Errorf("could not read admin config: %w", err)
+		return nil, false, fmt.Errorf("could not read admin config: %w", err)
 	}
 	var cfg Config
 	if err := json.Unmarshal(data, &cfg); err != nil {
-		return nil, fmt.Errorf("could not parse admin config: %w", err)
+		return nil, false, fmt.Errorf("could not parse admin config: %w", err)
 	}
-	return &cfg, nil
+	return &cfg, true, nil
 }
 
 func Save(cfg *Config) error {
@@ -101,6 +141,9 @@ func Save(cfg *Config) error {
 	if err := writeConfigAtomically(p, data); err != nil {
 		return fmt.Errorf("could not write admin config: %w", err)
 	}
+	if err := deleteLegacyConfigFiles(); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -115,6 +158,20 @@ func Delete() error {
 	if err := os.Remove(p + ".bak"); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("could not delete admin config backup: %w", err)
 	}
+	return deleteLegacyConfigFiles()
+}
+
+func deleteLegacyConfigFiles() error {
+	legacyPath, err := LegacyPath()
+	if err != nil {
+		return err
+	}
+	if err := os.Remove(legacyPath); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("could not delete legacy admin config: %w", err)
+	}
+	if err := os.Remove(legacyPath + ".bak"); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("could not delete legacy admin config backup: %w", err)
+	}
 	return nil
 }
 
@@ -122,15 +179,18 @@ func ResolveToken() (TokenInfo, error) {
 	if token := strings.TrimSpace(os.Getenv(EnvAccessToken)); token != "" {
 		return TokenInfo{Value: token, Source: TokenSourceEnv}, nil
 	}
+	return ResolveStoredToken()
+}
 
+func ResolveStoredToken() (TokenInfo, error) {
 	cfg, err := Load()
 	if err != nil {
 		return TokenInfo{}, err
 	}
-	if cfg.AccessToken == "" {
-		return TokenInfo{}, fmt.Errorf("%w. %s", ErrNotAuthenticated, HintSetAdminToken)
+	if cfg.tokenValue() == "" {
+		return TokenInfo{}, notLoggedInError()
 	}
-	return TokenInfo{Value: cfg.AccessToken, Source: TokenSourceConfig}, nil
+	return cfg.tokenInfo(), nil
 }
 
 func Token() (string, error) {
@@ -139,6 +199,30 @@ func Token() (string, error) {
 		return "", err
 	}
 	return info.Value, nil
+}
+
+func (cfg *Config) tokenValue() string {
+	if cfg == nil {
+		return ""
+	}
+	if strings.TrimSpace(cfg.Token) != "" {
+		return strings.TrimSpace(cfg.Token)
+	}
+	return strings.TrimSpace(cfg.AccessToken)
+}
+
+func (cfg *Config) tokenInfo() TokenInfo {
+	return TokenInfo{
+		Value:           cfg.tokenValue(),
+		Source:          TokenSourceConfig,
+		TokenExternalID: cfg.TokenExternalID,
+		Actor:           cfg.Actor,
+		ExpiresAt:       cfg.ExpiresAt,
+	}
+}
+
+func notLoggedInError() error {
+	return fmt.Errorf("%w. not logged in for admin; run 'gumroad auth login' and check the admin box", ErrNotAuthenticated)
 }
 
 func writeConfigAtomically(path string, data []byte) (err error) {

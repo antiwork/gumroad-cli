@@ -100,6 +100,72 @@ func TestBrowserFlow_HappyPath(t *testing.T) {
 	}
 }
 
+func TestBrowserFlowResult_ReturnsAdminCodeFromUnifiedCallback(t *testing.T) {
+	tokenSrv := httptest.NewServer(tokenHandler(t, true))
+	defer tokenSrv.Close()
+	cfg := testConfig(tokenSrv)
+	cfg.OptionalAdmin = true
+
+	result, err := BrowserFlowResult(context.Background(), cfg, func(authURL string) error {
+		u, _ := url.Parse(authURL)
+		if u.Query().Get("admin_scope") != "optional" {
+			t.Fatalf("admin_scope = %q, want optional", u.Query().Get("admin_scope"))
+		}
+		state := u.Query().Get("state")
+		redirectURI := u.Query().Get("redirect_uri")
+		callbackURL := fmt.Sprintf("%s?code=test-auth-code&admin_code=admin-auth-code&state=%s", redirectURI, state)
+		resp := mustGet(t, callbackURL)
+		resp.Body.Close()
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("BrowserFlowResult: %v", err)
+	}
+	if result.AccessToken != "test-access-token" {
+		t.Fatalf("token = %q, want test-access-token", result.AccessToken)
+	}
+	if result.AdminAuthorizationCode != "admin-auth-code" {
+		t.Fatalf("admin code = %q, want admin-auth-code", result.AdminAuthorizationCode)
+	}
+	if result.CodeVerifier == "" {
+		t.Fatal("expected code verifier for admin exchange")
+	}
+}
+
+func TestBrowserFlowResult_ReturnsAdminTokenFromTokenResponse(t *testing.T) {
+	tokenSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		mustEncode(t, w, TokenResponse{
+			AccessToken: "test-access-token",
+			TokenType:   "bearer",
+			AdminToken: &AdminTokenResponse{
+				Token:           "admin-token",
+				TokenExternalID: "adm_123",
+				Actor:           AdminActor{Name: "Admin User", Email: "admin@example.com"},
+				ExpiresAt:       "2026-06-01T00:00:00Z",
+			},
+		})
+	}))
+	defer tokenSrv.Close()
+	cfg := testConfig(tokenSrv)
+
+	result, err := BrowserFlowResult(context.Background(), cfg, func(authURL string) error {
+		u, _ := url.Parse(authURL)
+		state := u.Query().Get("state")
+		redirectURI := u.Query().Get("redirect_uri")
+		callbackURL := fmt.Sprintf("%s?code=test-auth-code&state=%s", redirectURI, state)
+		resp := mustGet(t, callbackURL)
+		resp.Body.Close()
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("BrowserFlowResult: %v", err)
+	}
+	if result.AdminToken == nil || result.AdminToken.Token != "admin-token" || result.AdminToken.Actor.Email != "admin@example.com" {
+		t.Fatalf("unexpected admin token result: %+v", result.AdminToken)
+	}
+}
+
 func TestBrowserFlow_StateMismatch(t *testing.T) {
 	tokenSrv := httptest.NewServer(tokenHandler(t, false))
 	defer tokenSrv.Close()

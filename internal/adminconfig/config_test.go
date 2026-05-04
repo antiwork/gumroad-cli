@@ -15,7 +15,12 @@ func TestSaveLoadAndDelete(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", tmp)
 
-	if err := Save(&Config{AccessToken: "admin-token"}); err != nil {
+	if err := Save(&Config{
+		Token:           "admin-token",
+		TokenExternalID: "adm_123",
+		Actor:           Actor{Name: "Admin User", Email: "admin@example.com"},
+		ExpiresAt:       "2026-06-01T00:00:00Z",
+	}); err != nil {
 		t.Fatalf("Save failed: %v", err)
 	}
 
@@ -23,8 +28,11 @@ func TestSaveLoadAndDelete(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load failed: %v", err)
 	}
-	if loaded.AccessToken != "admin-token" {
-		t.Fatalf("got token %q, want admin-token", loaded.AccessToken)
+	if loaded.Token != "admin-token" {
+		t.Fatalf("got token %q, want admin-token", loaded.Token)
+	}
+	if loaded.TokenExternalID != "adm_123" || loaded.Actor.Email != "admin@example.com" || loaded.ExpiresAt == "" {
+		t.Fatalf("admin metadata was not preserved: %+v", loaded)
 	}
 
 	if err := Delete(); err != nil {
@@ -34,8 +42,49 @@ func TestSaveLoadAndDelete(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load after Delete failed: %v", err)
 	}
-	if loaded.AccessToken != "" {
-		t.Fatalf("expected empty token after Delete, got %q", loaded.AccessToken)
+	if loaded.Token != "" {
+		t.Fatalf("expected empty token after Delete, got %q", loaded.Token)
+	}
+}
+
+func TestSaveRemovesLegacyConfigFiles(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", tmp)
+
+	dir, err := Dir()
+	if err != nil {
+		t.Fatalf("Dir failed: %v", err)
+	}
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		t.Fatalf("MkdirAll failed: %v", err)
+	}
+	legacyPath, err := LegacyPath()
+	if err != nil {
+		t.Fatalf("LegacyPath failed: %v", err)
+	}
+	if err := os.WriteFile(legacyPath, []byte(`{"access_token":"old-admin-token"}`), 0600); err != nil {
+		t.Fatalf("WriteFile legacy failed: %v", err)
+	}
+	if err := os.WriteFile(legacyPath+".bak", []byte(`{"access_token":"backup-admin-token"}`), 0600); err != nil {
+		t.Fatalf("WriteFile legacy backup failed: %v", err)
+	}
+
+	if err := Save(&Config{Token: "new-admin-token"}); err != nil {
+		t.Fatalf("Save failed: %v", err)
+	}
+
+	if _, err := os.Stat(legacyPath); !os.IsNotExist(err) {
+		t.Fatalf("legacy config should be removed, got err=%v", err)
+	}
+	if _, err := os.Stat(legacyPath + ".bak"); !os.IsNotExist(err) {
+		t.Fatalf("legacy backup should be removed, got err=%v", err)
+	}
+	loaded, err := Load()
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if loaded.Token != "new-admin-token" {
+		t.Fatalf("got token %q, want new-admin-token", loaded.Token)
 	}
 }
 
@@ -55,8 +104,8 @@ func TestPathUsesSeparateAdminConfigFile(t *testing.T) {
 	if adminPath == publicPath {
 		t.Fatalf("admin config should not share public config path %q", adminPath)
 	}
-	if filepath.Base(adminPath) != "admin.json" {
-		t.Fatalf("got admin path %q, want admin.json file", adminPath)
+	if filepath.Base(adminPath) != "admin.token" {
+		t.Fatalf("got admin path %q, want admin.token file", adminPath)
 	}
 }
 
@@ -75,12 +124,12 @@ func TestTokenUsesEnvAccessToken(t *testing.T) {
 	}
 }
 
-func TestTokenEnvTakesPrecedenceOverAdminConfig(t *testing.T) {
+func TestTokenEnvTakesPrecedenceOverStoredConfig(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", tmp)
 	t.Setenv(EnvAccessToken, "env-admin-token")
 
-	if err := Save(&Config{AccessToken: "file-admin-token"}); err != nil {
+	if err := Save(&Config{Token: "file-admin-token"}); err != nil {
 		t.Fatalf("Save failed: %v", err)
 	}
 
@@ -112,8 +161,8 @@ func TestTokenDoesNotUsePublicConfig(t *testing.T) {
 	if !errors.Is(err, ErrNotAuthenticated) {
 		t.Fatalf("expected ErrNotAuthenticated, got %v", err)
 	}
-	if !strings.Contains(err.Error(), EnvAccessToken) {
-		t.Fatalf("expected error to mention %s, got %v", EnvAccessToken, err)
+	if !strings.Contains(err.Error(), "check the admin box") {
+		t.Fatalf("expected error to mention admin login, got %v", err)
 	}
 }
 

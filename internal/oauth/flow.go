@@ -18,19 +18,41 @@ import (
 
 // TokenResponse is the JSON body returned by the OAuth token endpoint.
 type TokenResponse struct {
-	AccessToken string `json:"access_token"`
-	TokenType   string `json:"token_type"`
-	Scope       string `json:"scope"`
+	AccessToken string              `json:"access_token"`
+	TokenType   string              `json:"token_type"`
+	Scope       string              `json:"scope"`
+	AdminToken  *AdminTokenResponse `json:"admin_token,omitempty"`
+	Admin       *AdminTokenResponse `json:"admin,omitempty"`
+}
+
+type AdminTokenResponse struct {
+	Token           string     `json:"token"`
+	TokenExternalID string     `json:"token_external_id"`
+	Actor           AdminActor `json:"actor"`
+	ExpiresAt       string     `json:"expires_at"`
+}
+
+type AdminActor struct {
+	Name  string `json:"name"`
+	Email string `json:"email"`
+}
+
+type FlowResult struct {
+	AccessToken            string
+	AdminToken             *AdminTokenResponse
+	AdminAuthorizationCode string
+	CodeVerifier           string
 }
 
 // FlowConfig holds the parameters for an OAuth authorization code flow.
 type FlowConfig struct {
-	ClientID     string
-	AuthorizeURL string
-	TokenURL     string
-	Scopes       string
-	Timeout      time.Duration
-	HTTPClient   *http.Client // optional; defaults to http.DefaultClient
+	ClientID      string
+	AuthorizeURL  string
+	TokenURL      string
+	Scopes        string
+	OptionalAdmin bool
+	Timeout       time.Duration
+	HTTPClient    *http.Client // optional; defaults to http.DefaultClient
 }
 
 // DefaultFlowConfigFunc returns a FlowConfig using the built-in constants.
@@ -44,24 +66,40 @@ func DefaultFlowConfig() FlowConfig {
 
 func defaultFlowConfig() FlowConfig {
 	return FlowConfig{
-		ClientID:     ClientID,
-		AuthorizeURL: AuthorizeURL,
-		TokenURL:     TokenURL,
-		Scopes:       Scopes,
-		Timeout:      DefaultTimeout,
+		ClientID:      ClientID,
+		AuthorizeURL:  AuthorizeURL,
+		TokenURL:      TokenURL,
+		Scopes:        Scopes,
+		OptionalAdmin: true,
+		Timeout:       DefaultTimeout,
 	}
 }
 
-// callbackResult carries the authorization code or error from the callback handler.
+type callbackPayload struct {
+	Code      string
+	AdminCode string
+}
+
+// callbackResult carries the authorization callback payload or error from the callback handler.
 type callbackResult struct {
-	Code string
-	Err  error
+	Payload callbackPayload
+	Err     error
 }
 
 // BrowserFlow runs the full OAuth authorization code flow with PKCE.
 // It binds a local listener, opens the authorize URL via openBrowser,
 // waits for the callback, and exchanges the code for an access token.
 func BrowserFlow(ctx context.Context, cfg FlowConfig, openBrowser func(string) error) (string, error) {
+	result, err := BrowserFlowResult(ctx, cfg, openBrowser)
+	if err != nil {
+		return "", err
+	}
+	return result.AccessToken, nil
+}
+
+// BrowserFlowResult runs BrowserFlow and returns optional admin credential
+// material emitted by the unified Gumroad authorization page.
+func BrowserFlowResult(ctx context.Context, cfg FlowConfig, openBrowser func(string) error) (FlowResult, error) {
 	if cfg.HTTPClient == nil {
 		cfg.HTTPClient = http.DefaultClient
 	}
@@ -72,7 +110,7 @@ func BrowserFlow(ctx context.Context, cfg FlowConfig, openBrowser func(string) e
 	// Bind ephemeral port.
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
-		return "", fmt.Errorf("could not bind local listener: %w", err)
+		return FlowResult{}, fmt.Errorf("could not bind local listener: %w", err)
 	}
 
 	port := listener.Addr().(*net.TCPAddr).Port
@@ -82,7 +120,7 @@ func BrowserFlow(ctx context.Context, cfg FlowConfig, openBrowser func(string) e
 	verifier, err := GenerateVerifier()
 	if err != nil {
 		_ = listener.Close()
-		return "", fmt.Errorf("could not generate PKCE verifier: %w", err)
+		return FlowResult{}, fmt.Errorf("could not generate PKCE verifier: %w", err)
 	}
 	challenge := ChallengeFromVerifier(verifier)
 
@@ -90,7 +128,7 @@ func BrowserFlow(ctx context.Context, cfg FlowConfig, openBrowser func(string) e
 	state, err := generateState()
 	if err != nil {
 		_ = listener.Close()
-		return "", fmt.Errorf("could not generate state: %w", err)
+		return FlowResult{}, fmt.Errorf("could not generate state: %w", err)
 	}
 
 	// Build authorize URL.
@@ -119,7 +157,7 @@ func BrowserFlow(ctx context.Context, cfg FlowConfig, openBrowser func(string) e
 
 	// Open browser.
 	if err := openBrowser(authURL); err != nil {
-		return "", fmt.Errorf("could not open browser: %w", err)
+		return FlowResult{}, fmt.Errorf("could not open browser: %w", err)
 	}
 
 	// Wait for callback or timeout.
@@ -128,33 +166,42 @@ func BrowserFlow(ctx context.Context, cfg FlowConfig, openBrowser func(string) e
 	case result = <-resultCh:
 	case <-ctx.Done():
 		if ctx.Err() != context.DeadlineExceeded {
-			return "", fmt.Errorf("authorization cancelled")
+			return FlowResult{}, fmt.Errorf("authorization cancelled")
 		}
 		// Drain resultCh in case the callback arrived at the exact deadline.
 		select {
 		case result = <-resultCh:
 			if result.Err != nil {
-				return "", result.Err
+				return FlowResult{}, result.Err
 			}
 			// Original ctx expired; give the token exchange its own deadline.
 			xctx, xcancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer xcancel()
-			return exchangeCode(xctx, cfg, result.Code, redirectURI, verifier)
+			return exchangeCodeResult(xctx, cfg, result.Payload, redirectURI, verifier)
 		default:
-			return "", fmt.Errorf("authorization timed out after %s", cfg.Timeout)
+			return FlowResult{}, fmt.Errorf("authorization timed out after %s", cfg.Timeout)
 		}
 	}
 	if result.Err != nil {
-		return "", result.Err
+		return FlowResult{}, result.Err
 	}
 
 	// Exchange code for token.
-	return exchangeCode(ctx, cfg, result.Code, redirectURI, verifier)
+	return exchangeCodeResult(ctx, cfg, result.Payload, redirectURI, verifier)
 }
 
 // HeadlessFlow runs the OAuth flow without a browser: prints the authorize URL
 // and prompts the user to paste the redirect URL.
 func HeadlessFlow(ctx context.Context, cfg FlowConfig, out io.Writer, readLine func() (string, error)) (string, error) {
+	result, err := HeadlessFlowResult(ctx, cfg, out, readLine)
+	if err != nil {
+		return "", err
+	}
+	return result.AccessToken, nil
+}
+
+// HeadlessFlowResult is HeadlessFlow with optional admin credential metadata.
+func HeadlessFlowResult(ctx context.Context, cfg FlowConfig, out io.Writer, readLine func() (string, error)) (FlowResult, error) {
 	if cfg.HTTPClient == nil {
 		cfg.HTTPClient = http.DefaultClient
 	}
@@ -164,13 +211,13 @@ func HeadlessFlow(ctx context.Context, cfg FlowConfig, out io.Writer, readLine f
 
 	verifier, err := GenerateVerifier()
 	if err != nil {
-		return "", fmt.Errorf("could not generate PKCE verifier: %w", err)
+		return FlowResult{}, fmt.Errorf("could not generate PKCE verifier: %w", err)
 	}
 	challenge := ChallengeFromVerifier(verifier)
 
 	state, err := generateState()
 	if err != nil {
-		return "", fmt.Errorf("could not generate state: %w", err)
+		return FlowResult{}, fmt.Errorf("could not generate state: %w", err)
 	}
 
 	// Use a placeholder redirect URI — user will paste the URL from their browser.
@@ -196,19 +243,19 @@ func HeadlessFlow(ctx context.Context, cfg FlowConfig, out io.Writer, readLine f
 	select {
 	case res := <-lineCh:
 		if res.err != nil {
-			return "", fmt.Errorf("could not read URL: %w", res.err)
+			return FlowResult{}, fmt.Errorf("could not read URL: %w", res.err)
 		}
 		line = res.line
 	case <-ctx.Done():
-		return "", fmt.Errorf("authorization timed out after %s", cfg.Timeout)
+		return FlowResult{}, fmt.Errorf("authorization timed out after %s", cfg.Timeout)
 	}
 
-	code, err := parseCallbackURL(strings.TrimSpace(line), state)
+	payload, err := parseCallbackPayload(strings.TrimSpace(line), state)
 	if err != nil {
-		return "", err
+		return FlowResult{}, err
 	}
 
-	return exchangeCode(ctx, cfg, code, redirectURI, verifier)
+	return exchangeCodeResult(ctx, cfg, payload, redirectURI, verifier)
 }
 
 func generateState() (string, error) {
@@ -228,6 +275,9 @@ func buildAuthorizeURL(cfg FlowConfig, redirectURI, challenge, state string) str
 		"code_challenge":        {challenge},
 		"code_challenge_method": {"S256"},
 		"state":                 {state},
+	}
+	if cfg.OptionalAdmin {
+		v.Set("admin_scope", "optional")
 	}
 	return cfg.AuthorizeURL + "?" + v.Encode()
 }
@@ -249,12 +299,12 @@ func callbackHandler(expectedState string, resultCh chan<- callbackResult) http.
 		}
 
 		// State matches — this is the real callback. Extract the result once.
-		code, err := extractCode(q, expectedState)
+		payload, err := extractCallbackPayload(q, expectedState)
 		once.Do(func() {
 			if err != nil {
 				resultCh <- callbackResult{Err: err}
 			} else {
-				resultCh <- callbackResult{Code: code}
+				resultCh <- callbackResult{Payload: payload}
 			}
 		})
 
@@ -269,19 +319,17 @@ func callbackHandler(expectedState string, resultCh chan<- callbackResult) http.
 	}
 }
 
-func parseCallbackURL(rawURL, expectedState string) (string, error) {
+func parseCallbackPayload(rawURL, expectedState string) (callbackPayload, error) {
 	u, err := url.Parse(rawURL)
 	if err != nil {
-		return "", fmt.Errorf("invalid URL: %w", err)
+		return callbackPayload{}, fmt.Errorf("invalid URL: %w", err)
 	}
-	return extractCode(u.Query(), expectedState)
+	return extractCallbackPayload(u.Query(), expectedState)
 }
 
-// extractCode validates the OAuth callback parameters and returns the authorization code.
-// State is checked first to reject forged responses before trusting any other parameters.
-func extractCode(q url.Values, expectedState string) (string, error) {
+func extractCallbackPayload(q url.Values, expectedState string) (callbackPayload, error) {
 	if q.Get("state") != expectedState {
-		return "", fmt.Errorf("state mismatch: possible CSRF attack")
+		return callbackPayload{}, fmt.Errorf("state mismatch: possible CSRF attack")
 	}
 
 	if errParam := q.Get("error"); errParam != "" {
@@ -289,20 +337,24 @@ func extractCode(q url.Values, expectedState string) (string, error) {
 		if desc == "" {
 			desc = errParam
 		}
-		return "", fmt.Errorf("authorization denied: %s", desc)
+		return callbackPayload{}, fmt.Errorf("authorization denied: %s", desc)
 	}
 
 	code := q.Get("code")
 	if code == "" {
-		return "", fmt.Errorf("no authorization code received")
+		return callbackPayload{}, fmt.Errorf("no authorization code received")
 	}
-	return code, nil
+	adminCode := q.Get("admin_code")
+	if adminCode == "" {
+		adminCode = q.Get("admin_authorization_code")
+	}
+	return callbackPayload{Code: code, AdminCode: adminCode}, nil
 }
 
-func exchangeCode(ctx context.Context, cfg FlowConfig, code, redirectURI, verifier string) (string, error) {
+func exchangeCodeResult(ctx context.Context, cfg FlowConfig, payload callbackPayload, redirectURI, verifier string) (FlowResult, error) {
 	data := url.Values{
 		"grant_type":    {"authorization_code"},
-		"code":          {code},
+		"code":          {payload.Code},
 		"redirect_uri":  {redirectURI},
 		"client_id":     {cfg.ClientID},
 		"code_verifier": {verifier},
@@ -310,35 +362,44 @@ func exchangeCode(ctx context.Context, cfg FlowConfig, code, redirectURI, verifi
 
 	req, err := http.NewRequestWithContext(ctx, "POST", cfg.TokenURL, strings.NewReader(data.Encode()))
 	if err != nil {
-		return "", fmt.Errorf("could not build token request: %w", err)
+		return FlowResult{}, fmt.Errorf("could not build token request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	resp, err := cfg.HTTPClient.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("token exchange failed: %w", err)
+		return FlowResult{}, fmt.Errorf("token exchange failed: %w", err)
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
-		return "", fmt.Errorf("could not read token response: %w", err)
+		return FlowResult{}, fmt.Errorf("could not read token response: %w", err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("token exchange failed (HTTP %d)", resp.StatusCode)
+		return FlowResult{}, fmt.Errorf("token exchange failed (HTTP %d)", resp.StatusCode)
 	}
 
 	var tokenResp TokenResponse
 	if err := json.Unmarshal(body, &tokenResp); err != nil {
-		return "", fmt.Errorf("could not parse token response: %w", err)
+		return FlowResult{}, fmt.Errorf("could not parse token response: %w", err)
 	}
 
 	if tokenResp.AccessToken == "" {
-		return "", fmt.Errorf("token response did not contain an access token")
+		return FlowResult{}, fmt.Errorf("token response did not contain an access token")
 	}
 
-	return tokenResp.AccessToken, nil
+	adminToken := tokenResp.AdminToken
+	if adminToken == nil {
+		adminToken = tokenResp.Admin
+	}
+	return FlowResult{
+		AccessToken:            tokenResp.AccessToken,
+		AdminToken:             adminToken,
+		AdminAuthorizationCode: payload.AdminCode,
+		CodeVerifier:           verifier,
+	}, nil
 }
 
 func htmlPage(title, message string, isError bool) string {

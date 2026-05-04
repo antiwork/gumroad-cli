@@ -23,6 +23,24 @@ type Client struct {
 	api *api.Client
 }
 
+type AdminToken struct {
+	Token           string            `json:"token"`
+	TokenExternalID string            `json:"token_external_id"`
+	Actor           adminconfig.Actor `json:"actor"`
+	ExpiresAt       string            `json:"expires_at"`
+}
+
+type WhoamiResponse struct {
+	Actor  adminconfig.Actor `json:"actor"`
+	Token  TokenMetadata     `json:"token"`
+	Scopes []string          `json:"scopes"`
+}
+
+type TokenMetadata struct {
+	ExternalID string `json:"external_id"`
+	ExpiresAt  string `json:"expires_at"`
+}
+
 func NewClientWithContext(ctx context.Context, token, version string, debug bool) *Client {
 	return NewClientWithBaseURL(ctx, token, version, debug, defaultBaseURL())
 }
@@ -68,11 +86,50 @@ func (c *Client) Delete(path string, params url.Values) (json.RawMessage, error)
 	return data, rewriteAdminError(err)
 }
 
+func (c *Client) Whoami() (WhoamiResponse, error) {
+	data, err := c.Get("/whoami", url.Values{})
+	if err != nil {
+		return WhoamiResponse{}, err
+	}
+	var resp WhoamiResponse
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return WhoamiResponse{}, err
+	}
+	return resp, nil
+}
+
+func (c *Client) RevokeSelf() error {
+	_, err := c.PostJSON("/auth/revoke", struct{}{})
+	return err
+}
+
+func ExchangeAuthorizationCode(ctx context.Context, code, codeVerifier, version string, debug bool) (AdminToken, error) {
+	client := NewClientWithContext(ctx, "", version, debug)
+	data, err := client.PostJSON("/auth/exchange", map[string]string{
+		"code":          code,
+		"code_verifier": codeVerifier,
+	})
+	if err != nil {
+		return AdminToken{}, err
+	}
+	var token AdminToken
+	if err := json.Unmarshal(data, &token); err != nil {
+		return AdminToken{}, err
+	}
+	return token, nil
+}
+
 func defaultBaseURL() string {
 	if v := strings.TrimRight(os.Getenv(EnvAPIBaseURL), "/"); v != "" {
 		return v
 	}
 	return defaultAPIBaseURL
+}
+
+func AdminTokensURL() string {
+	base := defaultBaseURL()
+	base = strings.Replace(base, "://api.gumroad.com", "://app.gumroad.com", 1)
+	return strings.TrimRight(base, "/") + "/admin/cli/tokens"
 }
 
 // AdminPath returns the absolute admin-prefixed path for path.
