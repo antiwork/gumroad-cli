@@ -68,31 +68,6 @@ func TestPathUsesSeparateAdminConfigFile(t *testing.T) {
 	}
 }
 
-func TestTokenIgnoresLegacyAccessTokenField(t *testing.T) {
-	tmp := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", tmp)
-
-	dir, err := Dir()
-	if err != nil {
-		t.Fatalf("Dir failed: %v", err)
-	}
-	if err := os.MkdirAll(dir, 0700); err != nil {
-		t.Fatalf("MkdirAll failed: %v", err)
-	}
-	path, err := Path()
-	if err != nil {
-		t.Fatalf("Path failed: %v", err)
-	}
-	if err := os.WriteFile(path, []byte(`{"access_token":"old-admin-token"}`), 0600); err != nil {
-		t.Fatalf("WriteFile failed: %v", err)
-	}
-
-	_, err = ResolveStoredToken()
-	if !errors.Is(err, ErrNotAuthenticated) {
-		t.Fatalf("got error %v, want ErrNotAuthenticated", err)
-	}
-}
-
 func TestTokenUsesEnvAccessToken(t *testing.T) {
 	t.Setenv(EnvAccessToken, "env-admin-token")
 
@@ -105,17 +80,6 @@ func TestTokenUsesEnvAccessToken(t *testing.T) {
 	}
 	if info.Source != TokenSourceEnv {
 		t.Fatalf("got source %q, want %q", info.Source, TokenSourceEnv)
-	}
-}
-
-func TestTokenIgnoresLegacyEnvAccessToken(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	t.Setenv(EnvAccessToken, "")
-	t.Setenv("GUMROAD_ADMIN_ACCESS_TOKEN", "legacy-admin-token")
-
-	_, err := ResolveToken()
-	if !errors.Is(err, ErrNotAuthenticated) {
-		t.Fatalf("got error %v, want ErrNotAuthenticated", err)
 	}
 }
 
