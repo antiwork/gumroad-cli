@@ -60,7 +60,7 @@ func TestConfirm_NoInputWithoutYes(t *testing.T) {
 	if !errors.Is(err, ErrConfirmationNoInput) {
 		t.Fatalf("expected ErrConfirmationNoInput, got %v", err)
 	}
-	if err.Error() != "confirmation required but --no-input is set. Use --yes to skip confirmation" {
+	if err.Error() != "confirmation required but interactive prompts are disabled. Use --yes to skip confirmation" {
 		t.Errorf("unexpected error message: %v", err)
 	}
 }

@@ -27,7 +27,10 @@ func TestFetchPostJSONInteractiveRequiresStoredTokenWhenEnvIsSet(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected stored-token policy error")
 	}
-	if !strings.Contains(err.Error(), "--non-interactive") || !strings.Contains(err.Error(), "gumroad auth login") {
+	if !strings.Contains(err.Error(), "--non-interactive") ||
+		!strings.Contains(err.Error(), "gumroad auth login") ||
+		!strings.Contains(err.Error(), adminconfig.EnvAccessToken) ||
+		!strings.Contains(err.Error(), adminconfig.LegacyEnvAccessToken) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if called {

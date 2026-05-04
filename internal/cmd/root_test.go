@@ -329,7 +329,7 @@ func TestExecuteCommand_JSONNoInputConfirmationIsUsageError(t *testing.T) {
 	if payload.Error.Type != "usage_error" || payload.Error.Code != "invalid_input" {
 		t.Fatalf("unexpected structured error: %+v", payload.Error)
 	}
-	if payload.Error.Message != "confirmation required but --no-input is set. Use --yes to skip confirmation" {
+	if payload.Error.Message != "confirmation required but interactive prompts are disabled. Use --yes to skip confirmation" {
 		t.Fatalf("unexpected error message %q", payload.Error.Message)
 	}
 }
@@ -363,7 +363,7 @@ func TestExecuteCommand_JSONNonInteractiveConfirmationIsUsageError(t *testing.T)
 	if payload.Error.Type != "usage_error" || payload.Error.Code != "invalid_input" {
 		t.Fatalf("unexpected structured error: %+v", payload.Error)
 	}
-	if payload.Error.Message != "confirmation required but --no-input is set. Use --yes to skip confirmation" {
+	if payload.Error.Message != "confirmation required but interactive prompts are disabled. Use --yes to skip confirmation" {
 		t.Fatalf("unexpected error message %q", payload.Error.Message)
 	}
 }
