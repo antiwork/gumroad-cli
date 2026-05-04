@@ -14,6 +14,9 @@ description: >
   request to query or act on Gumroad data — even if the user doesn't say
   "Gumroad" explicitly but is clearly referring to their creator store or
   digital product sales.
+  Also trigger on: "improve my product", "optimize product page", "product advisor",
+  "review my listing", "product page score", "increase conversions", "product audit",
+  "optimize listing", "score my product", "product feedback".
   Do NOT trigger for Gumroad web UI, Rails, or codebase questions.
 ---
 
@@ -273,6 +276,56 @@ gumroad webhooks create --resource sale --url https://example.com/hook --json --
 # Delete
 gumroad webhooks delete <id> --yes --json --no-input
 ```
+
+## Product Advisor
+
+Analyze a seller's product page and generate a scored improvement report.
+
+### Steps
+
+1. Fetch product data:
+   ```sh
+   gumroad products view <id> --json --no-input
+   ```
+2. Fetch sales data for social proof:
+   ```sh
+   gumroad sales list --product <id> --all --json --no-input
+   ```
+3. Score the product across five dimensions (0–10 each):
+
+   | Dimension | What to evaluate |
+   |-----------|-----------------|
+   | Description quality | Clarity, structure, benefit-first copy, formatting |
+   | Cover image | Relevance, visual appeal, text legibility, aspect ratio |
+   | Pricing strategy | Value perception, price anchoring, tiering, pay-what-you-want range |
+   | Discoverability | SEO title, tags, category fit, permalink clarity |
+   | Social proof | Sales count, reviews, ratings, repeat buyers |
+
+4. For each dimension below 8, provide a specific **before/after** suggestion using actual product data.
+5. Output the report as markdown. Do not modify any files in the repo.
+
+### Report format
+
+```markdown
+# Product Advisor: [product name]
+## Overall Score: [total]/50
+| Dimension | Score | Status |
+|-----------|-------|--------|
+| Description quality | X/10 | ✅ or ⚠️ |
+| Cover image | X/10 | ✅ or ⚠️ |
+| Pricing strategy | X/10 | ✅ or ⚠️ |
+| Discoverability | X/10 | ✅ or ⚠️ |
+| Social proof | X/10 | ✅ or ⚠️ |
+## Suggestions
+### [Dimension]: X/10
+**Current:** [quote from product data]
+**Suggested:** [improved version]
+**Why:** [reasoning]
+```
+
+- **Score from actual product data.** Do not invent attributes.
+- **Suggestions must be copy-paste ready.** The seller applies changes directly.
+- **Use `gumroad products update`** to apply changes if the seller asks.
 
 ## Tips
 
