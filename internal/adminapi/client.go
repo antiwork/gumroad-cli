@@ -128,9 +128,7 @@ func defaultBaseURL() string {
 
 func AdminTokensURL() string {
 	base := defaultBaseURL()
-	if strings.Contains(base, "://api.gumroad.com") {
-		base = strings.Replace(base, "://api.gumroad.com", "://app.gumroad.com", 1)
-	}
+	base = strings.Replace(base, "://api.gumroad.com", "://app.gumroad.com", 1)
 	return strings.TrimRight(base, "/") + "/admin/cli/tokens"
 }
 

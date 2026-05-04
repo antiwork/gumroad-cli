@@ -319,30 +319,12 @@ func callbackHandler(expectedState string, resultCh chan<- callbackResult) http.
 	}
 }
 
-func parseCallbackURL(rawURL, expectedState string) (string, error) {
-	payload, err := parseCallbackPayload(rawURL, expectedState)
-	if err != nil {
-		return "", err
-	}
-	return payload.Code, nil
-}
-
 func parseCallbackPayload(rawURL, expectedState string) (callbackPayload, error) {
 	u, err := url.Parse(rawURL)
 	if err != nil {
 		return callbackPayload{}, fmt.Errorf("invalid URL: %w", err)
 	}
 	return extractCallbackPayload(u.Query(), expectedState)
-}
-
-// extractCode validates the OAuth callback parameters and returns the authorization code.
-// State is checked first to reject forged responses before trusting any other parameters.
-func extractCode(q url.Values, expectedState string) (string, error) {
-	payload, err := extractCallbackPayload(q, expectedState)
-	if err != nil {
-		return "", err
-	}
-	return payload.Code, nil
 }
 
 func extractCallbackPayload(q url.Values, expectedState string) (callbackPayload, error) {
@@ -367,14 +349,6 @@ func extractCallbackPayload(q url.Values, expectedState string) (callbackPayload
 		adminCode = q.Get("admin_authorization_code")
 	}
 	return callbackPayload{Code: code, AdminCode: adminCode}, nil
-}
-
-func exchangeCode(ctx context.Context, cfg FlowConfig, code, redirectURI, verifier string) (string, error) {
-	result, err := exchangeCodeResult(ctx, cfg, callbackPayload{Code: code}, redirectURI, verifier)
-	if err != nil {
-		return "", err
-	}
-	return result.AccessToken, nil
 }
 
 func exchangeCodeResult(ctx context.Context, cfg FlowConfig, payload callbackPayload, redirectURI, verifier string) (FlowResult, error) {

@@ -29,8 +29,8 @@ type Config struct {
 }
 
 const (
-	EnvAccessToken    = "GUMROAD_ADMIN_ACCESS_TOKEN" //nolint:gosec // G101: env var name, not a credential.
-	HintSetAdminToken = "Run `gumroad auth login` and check the admin box, or set GUMROAD_ADMIN_ACCESS_TOKEN."
+	EnvAccessToken    = "GUMROAD_ADMIN_ACCESS_TOKEN"                                                           //nolint:gosec // G101: env var name, not a credential.
+	HintSetAdminToken = "Run `gumroad auth login` and check the admin box, or set GUMROAD_ADMIN_ACCESS_TOKEN." //nolint:gosec // G101: remediation text, not a credential.
 
 	adminConfigFile       = "admin.token"
 	legacyAdminConfigFile = "admin.json"
