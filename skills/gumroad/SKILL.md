@@ -34,7 +34,8 @@ Always follow these rules:
 - Use `--page-delay 200ms` with `--all` to avoid rate limits on large datasets.
 - Prices are in whole currency units (e.g. `--price 10.00` for $10), not cents. The CLI converts internally. Use `--currency eur` to change currency.
 - Products are created as drafts — use `gumroad products publish <id>` to make them live.
-- If a command fails with an auth error, tell the user to run `gumroad auth login` interactively — agents cannot do this step.
+- If a command fails with a seller auth error, tell the user to run `gumroad auth login` interactively — agents cannot do this step.
+- For admin commands in agents/CI, set `GUMROAD_ADMIN_ACCESS_TOKEN`; interactive shells can store an admin token with `gumroad auth login`.
 
 ## Response shapes
 
@@ -66,7 +67,7 @@ gumroad auth status --no-input
 # gumroad auth login
 
 # Logout
-gumroad auth logout --no-input
+gumroad auth logout --yes --no-input
 ```
 
 ### user — Account info

@@ -8,6 +8,8 @@ import (
 	"net/url"
 	"strconv"
 
+	"github.com/antiwork/gumroad-cli/internal/adminapi"
+	"github.com/antiwork/gumroad-cli/internal/adminconfig"
 	"github.com/antiwork/gumroad-cli/internal/api"
 	"github.com/antiwork/gumroad-cli/internal/cmdutil"
 	"github.com/antiwork/gumroad-cli/internal/config"
@@ -24,8 +26,22 @@ const (
 type statusOutput struct {
 	Authenticated bool               `json:"authenticated"`
 	User          json.RawMessage    `json:"user,omitempty"`
+	Admin         *adminStatusOutput `json:"admin,omitempty"`
 	Reason        string             `json:"reason,omitempty"`
 	Source        config.TokenSource `json:"source,omitempty"`
+}
+
+type adminStatusOutput struct {
+	Authenticated bool                    `json:"authenticated"`
+	Actor         adminconfig.Actor       `json:"actor,omitempty"`
+	Token         adminStatusToken        `json:"token,omitempty"`
+	Reason        string                  `json:"reason,omitempty"`
+	Source        adminconfig.TokenSource `json:"source,omitempty"`
+}
+
+type adminStatusToken struct {
+	ExternalID string `json:"external_id,omitempty"`
+	ExpiresAt  string `json:"expires_at,omitempty"`
 }
 
 type authUser struct {
@@ -61,6 +77,11 @@ func newStatusCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			adminStatus, err := lookupAdminStatusIfStored(opts)
+			if err != nil {
+				return err
+			}
+			status.Admin = adminStatus
 
 			if opts.UsesJSONOutput() {
 				return printAuthJSON(opts, status)
@@ -84,6 +105,11 @@ func newStatusCmd() *cobra.Command {
 			}
 			if err := writeAuthenticatedMessage(opts.Out(), style, user, "Authenticated."); err != nil {
 				return err
+			}
+			if status.Admin != nil {
+				if err := writeAdminStatusMessage(opts, *status.Admin); err != nil {
+					return err
+				}
 			}
 			return output.Writeln(opts.Out(), style.Dim("Source: "+authSourceLabel(status.Source)))
 		},
@@ -124,6 +150,45 @@ func lookupStatus(opts cmdutil.Options, tokenInfo config.TokenInfo) (statusOutpu
 	}, nil
 }
 
+func lookupAdminStatusIfStored(opts cmdutil.Options) (*adminStatusOutput, error) {
+	tokenInfo, err := adminconfig.ResolveStoredToken()
+	if err != nil {
+		if errors.Is(err, adminconfig.ErrNotAuthenticated) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	client := adminapi.NewClientWithContext(opts.Context, tokenInfo.Value, opts.Version, opts.DebugEnabled())
+	client.SetDebugWriter(opts.Err())
+	resp, err := client.Whoami()
+	if err != nil {
+		var apiErr *api.APIError
+		if errors.As(err, &apiErr) {
+			switch apiErr.StatusCode {
+			case 401:
+				status := adminStatusFromTokenInfo(tokenInfo, false, statusReasonInvalidOrExpired)
+				return &status, nil
+			case 403:
+				status := adminStatusFromTokenInfo(tokenInfo, false, statusReasonAccessDenied)
+				return &status, nil
+			}
+		}
+		return nil, fmt.Errorf("could not verify admin token: %w", err)
+	}
+
+	status := adminStatusOutput{
+		Authenticated: true,
+		Actor:         resp.Actor,
+		Token: adminStatusToken{
+			ExternalID: resp.Token.ExternalID,
+			ExpiresAt:  resp.Token.ExpiresAt,
+		},
+		Source: tokenInfo.Source,
+	}
+	return &status, nil
+}
+
 func unauthenticatedStatus(reason string) statusOutput {
 	return statusOutput{
 		Authenticated: false,
@@ -160,6 +225,58 @@ func writeAuthenticatedMessage(w io.Writer, style output.Styler, user authUser, 
 	return output.Writeln(w, style.Green("✓")+" "+fallback)
 }
 
+func writeAdminStatusMessage(opts cmdutil.Options, status adminStatusOutput) error {
+	style := opts.Style()
+	if !status.Authenticated {
+		return output.Writeln(opts.Out(), "Admin token is invalid or expired. Run "+style.Bold("gumroad auth login")+" and check the admin box.")
+	}
+
+	line := "Admin: " + adminActorName(status.Actor)
+	if status.Token.ExpiresAt != "" {
+		line += " (expires " + status.Token.ExpiresAt + ")"
+	}
+	return output.Writeln(opts.Out(), line)
+}
+
+func adminStatusFromConfig(cfg *adminconfig.Config, authenticated bool, reason string) *adminStatusOutput {
+	if cfg == nil {
+		return nil
+	}
+	return &adminStatusOutput{
+		Authenticated: authenticated,
+		Actor:         cfg.Actor,
+		Token: adminStatusToken{
+			ExternalID: cfg.TokenExternalID,
+			ExpiresAt:  cfg.ExpiresAt,
+		},
+		Reason: reason,
+		Source: adminconfig.TokenSourceConfig,
+	}
+}
+
+func adminStatusFromTokenInfo(info adminconfig.TokenInfo, authenticated bool, reason string) adminStatusOutput {
+	return adminStatusOutput{
+		Authenticated: authenticated,
+		Actor:         info.Actor,
+		Token: adminStatusToken{
+			ExternalID: info.TokenExternalID,
+			ExpiresAt:  info.ExpiresAt,
+		},
+		Reason: reason,
+		Source: info.Source,
+	}
+}
+
+func adminActorName(actor adminconfig.Actor) string {
+	if actor.Name != "" {
+		return actor.Name
+	}
+	if actor.Email != "" {
+		return actor.Email
+	}
+	return "admin token"
+}
+
 func printAuthJSON(opts cmdutil.Options, v any) error {
 	data, err := json.Marshal(v)
 	if err != nil {
@@ -174,9 +291,17 @@ func printStatusPlain(opts cmdutil.Options, status statusOutput) error {
 		return err
 	}
 
-	return output.PrintPlain(opts.Out(), [][]string{
-		{strconv.FormatBool(status.Authenticated), user.Name, user.Email, status.Reason},
-	})
+	row := []string{strconv.FormatBool(status.Authenticated), user.Name, user.Email, status.Reason}
+	if status.Admin != nil {
+		row = append(row,
+			strconv.FormatBool(status.Admin.Authenticated),
+			adminActorName(status.Admin.Actor),
+			status.Admin.Actor.Email,
+			status.Admin.Token.ExpiresAt,
+			status.Admin.Reason,
+		)
+	}
+	return output.PrintPlain(opts.Out(), [][]string{row})
 }
 
 func authSourceLabel(source config.TokenSource) string {

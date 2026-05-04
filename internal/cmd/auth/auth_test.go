@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/antiwork/gumroad-cli/internal/adminapi"
+	"github.com/antiwork/gumroad-cli/internal/adminconfig"
 	"github.com/antiwork/gumroad-cli/internal/config"
 	"github.com/antiwork/gumroad-cli/internal/oauth"
 	"github.com/antiwork/gumroad-cli/internal/testutil"
@@ -376,6 +378,48 @@ func TestStatus_ValidToken(t *testing.T) {
 	}
 }
 
+func TestStatus_ShowsStoredAdminWhoami(t *testing.T) {
+	setupAuth(t, func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewEncoder(w).Encode(map[string]any{
+			"success": true,
+			"user":    map[string]any{"name": "Jane", "email": "jane@example.com"},
+		}); err != nil {
+			t.Fatalf("Encode failed: %v", err)
+		}
+	})
+	withConfig(t, "valid-token")
+	if err := adminconfig.Save(&adminconfig.Config{
+		Token:           "admin-token",
+		TokenExternalID: "adm_local",
+		Actor:           adminconfig.Actor{Name: "Cached Admin", Email: "cached@example.com"},
+		ExpiresAt:       "cached",
+	}); err != nil {
+		t.Fatalf("Save admin config failed: %v", err)
+	}
+	adminSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/internal/admin/whoami" {
+			t.Fatalf("got path %q, want /internal/admin/whoami", r.URL.Path)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer admin-token" {
+			t.Fatalf("got Authorization=%q, want Bearer admin-token", got)
+		}
+		if err := json.NewEncoder(w).Encode(map[string]any{
+			"actor":  map[string]any{"name": "Live Admin", "email": "admin@example.com"},
+			"token":  map[string]any{"external_id": "adm_123", "expires_at": "2026-06-01T00:00:00Z"},
+			"scopes": []string{"admin"},
+		}); err != nil {
+			t.Fatalf("Encode failed: %v", err)
+		}
+	}))
+	t.Cleanup(adminSrv.Close)
+	t.Setenv(adminapi.EnvAPIBaseURL, adminSrv.URL)
+
+	out := runStatus(t)
+	if !strings.Contains(out, "Live Admin") || !strings.Contains(out, "2026-06-01T00:00:00Z") {
+		t.Fatalf("expected admin whoami output, got %q", out)
+	}
+}
+
 func TestStatus_ValidTokenWithNameOnly(t *testing.T) {
 	setupAuth(t, func(w http.ResponseWriter, r *http.Request) {
 		if err := json.NewEncoder(w).Encode(map[string]any{
@@ -730,6 +774,86 @@ func TestLogout_WithYes(t *testing.T) {
 	}
 }
 
+func TestLogout_RevokesAndDeletesStoredAdminToken(t *testing.T) {
+	cfgDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(cfgDir, "gumroad"), 0700); err != nil {
+		t.Fatalf("MkdirAll failed: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(cfgDir, "gumroad", "config.json"), []byte(`{"access_token":"tok"}`), 0600); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+	t.Setenv("XDG_CONFIG_HOME", cfgDir)
+	if err := adminconfig.Save(&adminconfig.Config{Token: "admin-token"}); err != nil {
+		t.Fatalf("Save admin config failed: %v", err)
+	}
+	adminPath, err := adminconfig.Path()
+	if err != nil {
+		t.Fatalf("adminconfig.Path: %v", err)
+	}
+
+	var revoked bool
+	adminSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/internal/admin/auth/revoke" {
+			t.Fatalf("got path %q, want /internal/admin/auth/revoke", r.URL.Path)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer admin-token" {
+			t.Fatalf("got Authorization=%q, want Bearer admin-token", got)
+		}
+		revoked = true
+		if err := json.NewEncoder(w).Encode(map[string]any{"success": true}); err != nil {
+			t.Fatalf("Encode failed: %v", err)
+		}
+	}))
+	t.Cleanup(adminSrv.Close)
+	t.Setenv(adminapi.EnvAPIBaseURL, adminSrv.URL)
+
+	cmd := testutil.Command(newLogoutCmd(), testutil.Yes(true))
+	if err := cmd.RunE(cmd, []string{}); err != nil {
+		t.Fatalf("RunE failed: %v", err)
+	}
+	if !revoked {
+		t.Fatal("expected admin revoke request")
+	}
+	if _, err := os.Stat(adminPath); !os.IsNotExist(err) {
+		t.Fatalf("admin config should be deleted, got err=%v", err)
+	}
+}
+
+func TestLogout_KeepsAdminTokenWhenServerRevokeFails(t *testing.T) {
+	cfgDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(cfgDir, "gumroad"), 0700); err != nil {
+		t.Fatalf("MkdirAll failed: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(cfgDir, "gumroad", "config.json"), []byte(`{"access_token":"tok"}`), 0600); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+	t.Setenv("XDG_CONFIG_HOME", cfgDir)
+	if err := adminconfig.Save(&adminconfig.Config{Token: "admin-token"}); err != nil {
+		t.Fatalf("Save admin config failed: %v", err)
+	}
+	adminPath, err := adminconfig.Path()
+	if err != nil {
+		t.Fatalf("adminconfig.Path: %v", err)
+	}
+	adminSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		if err := json.NewEncoder(w).Encode(map[string]any{"success": false, "message": "boom"}); err != nil {
+			t.Fatalf("Encode failed: %v", err)
+		}
+	}))
+	t.Cleanup(adminSrv.Close)
+	t.Setenv(adminapi.EnvAPIBaseURL, adminSrv.URL)
+
+	cmd := testutil.Command(newLogoutCmd(), testutil.Yes(true))
+	err = cmd.RunE(cmd, []string{})
+	if err == nil || !strings.Contains(err.Error(), "couldn't revoke server-side") {
+		t.Fatalf("expected revoke failure, got %v", err)
+	}
+	if _, statErr := os.Stat(adminPath); statErr != nil {
+		t.Fatalf("admin config should remain after revoke failure: %v", statErr)
+	}
+}
+
 func TestLogout_RequiresConfirmation(t *testing.T) {
 	setupAuth(t, func(w http.ResponseWriter, r *http.Request) {
 		t.Error("should not reach API")
@@ -1006,13 +1130,18 @@ func withMockBrowserFail(t *testing.T) {
 // package to use it. Returns the API server for /user verification.
 func setupOAuthTokenServer(t *testing.T) {
 	t.Helper()
+	setupOAuthTokenServerWithResponse(t, oauth.TokenResponse{
+		AccessToken: "oauth-access-token-from-server",
+		TokenType:   "bearer",
+		Scope:       "edit_products view_sales",
+	})
+}
+
+func setupOAuthTokenServerWithResponse(t *testing.T, tokenResponse oauth.TokenResponse) {
+	t.Helper()
 	tokenSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(oauth.TokenResponse{
-			AccessToken: "oauth-access-token-from-server",
-			TokenType:   "bearer",
-			Scope:       "edit_products view_sales",
-		}); err != nil {
+		if err := json.NewEncoder(w).Encode(tokenResponse); err != nil {
 			t.Errorf("encode token response: %v", err)
 		}
 	}))
@@ -1065,6 +1194,66 @@ func TestLogin_OAuth_BrowserFlow(t *testing.T) {
 	}
 	if !strings.Contains(string(data), "oauth-access-token-from-server") {
 		t.Errorf("config should contain OAuth token, got: %s", data)
+	}
+}
+
+func TestLogin_OAuth_BrowserFlowSavesAdminTokenFromSameApproval(t *testing.T) {
+	withTerminal(t, true)
+	withMockBrowser(t)
+	setupOAuthTokenServerWithResponse(t, oauth.TokenResponse{
+		AccessToken: "oauth-access-token-from-server",
+		TokenType:   "bearer",
+		Scope:       "edit_products view_sales",
+		AdminToken: &oauth.AdminTokenResponse{
+			Token:           "admin-token-from-oauth",
+			TokenExternalID: "adm_123",
+			Actor:           oauth.AdminActor{Name: "Admin User", Email: "admin@example.com"},
+			ExpiresAt:       "2026-06-01T00:00:00Z",
+		},
+	})
+	setupAuth(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer oauth-access-token-from-server" {
+			w.WriteHeader(401)
+			if err := json.NewEncoder(w).Encode(map[string]any{"success": false}); err != nil {
+				t.Errorf("encode response: %v", err)
+			}
+			return
+		}
+		if err := json.NewEncoder(w).Encode(map[string]any{
+			"success": true,
+			"user":    map[string]any{"name": "OAuth User", "email": "oauth@test.com"},
+		}); err != nil {
+			t.Errorf("encode response: %v", err)
+		}
+	})
+	cfgDir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", cfgDir)
+
+	cmd := testutil.Command(newLoginCmd())
+	if err := cmd.RunE(cmd, []string{}); err != nil {
+		t.Fatalf("RunE: %v", err)
+	}
+
+	publicData, err := os.ReadFile(filepath.Join(cfgDir, "gumroad", "config.json"))
+	if err != nil {
+		t.Fatalf("public config not saved: %v", err)
+	}
+	if !strings.Contains(string(publicData), "oauth-access-token-from-server") {
+		t.Fatalf("public config should contain seller OAuth token, got %s", publicData)
+	}
+
+	adminPath, err := adminconfig.Path()
+	if err != nil {
+		t.Fatalf("adminconfig.Path: %v", err)
+	}
+	adminData, err := os.ReadFile(adminPath)
+	if err != nil {
+		t.Fatalf("admin config not saved: %v", err)
+	}
+	for _, want := range []string{"admin-token-from-oauth", "adm_123", "admin@example.com", "2026-06-01T00:00:00Z"} {
+		if !strings.Contains(string(adminData), want) {
+			t.Fatalf("admin config missing %q: %s", want, adminData)
+		}
 	}
 }
 

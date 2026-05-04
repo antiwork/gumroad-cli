@@ -53,7 +53,13 @@ func SetupAdmin(t *testing.T, handler http.HandlerFunc) *httptest.Server {
 	t.Setenv(config.EnvAccessToken, "")
 	t.Setenv(adminconfig.EnvAccessToken, "")
 
-	if err := adminconfig.Save(&adminconfig.Config{AccessToken: "admin-token"}); err != nil {
+	if err := adminconfig.Save(&adminconfig.Config{
+		Token: "admin-token",
+		Actor: adminconfig.Actor{
+			Name:  "Test Admin",
+			Email: "admin@example.com",
+		},
+	}); err != nil {
 		t.Fatalf("Save admin config failed: %v", err)
 	}
 

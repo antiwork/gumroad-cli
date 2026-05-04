@@ -69,18 +69,18 @@ gumroad sales refund abc123 --amount 5.00 --dry-run
 
 ## Authentication
 
-`gumroad auth login` opens your browser for OAuth authorization. After you approve, the CLI stores the token locally and you're done.
+`gumroad auth login` opens your browser for OAuth authorization. After you approve, the CLI stores the seller token locally. Team members can also check the admin box in the same browser approval; that stores a separate admin token in `admin.token`.
 
 ```sh
 gumroad auth login          # Browser-based OAuth (default)
 gumroad auth login --web    # Force browser OAuth, no fallback
-gumroad auth status         # Check who you're logged in as
-gumroad auth logout         # Remove stored token
+gumroad auth status         # Check seller auth and stored admin auth
+gumroad auth logout         # Revoke/delete stored tokens
 ```
 
 When a browser isn't available (SSH, containers), the CLI falls back to a manual flow: it prints the authorize URL and you paste the redirect URL back.
 
-For CI and agents, set `GUMROAD_ACCESS_TOKEN` instead — it takes precedence over stored config and needs no interactive login. Piped stdin also works: `echo $TOKEN | gumroad auth login`.
+For CI and agents, set `GUMROAD_ACCESS_TOKEN` instead — it takes precedence over stored seller config and needs no interactive login. Piped stdin also works: `echo $TOKEN | gumroad auth login`.
 
 ## Commands
 
@@ -105,7 +105,7 @@ gumroad completion    bash, zsh, fish, powershell
 
 Run `gumroad <command> --help` for usage details and examples.
 
-Admin commands use a separate internal token. For non-interactive use, set `GUMROAD_ADMIN_ACCESS_TOKEN`; for local testing, set `GUMROAD_ADMIN_API_BASE_URL`.
+Admin commands use a separate internal token. Run `gumroad auth login` and check the admin box to store one locally, or set `GUMROAD_ADMIN_ACCESS_TOKEN` for CI and agents. For local testing, set `GUMROAD_ADMIN_API_BASE_URL`.
 
 ## File attachments
 
@@ -146,7 +146,7 @@ Paginated commands (`sales list`, `payouts list`, `subscribers list`) accept `--
 
 ## AI agents
 
-`gumroad` is built to work with AI agents. The `--json`, `--jq`, and `--no-input` flags make it easy to query Gumroad data programmatically, and `GUMROAD_ACCESS_TOKEN` gives agents a no-persistence auth path.
+`gumroad` is built to work with AI agents. The `--json`, `--jq`, and `--no-input` flags make it easy to query Gumroad data programmatically, and `GUMROAD_ACCESS_TOKEN` gives agents a no-persistence seller auth path.
 
 A [Claude Code skill](skills/gumroad/SKILL.md) is included. Run `gumroad skill` to install or refresh it.
 
