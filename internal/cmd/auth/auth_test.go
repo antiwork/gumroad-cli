@@ -351,6 +351,9 @@ func TestLogin_SavesSellerAndAdminWhenPreviousAdminRevokeFails(t *testing.T) {
 	if !strings.Contains(errOut.String(), "warning: could not revoke previous admin token") {
 		t.Fatalf("expected admin revoke warning, got %q", errOut.String())
 	}
+	if !strings.Contains(errOut.String(), adminapi.AdminTokensURL()) {
+		t.Fatalf("expected admin tokens URL in warning, got %q", errOut.String())
+	}
 }
 
 func TestLogin_PlainOutput(t *testing.T) {

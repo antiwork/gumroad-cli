@@ -23,8 +23,6 @@ type Config struct {
 	Actor           Actor  `json:"actor,omitempty"`
 	ExpiresAt       string `json:"expires_at,omitempty"`
 
-	// AccessToken is the legacy admin.json field. Load accepts it so older
-	// local configs still work, but Save writes the PR11B admin.token shape.
 	AccessToken string `json:"access_token,omitempty"`
 }
 
@@ -143,6 +141,9 @@ func Save(cfg *Config) error {
 	if err := writeConfigAtomically(p, data); err != nil {
 		return fmt.Errorf("could not write admin config: %w", err)
 	}
+	if err := deleteLegacyConfigFiles(); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -157,6 +158,10 @@ func Delete() error {
 	if err := os.Remove(p + ".bak"); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("could not delete admin config backup: %w", err)
 	}
+	return deleteLegacyConfigFiles()
+}
+
+func deleteLegacyConfigFiles() error {
 	legacyPath, err := LegacyPath()
 	if err != nil {
 		return err

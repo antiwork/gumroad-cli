@@ -266,7 +266,7 @@ func verifyAndSave(c *cobra.Command, opts cmdutil.Options, creds loginCredential
 }
 
 func warnAdminRevokeFailure(opts cmdutil.Options, err error) {
-	_, _ = fmt.Fprintf(opts.Err(), "warning: %v\n", err)
+	_, _ = fmt.Fprintf(opts.Err(), "warning: %v\nThe previous admin token may still be valid server-side; revoke it at %s\n", err, adminapi.AdminTokensURL())
 }
 
 func warnAdminAuthorizationFailure(opts cmdutil.Options, err error) {
