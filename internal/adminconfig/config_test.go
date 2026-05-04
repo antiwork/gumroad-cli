@@ -124,32 +124,14 @@ func TestTokenUsesEnvAccessToken(t *testing.T) {
 	}
 }
 
-func TestTokenUsesLegacyEnvAccessToken(t *testing.T) {
+func TestTokenIgnoresLegacyEnvAccessToken(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	t.Setenv(EnvAccessToken, "")
-	t.Setenv(LegacyEnvAccessToken, "legacy-admin-token")
+	t.Setenv("GUMROAD_ADMIN_ACCESS_TOKEN", "legacy-admin-token")
 
-	info, err := ResolveToken()
-	if err != nil {
-		t.Fatalf("ResolveToken failed: %v", err)
-	}
-	if info.Value != "legacy-admin-token" {
-		t.Fatalf("got token %q, want legacy-admin-token", info.Value)
-	}
-	if info.Source != TokenSourceEnv {
-		t.Fatalf("got source %q, want %q", info.Source, TokenSourceEnv)
-	}
-}
-
-func TestTokenEnvTakesPrecedenceOverLegacyEnv(t *testing.T) {
-	t.Setenv(EnvAccessToken, "env-admin-token")
-	t.Setenv(LegacyEnvAccessToken, "legacy-admin-token")
-
-	info, err := ResolveToken()
-	if err != nil {
-		t.Fatalf("ResolveToken failed: %v", err)
-	}
-	if info.Value != "env-admin-token" {
-		t.Fatalf("got token %q, want env-admin-token", info.Value)
+	_, err := ResolveToken()
+	if !errors.Is(err, ErrNotAuthenticated) {
+		t.Fatalf("got error %v, want ErrNotAuthenticated", err)
 	}
 }
 
@@ -178,7 +160,6 @@ func TestTokenDoesNotUsePublicConfig(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", tmp)
 	t.Setenv(EnvAccessToken, "")
-	t.Setenv(LegacyEnvAccessToken, "")
 
 	if err := config.Save(&config.Config{AccessToken: "public-token"}); err != nil {
 		t.Fatalf("public config Save failed: %v", err)

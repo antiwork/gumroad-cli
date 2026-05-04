@@ -116,7 +116,7 @@ func resolveMutationToken(opts cmdutil.Options) (adminconfig.TokenInfo, error) {
 		return info, nil
 	}
 	if errors.Is(err, adminconfig.ErrNotAuthenticated) && adminconfig.HasEnvToken() {
-		return adminconfig.TokenInfo{}, fmt.Errorf("%w. mutating admin commands require stored admin auth unless --non-interactive is set; run 'gumroad auth login' and check the admin box, or pass --non-interactive to use %s (or %s)", adminconfig.ErrNotAuthenticated, adminconfig.EnvAccessToken, adminconfig.LegacyEnvAccessToken)
+		return adminconfig.TokenInfo{}, fmt.Errorf("%w. mutating admin commands require stored admin auth unless --non-interactive is set; run 'gumroad auth login' and check the admin box, or pass --non-interactive to use %s", adminconfig.ErrNotAuthenticated, adminconfig.EnvAccessToken)
 	}
 	return adminconfig.TokenInfo{}, err
 }

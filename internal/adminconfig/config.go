@@ -27,9 +27,8 @@ type Config struct {
 }
 
 const (
-	EnvAccessToken       = "GUMROAD_ADMIN_TOKEN"                                                                                                                              //nolint:gosec // G101: env var name, not a credential.
-	LegacyEnvAccessToken = "GUMROAD_ADMIN_ACCESS_TOKEN"                                                                                                                       //nolint:gosec // G101: env var name, not a credential.
-	HintSetAdminToken    = "Run `gumroad auth login` and check the admin box. For CI/agents, set GUMROAD_ADMIN_TOKEN and pass --non-interactive for mutating admin commands." //nolint:gosec // G101: remediation text, not a credential.
+	EnvAccessToken    = "GUMROAD_ADMIN_TOKEN"                                                                                                                              //nolint:gosec // G101: env var name, not a credential.
+	HintSetAdminToken = "Run `gumroad auth login` and check the admin box. For CI/agents, set GUMROAD_ADMIN_TOKEN and pass --non-interactive for mutating admin commands." //nolint:gosec // G101: remediation text, not a credential.
 
 	adminConfigFile       = "admin.token"
 	legacyAdminConfigFile = "admin.json"
@@ -180,14 +179,11 @@ func ResolveToken() (TokenInfo, error) {
 	if token := strings.TrimSpace(os.Getenv(EnvAccessToken)); token != "" {
 		return TokenInfo{Value: token, Source: TokenSourceEnv}, nil
 	}
-	if token := strings.TrimSpace(os.Getenv(LegacyEnvAccessToken)); token != "" {
-		return TokenInfo{Value: token, Source: TokenSourceEnv}, nil
-	}
 	return ResolveStoredToken()
 }
 
 func HasEnvToken() bool {
-	return strings.TrimSpace(os.Getenv(EnvAccessToken)) != "" || strings.TrimSpace(os.Getenv(LegacyEnvAccessToken)) != ""
+	return strings.TrimSpace(os.Getenv(EnvAccessToken)) != ""
 }
 
 func ResolveStoredToken() (TokenInfo, error) {

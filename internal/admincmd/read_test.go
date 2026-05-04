@@ -2,7 +2,6 @@ package admincmd
 
 import (
 	"bytes"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -29,8 +28,7 @@ func TestFetchPostJSONInteractiveRequiresStoredTokenWhenEnvIsSet(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "--non-interactive") ||
 		!strings.Contains(err.Error(), "gumroad auth login") ||
-		!strings.Contains(err.Error(), adminconfig.EnvAccessToken) ||
-		!strings.Contains(err.Error(), adminconfig.LegacyEnvAccessToken) {
+		!strings.Contains(err.Error(), adminconfig.EnvAccessToken) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if called {
@@ -116,26 +114,5 @@ func TestRunPostJSONDecodedAllowsEnvTokenForReadEndpoints(t *testing.T) {
 	}
 	if gotAuth != "Bearer env-admin-token" {
 		t.Fatalf("got Authorization=%q, want Bearer env-admin-token", gotAuth)
-	}
-}
-
-func TestFetchPostJSONNonInteractiveUsesLegacyEnvToken(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	t.Setenv(adminconfig.EnvAccessToken, "")
-	t.Setenv(adminconfig.LegacyEnvAccessToken, "legacy-admin-token")
-	var gotAuth string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotAuth = r.Header.Get("Authorization")
-		_ = json.NewEncoder(w).Encode(map[string]any{"success": true})
-	}))
-	t.Cleanup(srv.Close)
-	t.Setenv(adminapi.EnvAPIBaseURL, srv.URL)
-
-	_, err := FetchPostJSON(testutil.TestOptions(testutil.NonInteractive(true)), "Posting...", "/users/reset_password", struct{}{})
-	if err != nil {
-		t.Fatalf("FetchPostJSON failed: %v", err)
-	}
-	if gotAuth != "Bearer legacy-admin-token" {
-		t.Fatalf("got Authorization=%q, want Bearer legacy-admin-token", gotAuth)
 	}
 }

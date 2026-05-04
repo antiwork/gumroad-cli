@@ -105,7 +105,7 @@ gumroad completion    bash, zsh, fish, powershell
 
 Run `gumroad <command> --help` for usage details and examples.
 
-Admin commands use a separate internal token. Run `gumroad auth login` and check the admin box to store one locally. Mutating admin commands use that stored token in normal interactive runs so the acting admin can be shown before the request; CI and agents can pass `--non-interactive` with `GUMROAD_ADMIN_TOKEN`. The legacy `GUMROAD_ADMIN_ACCESS_TOKEN` name still works. For local testing, set `GUMROAD_ADMIN_API_BASE_URL`.
+Admin commands use a separate internal token. Run `gumroad auth login` and check the admin box to store one locally. Mutating admin commands use that stored token in normal interactive runs so the acting admin can be shown before the request; CI and agents can pass `--non-interactive` with `GUMROAD_ADMIN_TOKEN`. For local testing, set `GUMROAD_ADMIN_API_BASE_URL`.
 
 ## File attachments
 
