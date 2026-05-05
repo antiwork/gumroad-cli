@@ -298,7 +298,10 @@ func stripFileEmbedIDs(richContent []map[string]any, ids []string) {
 		idSet[id] = struct{}{}
 	}
 	for _, page := range richContent {
-		stripFileEmbedIDsInNode(page["description"], idSet)
+		if description, ok := page["description"].(map[string]any); ok {
+			stripFileEmbedIDsInNode(description, idSet)
+			ensureRichContentDescriptionContent(description)
+		}
 	}
 }
 
@@ -340,6 +343,14 @@ func isEmptyFileEmbedGroup(node map[string]any) bool {
 	}
 	children, ok := node["content"].([]any)
 	return !ok || len(children) == 0
+}
+
+func ensureRichContentDescriptionContent(description map[string]any) {
+	content, ok := description["content"].([]any)
+	if ok && len(content) > 0 {
+		return
+	}
+	description["content"] = []any{map[string]any{"type": "paragraph"}}
 }
 
 func nodeHasType(node any, typ string) bool {

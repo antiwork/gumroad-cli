@@ -507,6 +507,47 @@ func TestUpdate_ReplaceFilesClearAllStripsEmbeddedRichContent(t *testing.T) {
 	}
 }
 
+func TestUpdate_RemoveEmbeddedFileLeavesParagraphWhenPageWouldBeEmpty(t *testing.T) {
+	srv := newProductUpdateFileServers(t)
+	srv.existingFiles = []existingProductFile{
+		{ID: "file_old", Name: "Old Pack.zip"},
+	}
+	srv.existingRichContent = []map[string]any{{
+		"id":    "page_1",
+		"title": "Existing page",
+		"description": map[string]any{
+			"type": "doc",
+			"content": []any{
+				map[string]any{
+					"type": "fileEmbedGroup",
+					"content": []any{
+						map[string]any{"type": "fileEmbed", "attrs": map[string]any{"id": "file_old"}},
+					},
+				},
+			},
+		},
+	}}
+	testutil.Setup(t, srv.dispatch(t))
+
+	cmd := testutil.Command(newUpdateCmd(), testutil.Yes(true))
+	cmd.SetArgs([]string{
+		"prod1",
+		"--remove-file", "file_old",
+	})
+	testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	files := productUpdateJSONFiles(t, srv.putJSON)
+	if len(files) != 0 {
+		t.Fatalf("files payload = %#v, want empty array", files)
+	}
+	if ids := richContentFileEmbedIDsFromBody(t, srv.putJSON); len(ids) != 0 {
+		t.Fatalf("rich_content fileEmbed ids = %#v, want none", ids)
+	}
+	if types := firstRichContentNodeTypesFromBody(t, srv.putJSON); !reflect.DeepEqual(types, []string{"paragraph"}) {
+		t.Fatalf("rich_content node types = %#v, want fallback paragraph", types)
+	}
+}
+
 func TestUpdate_FileAppendsBeforeTrailingParagraph(t *testing.T) {
 	srv := newProductUpdateFileServers(t)
 	srv.existingFiles = []existingProductFile{
