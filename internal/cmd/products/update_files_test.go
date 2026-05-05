@@ -617,6 +617,65 @@ func TestUpdate_FileAppendsToPageWithExistingEmbed(t *testing.T) {
 	}
 }
 
+func TestUpdate_FileAppendsInsideExistingFileEmbedGroup(t *testing.T) {
+	srv := newProductUpdateFileServers(t)
+	srv.existingFiles = []existingProductFile{
+		{ID: "file_a", Name: "Old A.zip"},
+		{ID: "file_b", Name: "Old B.zip"},
+	}
+	srv.existingRichContent = []map[string]any{{
+		"id":    "page_1",
+		"title": "Existing page",
+		"description": map[string]any{
+			"type": "doc",
+			"content": []any{
+				map[string]any{
+					"type": "fileEmbedGroup",
+					"content": []any{
+						map[string]any{"type": "fileEmbed", "attrs": map[string]any{"id": "file_a"}},
+						map[string]any{"type": "fileEmbed", "attrs": map[string]any{"id": "file_b"}},
+					},
+				},
+				map[string]any{"type": "paragraph"},
+			},
+		},
+	}}
+	testutil.Setup(t, srv.dispatch(t))
+
+	path := writeProductUploadFixture(t, "fresh bytes")
+	cmd := testutil.Command(newUpdateCmd(), testutil.Yes(true))
+	cmd.SetArgs([]string{
+		"prod1",
+		"--file", path,
+		"--file-name", "New Pack.zip",
+	})
+	testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	files := productUpdateJSONFiles(t, srv.putJSON)
+	if len(files) != 3 {
+		t.Fatalf("files payload len = %d, want 3", len(files))
+	}
+	newFileID, ok := files[2]["id"].(string)
+	if !ok || !strings.HasPrefix(newFileID, "cli-upload-") {
+		t.Fatalf("files[2].id = %#v, want generated cli upload id", files[2]["id"])
+	}
+
+	richContent := productUpdateJSONRichContent(t, srv.putJSON)
+	if types := richContentNodeTypes(t, richContent[0]); !reflect.DeepEqual(types, []string{"fileEmbedGroup", "paragraph"}) {
+		t.Fatalf("rich_content node types = %#v, want group plus trailing paragraph", types)
+	}
+	content := richContentPageContent(t, richContent[0])
+	group, ok := content[0].(map[string]any)
+	if !ok || group["type"] != "fileEmbedGroup" {
+		t.Fatalf("first rich_content node = %#v, want fileEmbedGroup", content[0])
+	}
+	var groupIDs []string
+	collectFileEmbedIDs(group, &groupIDs)
+	if !reflect.DeepEqual(groupIDs, []string{"file_a", "file_b", newFileID}) {
+		t.Fatalf("fileEmbedGroup ids = %#v, want existing files then new upload", groupIDs)
+	}
+}
+
 func TestUpdate_FilePreservesAuthoredTrailingParagraph(t *testing.T) {
 	srv := newProductUpdateFileServers(t)
 	srv.existingFiles = []existingProductFile{

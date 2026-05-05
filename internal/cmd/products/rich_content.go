@@ -150,7 +150,12 @@ func appendFileEmbeds(richContent []map[string]any, preserved []existingProductF
 		page["description"] = description
 	}
 	content, _ := description["content"].([]any)
-	content = appendFileEmbedsToContent(content, fileRefs)
+	if group := fileEmbedGroupForAppend(content); group != nil {
+		groupContent, _ := group["content"].([]any)
+		group["content"] = append(groupContent, fileEmbedNodes(fileRefs)...)
+	} else {
+		content = appendFileEmbedsToContent(content, fileRefs)
+	}
 	description["type"] = "doc"
 	description["content"] = content
 	return cloned, nil
@@ -185,6 +190,30 @@ func richContentPageHasFileEmbed(page map[string]any) bool {
 	var ids []string
 	collectFileEmbedIDs(page["description"], &ids)
 	return len(ids) > 0
+}
+
+func fileEmbedGroupForAppend(content []any) map[string]any {
+	var target map[string]any
+	for _, child := range content {
+		childMap, ok := child.(map[string]any)
+		if !ok {
+			continue
+		}
+		if childMap["type"] == "fileEmbed" {
+			return nil
+		}
+
+		var ids []string
+		collectFileEmbedIDs(childMap, &ids)
+		if len(ids) == 0 {
+			continue
+		}
+		if childMap["type"] != "fileEmbedGroup" || target != nil {
+			return nil
+		}
+		target = childMap
+	}
+	return target
 }
 
 func appendFileEmbedsToContent(content []any, fileRefs []richContentFileRef) []any {
