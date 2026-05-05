@@ -143,15 +143,14 @@ func appendFileEmbeds(richContent []map[string]any, preserved []existingProductF
 		return nil, err
 	}
 
-	description, ok := cloned[0]["description"].(map[string]any)
+	page := cloned[appendFileEmbedPage(cloned)]
+	description, ok := page["description"].(map[string]any)
 	if !ok {
 		description = map[string]any{"type": "doc"}
-		cloned[0]["description"] = description
+		page["description"] = description
 	}
 	content, _ := description["content"].([]any)
-	content = withoutTrailingParagraph(content)
-	content = append(content, fileEmbedNodes(fileRefs)...)
-	content = append(content, map[string]any{"type": "paragraph"})
+	content = appendFileEmbedsToContent(content, fileRefs)
 	description["type"] = "doc"
 	description["content"] = content
 	return cloned, nil
@@ -172,14 +171,33 @@ func richContentRefsForExistingFiles(files []existingProductFile) ([]richContent
 	return refs, nil
 }
 
-func withoutTrailingParagraph(content []any) []any {
-	if len(content) == 0 {
-		return content
+func appendFileEmbedPage(richContent []map[string]any) int {
+	target := len(richContent) - 1
+	for i, page := range richContent {
+		if richContentPageHasFileEmbed(page) {
+			target = i
+		}
 	}
-	if nodeHasType(content[len(content)-1], "paragraph") {
-		return content[:len(content)-1]
+	return target
+}
+
+func richContentPageHasFileEmbed(page map[string]any) bool {
+	var ids []string
+	collectFileEmbedIDs(page["description"], &ids)
+	return len(ids) > 0
+}
+
+func appendFileEmbedsToContent(content []any, fileRefs []richContentFileRef) []any {
+	var trailingParagraph any
+	if len(content) > 0 && nodeHasType(content[len(content)-1], "paragraph") {
+		trailingParagraph = content[len(content)-1]
+		content = content[:len(content)-1]
 	}
-	return content
+	content = append(content, fileEmbedNodes(fileRefs)...)
+	if trailingParagraph == nil {
+		trailingParagraph = map[string]any{"type": "paragraph"}
+	}
+	return append(content, trailingParagraph)
 }
 
 func cloneRichContent(richContent []map[string]any) ([]map[string]any, error) {

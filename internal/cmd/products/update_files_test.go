@@ -224,14 +224,13 @@ func firstRichContentNodeTypesFromBody(t *testing.T, body map[string]any) []stri
 	if len(richContent) == 0 {
 		t.Fatal("rich_content payload is empty")
 	}
-	description, ok := richContent[0]["description"].(map[string]any)
-	if !ok {
-		t.Fatalf("rich_content description has wrong type: %T", richContent[0]["description"])
-	}
-	content, ok := description["content"].([]any)
-	if !ok {
-		t.Fatalf("rich_content content has wrong type: %T", description["content"])
-	}
+	return richContentNodeTypes(t, richContent[0])
+}
+
+func richContentNodeTypes(t *testing.T, page map[string]any) []string {
+	t.Helper()
+
+	content := richContentPageContent(t, page)
 	types := make([]string, len(content))
 	for i, node := range content {
 		nodeMap, ok := node.(map[string]any)
@@ -245,6 +244,20 @@ func firstRichContentNodeTypesFromBody(t *testing.T, body map[string]any) []stri
 		types[i] = nodeType
 	}
 	return types
+}
+
+func richContentPageContent(t *testing.T, page map[string]any) []any {
+	t.Helper()
+
+	description, ok := page["description"].(map[string]any)
+	if !ok {
+		t.Fatalf("rich_content description has wrong type: %T", page["description"])
+	}
+	content, ok := description["content"].([]any)
+	if !ok {
+		t.Fatalf("rich_content content has wrong type: %T", description["content"])
+	}
+	return content
 }
 
 func TestUpdate_FilePreservesExistingByDefault(t *testing.T) {
@@ -534,6 +547,133 @@ func TestUpdate_FileAppendsBeforeTrailingParagraph(t *testing.T) {
 	}
 	if types := firstRichContentNodeTypesFromBody(t, srv.putJSON); !reflect.DeepEqual(types, []string{"fileEmbed", "fileEmbed", "paragraph"}) {
 		t.Fatalf("rich_content node types = %#v, want adjacent file embeds then one trailing paragraph", types)
+	}
+}
+
+func TestUpdate_FileAppendsToPageWithExistingEmbed(t *testing.T) {
+	srv := newProductUpdateFileServers(t)
+	srv.existingFiles = []existingProductFile{
+		{ID: "file_old", Name: "Old Pack.zip"},
+	}
+	srv.existingRichContent = []map[string]any{
+		{
+			"id":    "page_1",
+			"title": "Welcome",
+			"description": map[string]any{
+				"type": "doc",
+				"content": []any{
+					map[string]any{"type": "paragraph"},
+					map[string]any{"type": "paragraph"},
+				},
+			},
+		},
+		{
+			"id":    "page_2",
+			"title": "Module 1",
+			"description": map[string]any{
+				"type": "doc",
+				"content": []any{
+					map[string]any{"type": "fileEmbed", "attrs": map[string]any{"id": "file_old"}},
+					map[string]any{"type": "paragraph"},
+				},
+			},
+		},
+	}
+	testutil.Setup(t, srv.dispatch(t))
+
+	path := writeProductUploadFixture(t, "fresh bytes")
+	cmd := testutil.Command(newUpdateCmd(), testutil.Yes(true))
+	cmd.SetArgs([]string{
+		"prod1",
+		"--file", path,
+		"--file-name", "New Pack.zip",
+	})
+	testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	files := productUpdateJSONFiles(t, srv.putJSON)
+	if len(files) != 2 {
+		t.Fatalf("files payload len = %d, want 2", len(files))
+	}
+	newFileID, ok := files[1]["id"].(string)
+	if !ok || !strings.HasPrefix(newFileID, "cli-upload-") {
+		t.Fatalf("files[1].id = %#v, want generated cli upload id", files[1]["id"])
+	}
+
+	richContent := productUpdateJSONRichContent(t, srv.putJSON)
+	if len(richContent) != 2 {
+		t.Fatalf("rich_content len = %d, want 2", len(richContent))
+	}
+	if ids := fileEmbedIDs([]map[string]any{richContent[0]}); len(ids) != 0 {
+		t.Fatalf("page 1 fileEmbed ids = %#v, want none", ids)
+	}
+	if ids := fileEmbedIDs([]map[string]any{richContent[1]}); !reflect.DeepEqual(ids, []string{"file_old", newFileID}) {
+		t.Fatalf("page 2 fileEmbed ids = %#v, want existing file then new upload", ids)
+	}
+	if types := richContentNodeTypes(t, richContent[0]); !reflect.DeepEqual(types, []string{"paragraph", "paragraph"}) {
+		t.Fatalf("page 1 node types = %#v, want unchanged paragraphs", types)
+	}
+	if types := richContentNodeTypes(t, richContent[1]); !reflect.DeepEqual(types, []string{"fileEmbed", "fileEmbed", "paragraph"}) {
+		t.Fatalf("page 2 node types = %#v, want adjacent file embeds then one trailing paragraph", types)
+	}
+}
+
+func TestUpdate_FilePreservesAuthoredTrailingParagraph(t *testing.T) {
+	srv := newProductUpdateFileServers(t)
+	srv.existingFiles = []existingProductFile{
+		{ID: "file_old", Name: "Old Pack.zip"},
+	}
+	srv.existingRichContent = []map[string]any{{
+		"id":    "page_1",
+		"title": "Existing page",
+		"description": map[string]any{
+			"type": "doc",
+			"content": []any{
+				map[string]any{"type": "fileEmbed", "attrs": map[string]any{"id": "file_old"}},
+				map[string]any{
+					"type": "paragraph",
+					"content": []any{
+						map[string]any{"type": "text", "text": "Important note"},
+					},
+				},
+			},
+		},
+	}}
+	testutil.Setup(t, srv.dispatch(t))
+
+	path := writeProductUploadFixture(t, "fresh bytes")
+	cmd := testutil.Command(newUpdateCmd(), testutil.Yes(true))
+	cmd.SetArgs([]string{
+		"prod1",
+		"--file", path,
+		"--file-name", "New Pack.zip",
+	})
+	testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	files := productUpdateJSONFiles(t, srv.putJSON)
+	if len(files) != 2 {
+		t.Fatalf("files payload len = %d, want 2", len(files))
+	}
+	newFileID, ok := files[1]["id"].(string)
+	if !ok || !strings.HasPrefix(newFileID, "cli-upload-") {
+		t.Fatalf("files[1].id = %#v, want generated cli upload id", files[1]["id"])
+	}
+	if ids := richContentFileEmbedIDsFromBody(t, srv.putJSON); !reflect.DeepEqual(ids, []string{"file_old", newFileID}) {
+		t.Fatalf("rich_content fileEmbed ids = %#v, want existing file then new upload", ids)
+	}
+
+	richContent := productUpdateJSONRichContent(t, srv.putJSON)
+	if types := richContentNodeTypes(t, richContent[0]); !reflect.DeepEqual(types, []string{"fileEmbed", "fileEmbed", "paragraph"}) {
+		t.Fatalf("rich_content node types = %#v, want file embeds then authored paragraph", types)
+	}
+	content := richContentPageContent(t, richContent[0])
+	paragraph := content[2].(map[string]any)
+	textNodes, ok := paragraph["content"].([]any)
+	if !ok || len(textNodes) != 1 {
+		t.Fatalf("trailing paragraph content = %#v, want one text node", paragraph["content"])
+	}
+	textNode, ok := textNodes[0].(map[string]any)
+	if !ok || textNode["text"] != "Important note" {
+		t.Fatalf("trailing paragraph text node = %#v, want Important note", textNodes[0])
 	}
 }
 
