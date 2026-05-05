@@ -188,8 +188,8 @@ func assertCreateRichContentEmbedsFiles(t *testing.T, body map[string]any, files
 	if !ok {
 		t.Fatalf("rich_content[0] has wrong type: %T", rawPages[0])
 	}
-	if got := page["title"]; got != defaultCreateRichContentTitle {
-		t.Fatalf("rich_content title = %#v, want %q", got, defaultCreateRichContentTitle)
+	if got := page["title"]; got != defaultFileRichContentTitle {
+		t.Fatalf("rich_content title = %#v, want %q", got, defaultFileRichContentTitle)
 	}
 	description, ok := page["description"].(map[string]any)
 	if !ok {

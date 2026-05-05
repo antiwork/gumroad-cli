@@ -18,7 +18,8 @@ import (
 )
 
 type productUpdateFileServers struct {
-	existingFiles []existingProductFile
+	existingFiles       []existingProductFile
+	existingRichContent []map[string]any
 
 	s3 *httptest.Server
 
@@ -72,8 +73,9 @@ func (s *productUpdateFileServers) dispatch(t *testing.T) http.HandlerFunc {
 				s.getCalls.Add(1)
 				testutil.JSON(t, w, map[string]any{
 					"product": map[string]any{
-						"id":    "prod1",
-						"files": s.existingFiles,
+						"id":           "prod1",
+						"files":        s.existingFiles,
+						"rich_content": s.existingRichContent,
 					},
 				})
 			case http.MethodPut:
@@ -159,6 +161,54 @@ func productUpdateJSONFiles(t *testing.T, body map[string]any) []map[string]any 
 	return files
 }
 
+func productUpdateJSONRichContent(t *testing.T, body map[string]any) []map[string]any {
+	t.Helper()
+
+	raw, ok := body["rich_content"].([]any)
+	if !ok {
+		t.Fatalf("rich_content payload has wrong type: %T", body["rich_content"])
+	}
+	pages := make([]map[string]any, len(raw))
+	for i, current := range raw {
+		page, ok := current.(map[string]any)
+		if !ok {
+			t.Fatalf("rich_content[%d] has wrong type: %T", i, current)
+		}
+		pages[i] = page
+	}
+	return pages
+}
+
+func firstRichContentFileEmbedID(t *testing.T, page map[string]any) string {
+	t.Helper()
+
+	description, ok := page["description"].(map[string]any)
+	if !ok {
+		t.Fatalf("rich_content description has wrong type: %T", page["description"])
+	}
+	content, ok := description["content"].([]any)
+	if !ok {
+		t.Fatalf("rich_content content has wrong type: %T", description["content"])
+	}
+	for _, node := range content {
+		nodeMap, ok := node.(map[string]any)
+		if !ok || nodeMap["type"] != "fileEmbed" {
+			continue
+		}
+		attrs, ok := nodeMap["attrs"].(map[string]any)
+		if !ok {
+			t.Fatalf("fileEmbed attrs has wrong type: %T", nodeMap["attrs"])
+		}
+		id, ok := attrs["id"].(string)
+		if !ok || id == "" {
+			t.Fatalf("fileEmbed id = %#v", attrs["id"])
+		}
+		return id
+	}
+	t.Fatalf("rich_content page has no fileEmbed: %#v", page)
+	return ""
+}
+
 func TestUpdate_FilePreservesExistingByDefault(t *testing.T) {
 	srv := newProductUpdateFileServers(t)
 	srv.existingFiles = []existingProductFile{
@@ -211,6 +261,135 @@ func TestUpdate_FilePreservesExistingByDefault(t *testing.T) {
 	}
 	if files[2]["description"] != "Updated bundle" {
 		t.Fatalf("files[2].description = %#v", files[2]["description"])
+	}
+}
+
+func TestUpdate_FileCreatesRichContentForNewUpload(t *testing.T) {
+	srv := newProductUpdateFileServers(t)
+	testutil.Setup(t, srv.dispatch(t))
+
+	path := writeProductUploadFixture(t, "fresh bytes")
+	cmd := testutil.Command(newUpdateCmd(), testutil.Yes(true))
+	cmd.SetArgs([]string{
+		"prod1",
+		"--file", path,
+		"--file-name", "New Pack.zip",
+	})
+	testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	files := productUpdateJSONFiles(t, srv.putJSON)
+	if len(files) != 1 {
+		t.Fatalf("files payload len = %d, want 1", len(files))
+	}
+	if got := files[0]["url"]; got != "https://example.com/attachments/u/k/original/upload-1.bin" {
+		t.Fatalf("files[0].url = %#v", got)
+	}
+	assertCreateRichContentEmbedsFiles(t, srv.putJSON, files)
+}
+
+func TestUpdate_FileSwapsRemovedRichContentEmbed(t *testing.T) {
+	srv := newProductUpdateFileServers(t)
+	srv.existingFiles = []existingProductFile{
+		{ID: "file_old", Name: "Old Pack.zip"},
+		{ID: "file_keep", Name: "Keep.pdf"},
+	}
+	srv.existingRichContent = []map[string]any{{
+		"id":    "page_1",
+		"title": "Existing page",
+		"description": map[string]any{
+			"type": "doc",
+			"content": []any{
+				map[string]any{
+					"type": "paragraph",
+					"content": []any{
+						map[string]any{"type": "text", "text": "Download below"},
+					},
+				},
+				map[string]any{
+					"type": "fileEmbed",
+					"attrs": map[string]any{
+						"id":        "file_old",
+						"uid":       "old-uid",
+						"collapsed": false,
+					},
+				},
+			},
+		},
+	}}
+	testutil.Setup(t, srv.dispatch(t))
+
+	path := writeProductUploadFixture(t, "replacement bytes")
+	cmd := testutil.Command(newUpdateCmd(), testutil.Yes(true))
+	cmd.SetArgs([]string{
+		"prod1",
+		"--remove-file", "file_old",
+		"--file", path,
+		"--file-name", "New Pack.zip",
+	})
+	testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	files := productUpdateJSONFiles(t, srv.putJSON)
+	if len(files) != 2 {
+		t.Fatalf("files payload len = %d, want 2", len(files))
+	}
+	if got := files[0]["id"]; got != "file_keep" {
+		t.Fatalf("files[0].id = %#v, want file_keep", got)
+	}
+	newFileID, ok := files[1]["id"].(string)
+	if !ok || !strings.HasPrefix(newFileID, "cli-upload-") {
+		t.Fatalf("files[1].id = %#v, want generated cli upload id", files[1]["id"])
+	}
+
+	richContent := productUpdateJSONRichContent(t, srv.putJSON)
+	if len(richContent) != 1 {
+		t.Fatalf("rich_content len = %d, want 1", len(richContent))
+	}
+	if got := richContent[0]["id"]; got != "page_1" {
+		t.Fatalf("rich_content page id = %#v, want page_1", got)
+	}
+	if got := firstRichContentFileEmbedID(t, richContent[0]); got != newFileID {
+		t.Fatalf("fileEmbed id = %q, want new file id %q", got, newFileID)
+	}
+}
+
+func TestUpdate_FileAmbiguousEmbeddedReplacementErrorsBeforeUpload(t *testing.T) {
+	srv := newProductUpdateFileServers(t)
+	srv.existingFiles = []existingProductFile{
+		{ID: "file_a", Name: "Old A.zip"},
+		{ID: "file_b", Name: "Old B.zip"},
+	}
+	srv.existingRichContent = []map[string]any{{
+		"id":    "page_1",
+		"title": "Existing page",
+		"description": map[string]any{
+			"type": "doc",
+			"content": []any{
+				map[string]any{"type": "fileEmbed", "attrs": map[string]any{"id": "file_a"}},
+				map[string]any{"type": "fileEmbed", "attrs": map[string]any{"id": "file_b"}},
+			},
+		},
+	}}
+	testutil.Setup(t, srv.dispatch(t))
+
+	path := writeProductUploadFixture(t, "replacement bytes")
+	cmd := testutil.Command(newUpdateCmd(), testutil.Yes(true))
+	cmd.SetArgs([]string{
+		"prod1",
+		"--replace-files",
+		"--file", path,
+	})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected ambiguous rich_content replacement error")
+	}
+	if !strings.Contains(err.Error(), "replace one embedded file at a time") {
+		t.Fatalf("expected rich_content disambiguation error, got %v", err)
+	}
+	if srv.s3Calls.Load() != 0 {
+		t.Fatalf("unexpected S3 calls: %d", srv.s3Calls.Load())
+	}
+	if srv.putCalls.Load() != 0 {
+		t.Fatalf("unexpected PUT calls: %d", srv.putCalls.Load())
 	}
 }
 
@@ -391,6 +570,14 @@ func TestUpdate_FileDryRunPrefetchesButDoesNotUploadOrPut(t *testing.T) {
 	}
 	if files[1]["url"] != "<uploaded:file:0>" {
 		t.Fatalf("dry-run upload placeholder = %#v", files[1]["url"])
+	}
+	newFileID, ok := files[1]["id"].(string)
+	if !ok || !strings.HasPrefix(newFileID, "cli-upload-") {
+		t.Fatalf("dry-run upload id = %#v, want generated cli upload id", files[1]["id"])
+	}
+	richContent := productUpdateJSONRichContent(t, payload.Request.Body)
+	if got := firstRichContentFileEmbedID(t, richContent[0]); got != newFileID {
+		t.Fatalf("dry-run fileEmbed id = %q, want new file id %q", got, newFileID)
 	}
 }
 
