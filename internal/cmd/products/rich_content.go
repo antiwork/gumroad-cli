@@ -67,6 +67,14 @@ func buildProductUpdateRichContent(
 ) ([]map[string]any, bool, error) {
 	removedEmbeddedIDs := removedFileEmbedIDs(existingRichContent, filePlan.Removed)
 	if len(removedEmbeddedIDs) > 0 {
+		if len(fileRefs) == 0 {
+			richContent, err := cloneRichContent(existingRichContent)
+			if err != nil {
+				return nil, false, err
+			}
+			stripFileEmbedIDs(richContent, removedEmbeddedIDs)
+			return richContent, true, nil
+		}
 		if len(removedEmbeddedIDs) != 1 || len(fileRefs) != 1 {
 			return nil, false, cmdutil.UsageErrorf(cmd,
 				"cannot automatically update rich_content for embedded file removal (%s); replace one embedded file at a time with exactly one --remove-file and one --file",
@@ -202,6 +210,48 @@ func replaceFileEmbedID(richContent []map[string]any, oldID, newID string) {
 	for _, page := range richContent {
 		replaceFileEmbedIDInNode(page["description"], oldID, newID)
 	}
+}
+
+func stripFileEmbedIDs(richContent []map[string]any, ids []string) {
+	if len(ids) == 0 {
+		return
+	}
+	idSet := make(map[string]struct{}, len(ids))
+	for _, id := range ids {
+		idSet[id] = struct{}{}
+	}
+	for _, page := range richContent {
+		stripFileEmbedIDsInNode(page["description"], idSet)
+	}
+}
+
+func stripFileEmbedIDsInNode(node any, ids map[string]struct{}) {
+	current, ok := node.(map[string]any)
+	if !ok {
+		return
+	}
+	children, ok := current["content"].([]any)
+	if !ok {
+		return
+	}
+
+	kept := make([]any, 0, len(children))
+	for _, child := range children {
+		if childMap, ok := child.(map[string]any); ok {
+			if childMap["type"] == "fileEmbed" {
+				if attrs, ok := childMap["attrs"].(map[string]any); ok {
+					if id, ok := attrs["id"].(string); ok {
+						if _, remove := ids[id]; remove {
+							continue
+						}
+					}
+				}
+			}
+			stripFileEmbedIDsInNode(childMap, ids)
+		}
+		kept = append(kept, child)
+	}
+	current["content"] = kept
 }
 
 func replaceFileEmbedIDInNode(node any, oldID, newID string) {

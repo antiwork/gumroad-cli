@@ -209,6 +209,13 @@ func firstRichContentFileEmbedID(t *testing.T, page map[string]any) string {
 	return ""
 }
 
+func richContentFileEmbedIDsFromBody(t *testing.T, body map[string]any) []string {
+	t.Helper()
+
+	richContent := productUpdateJSONRichContent(t, body)
+	return fileEmbedIDs(richContent)
+}
+
 func TestUpdate_FilePreservesExistingByDefault(t *testing.T) {
 	srv := newProductUpdateFileServers(t)
 	srv.existingFiles = []existingProductFile{
@@ -349,6 +356,100 @@ func TestUpdate_FileSwapsRemovedRichContentEmbed(t *testing.T) {
 	}
 	if got := firstRichContentFileEmbedID(t, richContent[0]); got != newFileID {
 		t.Fatalf("fileEmbed id = %q, want new file id %q", got, newFileID)
+	}
+}
+
+func TestUpdate_RemoveEmbeddedFileStripsRichContentEmbed(t *testing.T) {
+	srv := newProductUpdateFileServers(t)
+	srv.existingFiles = []existingProductFile{
+		{ID: "file_old", Name: "Old Pack.zip"},
+		{ID: "file_keep", Name: "Keep.pdf"},
+	}
+	srv.existingRichContent = []map[string]any{{
+		"id":    "page_1",
+		"title": "Existing page",
+		"description": map[string]any{
+			"type": "doc",
+			"content": []any{
+				map[string]any{
+					"type": "paragraph",
+					"content": []any{
+						map[string]any{"type": "text", "text": "Download below"},
+					},
+				},
+				map[string]any{
+					"type": "fileEmbed",
+					"attrs": map[string]any{
+						"id":        "file_old",
+						"uid":       "old-uid",
+						"collapsed": false,
+					},
+				},
+			},
+		},
+	}}
+	testutil.Setup(t, srv.dispatch(t))
+
+	cmd := testutil.Command(newUpdateCmd(), testutil.Yes(true))
+	cmd.SetArgs([]string{
+		"prod1",
+		"--remove-file", "file_old",
+	})
+	testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	files := productUpdateJSONFiles(t, srv.putJSON)
+	if len(files) != 1 || files[0]["id"] != "file_keep" {
+		t.Fatalf("files payload = %#v, want only file_keep", files)
+	}
+	if ids := richContentFileEmbedIDsFromBody(t, srv.putJSON); len(ids) != 0 {
+		t.Fatalf("rich_content fileEmbed ids = %#v, want none", ids)
+	}
+	if srv.s3Calls.Load() != 0 {
+		t.Fatalf("unexpected S3 calls: %d", srv.s3Calls.Load())
+	}
+}
+
+func TestUpdate_ReplaceFilesClearAllStripsEmbeddedRichContent(t *testing.T) {
+	srv := newProductUpdateFileServers(t)
+	srv.existingFiles = []existingProductFile{
+		{ID: "file_a", Name: "Old A.zip"},
+		{ID: "file_b", Name: "Old B.zip"},
+	}
+	srv.existingRichContent = []map[string]any{{
+		"id":    "page_1",
+		"title": "Existing page",
+		"description": map[string]any{
+			"type": "doc",
+			"content": []any{
+				map[string]any{"type": "fileEmbed", "attrs": map[string]any{"id": "file_a"}},
+				map[string]any{
+					"type": "fileEmbedGroup",
+					"content": []any{
+						map[string]any{"type": "fileEmbed", "attrs": map[string]any{"id": "file_b"}},
+					},
+				},
+				map[string]any{"type": "paragraph"},
+			},
+		},
+	}}
+	testutil.Setup(t, srv.dispatch(t))
+
+	cmd := testutil.Command(newUpdateCmd(), testutil.Yes(true))
+	cmd.SetArgs([]string{
+		"prod1",
+		"--replace-files",
+	})
+	testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	files := productUpdateJSONFiles(t, srv.putJSON)
+	if len(files) != 0 {
+		t.Fatalf("files payload = %#v, want empty array", files)
+	}
+	if ids := richContentFileEmbedIDsFromBody(t, srv.putJSON); len(ids) != 0 {
+		t.Fatalf("rich_content fileEmbed ids = %#v, want none", ids)
+	}
+	if srv.s3Calls.Load() != 0 {
+		t.Fatalf("unexpected S3 calls: %d", srv.s3Calls.Load())
 	}
 }
 
