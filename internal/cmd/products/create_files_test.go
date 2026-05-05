@@ -174,6 +174,75 @@ func createJSONFiles(t *testing.T, body map[string]any) []map[string]any {
 	return files
 }
 
+func assertCreateRichContentEmbedsFiles(t *testing.T, body map[string]any, files []map[string]any) {
+	t.Helper()
+
+	rawPages, ok := body["rich_content"].([]any)
+	if !ok {
+		t.Fatalf("rich_content payload has wrong type: %T", body["rich_content"])
+	}
+	if len(rawPages) != 1 {
+		t.Fatalf("rich_content payload len = %d, want 1", len(rawPages))
+	}
+	page, ok := rawPages[0].(map[string]any)
+	if !ok {
+		t.Fatalf("rich_content[0] has wrong type: %T", rawPages[0])
+	}
+	if got := page["title"]; got != defaultCreateRichContentTitle {
+		t.Fatalf("rich_content title = %#v, want %q", got, defaultCreateRichContentTitle)
+	}
+	description, ok := page["description"].(map[string]any)
+	if !ok {
+		t.Fatalf("rich_content description has wrong type: %T", page["description"])
+	}
+	if got := description["type"]; got != "doc" {
+		t.Fatalf("rich_content description type = %#v, want doc", got)
+	}
+	rawContent, ok := description["content"].([]any)
+	if !ok {
+		t.Fatalf("rich_content content has wrong type: %T", description["content"])
+	}
+	if len(rawContent) != len(files)+1 {
+		t.Fatalf("rich_content content len = %d, want %d", len(rawContent), len(files)+1)
+	}
+
+	for i, file := range files {
+		fileID, ok := file["id"].(string)
+		if !ok || !strings.HasPrefix(fileID, "cli-upload-") {
+			t.Fatalf("files[%d].id = %#v, want generated cli upload id", i, file["id"])
+		}
+
+		node, ok := rawContent[i].(map[string]any)
+		if !ok {
+			t.Fatalf("rich_content content[%d] has wrong type: %T", i, rawContent[i])
+		}
+		if got := node["type"]; got != "fileEmbed" {
+			t.Fatalf("rich_content content[%d].type = %#v, want fileEmbed", i, got)
+		}
+		attrs, ok := node["attrs"].(map[string]any)
+		if !ok {
+			t.Fatalf("rich_content content[%d].attrs has wrong type: %T", i, node["attrs"])
+		}
+		if got := attrs["id"]; got != fileID {
+			t.Fatalf("fileEmbed[%d].attrs.id = %#v, want matching file id %q", i, got, fileID)
+		}
+		if uid, ok := attrs["uid"].(string); !ok || uid == "" {
+			t.Fatalf("fileEmbed[%d].attrs.uid = %#v, want generated uid", i, attrs["uid"])
+		}
+		if got := attrs["collapsed"]; got != false {
+			t.Fatalf("fileEmbed[%d].attrs.collapsed = %#v, want false", i, got)
+		}
+	}
+
+	trailing, ok := rawContent[len(files)].(map[string]any)
+	if !ok {
+		t.Fatalf("trailing rich_content node has wrong type: %T", rawContent[len(files)])
+	}
+	if got := trailing["type"]; got != "paragraph" {
+		t.Fatalf("trailing rich_content node type = %#v, want paragraph", got)
+	}
+}
+
 func TestCreate_WithFiles_UploadsAndPostsIndexedFields(t *testing.T) {
 	srv := newCreateUploadServers(t)
 	testutil.Setup(t, srv.dispatch(t))
@@ -221,6 +290,7 @@ func TestCreate_WithFiles_UploadsAndPostsIndexedFields(t *testing.T) {
 	if got := files[1]["description"]; got != "Second file" {
 		t.Fatalf("files[1].description = %#v", got)
 	}
+	assertCreateRichContentEmbedsFiles(t, productJSON, files)
 	if s3Calls != 2 {
 		t.Fatalf("S3 calls = %d, want 2", s3Calls)
 	}
@@ -315,6 +385,7 @@ func TestCreate_WithFiles_DryRunJSONIncludesUploadsAndRequest(t *testing.T) {
 	if got := files[0]["description"]; got != "Bonus download" {
 		t.Fatalf("files[0].description = %#v", got)
 	}
+	assertCreateRichContentEmbedsFiles(t, payload.Request.Body, files)
 }
 
 func TestCreate_FileMetadataCountMustMatchFiles(t *testing.T) {

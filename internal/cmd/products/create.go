@@ -170,12 +170,18 @@ func newCreateCmd() *cobra.Command {
 			}
 
 			if len(plannedUploads) > 0 {
+				fileRefs, err := newCreateRichContentFileRefs(len(plannedUploads))
+				if err != nil {
+					return err
+				}
+
 				if opts.DryRun {
 					fileURLs := make([]string, len(plannedUploads))
 					for i := range plannedUploads {
 						fileURLs[i] = dryRunFilePlaceholder(i)
 					}
-					body := buildProductJSONBody(params, buildCreateUploadFilesPayload(plannedUploads, fileURLs))
+					body := buildProductJSONBody(params, buildCreateUploadFilesPayload(plannedUploads, fileURLs, fileRefs))
+					body["rich_content"] = buildCreateFileRichContent(fileRefs)
 					return renderCreateDryRun(opts, plannedUploads, body)
 				}
 
@@ -188,7 +194,8 @@ func newCreateCmd() *cobra.Command {
 				if err != nil {
 					return err
 				}
-				body := buildProductJSONBody(params, buildCreateUploadFilesPayload(plannedUploads, fileURLs))
+				body := buildProductJSONBody(params, buildCreateUploadFilesPayload(plannedUploads, fileURLs, fileRefs))
+				body["rich_content"] = buildCreateFileRichContent(fileRefs)
 				data, err := cmdutil.RunWithTokenData(opts, token, "Creating product...",
 					func(client *api.Client) (json.RawMessage, error) {
 						return client.PostJSON("/products", body)
@@ -285,10 +292,13 @@ func alignCreateUploadValues(c *cobra.Command, flagName string, values []string,
 	}
 }
 
-func buildCreateUploadFilesPayload(uploads []createUploadInput, fileURLs []string) []map[string]any {
+func buildCreateUploadFilesPayload(uploads []createUploadInput, fileURLs []string, fileRefs []createRichContentFileRef) []map[string]any {
 	files := make([]map[string]any, 0, len(uploads))
 	for i, planned := range uploads {
-		entry := map[string]any{"url": fileURLs[i]}
+		entry := map[string]any{
+			"id":  fileRefs[i].FileID,
+			"url": fileURLs[i],
+		}
 		if planned.DisplayName != "" {
 			entry["display_name"] = planned.DisplayName
 		}
