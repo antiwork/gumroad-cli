@@ -38,15 +38,18 @@ type productFileUpdatePlan struct {
 	Uploads   []requestedProductUpload
 }
 
+type productFileUpdateState struct {
+	Files       []existingProductFile `json:"files"`
+	RichContent []map[string]any      `json:"rich_content"`
+}
+
 type productFileSelections struct {
 	Keep   map[string]struct{}
 	Remove map[string]struct{}
 }
 
 type productFilesResponse struct {
-	Product struct {
-		Files []existingProductFile `json:"files"`
-	} `json:"product"`
+	Product productFileUpdateState `json:"product"`
 }
 
 type dryRunUpdateBody struct {
@@ -95,17 +98,17 @@ func collectRequestedProductUploads(
 	return uploads, nil
 }
 
-func fetchExistingProductFiles(client *api.Client, productID string) ([]existingProductFile, error) {
+func fetchExistingProductFileState(client *api.Client, productID string) (productFileUpdateState, error) {
 	data, err := client.Get(cmdutil.JoinPath("products", productID), url.Values{})
 	if err != nil {
-		return nil, err
+		return productFileUpdateState{}, err
 	}
 
 	resp, err := cmdutil.DecodeJSON[productFilesResponse](data)
 	if err != nil {
-		return nil, err
+		return productFileUpdateState{}, err
 	}
-	return resp.Product.Files, nil
+	return resp.Product, nil
 }
 
 func planProductFileUpdate(
@@ -229,13 +232,31 @@ func validateProductFileSelections(
 	}, nil
 }
 
-func buildProductUpdateFilesPayload(plan productFileUpdatePlan, uploadURLs []string) []map[string]any {
+func buildProductUpdateJSONBody(
+	params url.Values,
+	plan productFileUpdatePlan,
+	uploadURLs []string,
+	fileRefs []richContentFileRef,
+	richContent []map[string]any,
+	includeRichContent bool,
+) map[string]any {
+	body := buildProductJSONBody(params, buildProductUpdateFilesPayload(plan, uploadURLs, fileRefs))
+	if includeRichContent {
+		body["rich_content"] = richContent
+	}
+	return body
+}
+
+func buildProductUpdateFilesPayload(plan productFileUpdatePlan, uploadURLs []string, fileRefs []richContentFileRef) []map[string]any {
 	files := make([]map[string]any, 0, len(plan.Preserved)+len(plan.Uploads))
 	for _, file := range plan.Preserved {
 		files = append(files, map[string]any{"id": file.ID})
 	}
 	for i, requested := range plan.Uploads {
-		entry := map[string]any{"url": uploadURLs[i]}
+		entry := map[string]any{
+			"id":  fileRefs[i].FileID,
+			"url": uploadURLs[i],
+		}
 		if requested.DisplayName != "" {
 			entry["display_name"] = requested.DisplayName
 		}

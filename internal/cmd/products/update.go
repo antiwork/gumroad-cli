@@ -137,12 +137,22 @@ func newUpdateCmd() *cobra.Command {
 				return err
 			}
 			client := cmdutil.NewAPIClient(opts, token)
-			existingFiles, err := fetchExistingProductFiles(client, args[0])
+			existingState, err := fetchExistingProductFileState(client, args[0])
 			if err != nil {
 				return err
 			}
 
-			filePlan, err := planProductFileUpdate(c, existingFiles, requestedUploads, selections, replaceFiles)
+			filePlan, err := planProductFileUpdate(c, existingState.Files, requestedUploads, selections, replaceFiles)
+			if err != nil {
+				return err
+			}
+
+			fileRefs, err := newRichContentFileRefs(len(plannedUploads))
+			if err != nil {
+				return err
+			}
+
+			richContent, includeRichContent, err := buildProductUpdateRichContent(c, existingState.RichContent, filePlan, fileRefs)
 			if err != nil {
 				return err
 			}
@@ -156,8 +166,7 @@ func newUpdateCmd() *cobra.Command {
 			}
 
 			if opts.DryRun {
-				payload := buildProductJSONBody(params,
-					buildProductUpdateFilesPayload(filePlan, placeholderUploadURLs(len(plannedUploads))))
+				payload := buildProductUpdateJSONBody(params, filePlan, placeholderUploadURLs(len(plannedUploads)), fileRefs, richContent, includeRichContent)
 				return renderProductUpdateDryRun(opts, path, filePlan, plannedUploads, payload)
 			}
 
@@ -165,7 +174,7 @@ func newUpdateCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			payload := buildProductJSONBody(params, buildProductUpdateFilesPayload(filePlan, uploadedURLs))
+			payload := buildProductUpdateJSONBody(params, filePlan, uploadedURLs, fileRefs, richContent, includeRichContent)
 			return runProductUpdateJSON(opts, client, path, args[0], payload, uploadedURLs)
 		},
 	}
