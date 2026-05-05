@@ -93,7 +93,7 @@ func buildProductUpdateRichContent(
 		return nil, false, nil
 	}
 
-	richContent, err := appendFileEmbeds(existingRichContent, fileRefs)
+	richContent, err := appendFileEmbeds(existingRichContent, filePlan.Preserved, fileRefs)
 	if err != nil {
 		return nil, false, err
 	}
@@ -126,12 +126,16 @@ func removedFileEmbedIDs(richContent []map[string]any, removed []existingProduct
 	return ids
 }
 
-func appendFileEmbeds(richContent []map[string]any, fileRefs []richContentFileRef) ([]map[string]any, error) {
+func appendFileEmbeds(richContent []map[string]any, preserved []existingProductFile, fileRefs []richContentFileRef) ([]map[string]any, error) {
 	if len(fileRefs) == 0 {
 		return cloneRichContent(richContent)
 	}
 	if len(richContent) == 0 {
-		return buildFileRichContent(fileRefs), nil
+		preservedRefs, err := richContentRefsForExistingFiles(preserved)
+		if err != nil {
+			return nil, err
+		}
+		return buildFileRichContent(append(preservedRefs, fileRefs...)), nil
 	}
 
 	cloned, err := cloneRichContent(richContent)
@@ -145,11 +149,37 @@ func appendFileEmbeds(richContent []map[string]any, fileRefs []richContentFileRe
 		cloned[0]["description"] = description
 	}
 	content, _ := description["content"].([]any)
+	content = withoutTrailingParagraph(content)
 	content = append(content, fileEmbedNodes(fileRefs)...)
 	content = append(content, map[string]any{"type": "paragraph"})
 	description["type"] = "doc"
 	description["content"] = content
 	return cloned, nil
+}
+
+func richContentRefsForExistingFiles(files []existingProductFile) ([]richContentFileRef, error) {
+	refs := make([]richContentFileRef, len(files))
+	for i, file := range files {
+		embedUUID, err := newUUIDV4()
+		if err != nil {
+			return nil, fmt.Errorf("could not generate file embed id: %w", err)
+		}
+		refs[i] = richContentFileRef{
+			FileID:   file.ID,
+			EmbedUID: embedUUID,
+		}
+	}
+	return refs, nil
+}
+
+func withoutTrailingParagraph(content []any) []any {
+	if len(content) == 0 {
+		return content
+	}
+	if nodeHasType(content[len(content)-1], "paragraph") {
+		return content[:len(content)-1]
+	}
+	return content
 }
 
 func cloneRichContent(richContent []map[string]any) ([]map[string]any, error) {
@@ -248,10 +278,26 @@ func stripFileEmbedIDsInNode(node any, ids map[string]struct{}) {
 				}
 			}
 			stripFileEmbedIDsInNode(childMap, ids)
+			if isEmptyFileEmbedGroup(childMap) {
+				continue
+			}
 		}
 		kept = append(kept, child)
 	}
 	current["content"] = kept
+}
+
+func isEmptyFileEmbedGroup(node map[string]any) bool {
+	if node["type"] != "fileEmbedGroup" {
+		return false
+	}
+	children, ok := node["content"].([]any)
+	return !ok || len(children) == 0
+}
+
+func nodeHasType(node any, typ string) bool {
+	nodeMap, ok := node.(map[string]any)
+	return ok && nodeMap["type"] == typ
 }
 
 func replaceFileEmbedIDInNode(node any, oldID, newID string) {

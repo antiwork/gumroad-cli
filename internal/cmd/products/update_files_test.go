@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -216,6 +217,36 @@ func richContentFileEmbedIDsFromBody(t *testing.T, body map[string]any) []string
 	return fileEmbedIDs(richContent)
 }
 
+func firstRichContentNodeTypesFromBody(t *testing.T, body map[string]any) []string {
+	t.Helper()
+
+	richContent := productUpdateJSONRichContent(t, body)
+	if len(richContent) == 0 {
+		t.Fatal("rich_content payload is empty")
+	}
+	description, ok := richContent[0]["description"].(map[string]any)
+	if !ok {
+		t.Fatalf("rich_content description has wrong type: %T", richContent[0]["description"])
+	}
+	content, ok := description["content"].([]any)
+	if !ok {
+		t.Fatalf("rich_content content has wrong type: %T", description["content"])
+	}
+	types := make([]string, len(content))
+	for i, node := range content {
+		nodeMap, ok := node.(map[string]any)
+		if !ok {
+			t.Fatalf("rich_content content[%d] has wrong type: %T", i, node)
+		}
+		nodeType, ok := nodeMap["type"].(string)
+		if !ok || nodeType == "" {
+			t.Fatalf("rich_content content[%d].type = %#v", i, nodeMap["type"])
+		}
+		types[i] = nodeType
+	}
+	return types
+}
+
 func TestUpdate_FilePreservesExistingByDefault(t *testing.T) {
 	srv := newProductUpdateFileServers(t)
 	srv.existingFiles = []existingProductFile{
@@ -263,11 +294,18 @@ func TestUpdate_FilePreservesExistingByDefault(t *testing.T) {
 	if files[2]["url"] != "https://example.com/attachments/u/k/original/upload-1.bin" {
 		t.Fatalf("files[2].url = %#v", files[2]["url"])
 	}
+	newFileID, ok := files[2]["id"].(string)
+	if !ok || !strings.HasPrefix(newFileID, "cli-upload-") {
+		t.Fatalf("files[2].id = %#v, want generated cli upload id", files[2]["id"])
+	}
 	if files[2]["display_name"] != "New Pack.zip" {
 		t.Fatalf("files[2].display_name = %#v", files[2]["display_name"])
 	}
 	if files[2]["description"] != "Updated bundle" {
 		t.Fatalf("files[2].description = %#v", files[2]["description"])
+	}
+	if ids := richContentFileEmbedIDsFromBody(t, srv.putJSON); !reflect.DeepEqual(ids, []string{"file_a", "file_b", newFileID}) {
+		t.Fatalf("rich_content fileEmbed ids = %#v, want preserved files and new upload", ids)
 	}
 }
 
@@ -448,8 +486,54 @@ func TestUpdate_ReplaceFilesClearAllStripsEmbeddedRichContent(t *testing.T) {
 	if ids := richContentFileEmbedIDsFromBody(t, srv.putJSON); len(ids) != 0 {
 		t.Fatalf("rich_content fileEmbed ids = %#v, want none", ids)
 	}
+	if types := firstRichContentNodeTypesFromBody(t, srv.putJSON); !reflect.DeepEqual(types, []string{"paragraph"}) {
+		t.Fatalf("rich_content node types = %#v, want only trailing paragraph", types)
+	}
 	if srv.s3Calls.Load() != 0 {
 		t.Fatalf("unexpected S3 calls: %d", srv.s3Calls.Load())
+	}
+}
+
+func TestUpdate_FileAppendsBeforeTrailingParagraph(t *testing.T) {
+	srv := newProductUpdateFileServers(t)
+	srv.existingFiles = []existingProductFile{
+		{ID: "file_old", Name: "Old Pack.zip"},
+	}
+	srv.existingRichContent = []map[string]any{{
+		"id":    "page_1",
+		"title": "Existing page",
+		"description": map[string]any{
+			"type": "doc",
+			"content": []any{
+				map[string]any{"type": "fileEmbed", "attrs": map[string]any{"id": "file_old"}},
+				map[string]any{"type": "paragraph"},
+			},
+		},
+	}}
+	testutil.Setup(t, srv.dispatch(t))
+
+	path := writeProductUploadFixture(t, "fresh bytes")
+	cmd := testutil.Command(newUpdateCmd(), testutil.Yes(true))
+	cmd.SetArgs([]string{
+		"prod1",
+		"--file", path,
+		"--file-name", "New Pack.zip",
+	})
+	testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	files := productUpdateJSONFiles(t, srv.putJSON)
+	if len(files) != 2 {
+		t.Fatalf("files payload len = %d, want 2", len(files))
+	}
+	newFileID, ok := files[1]["id"].(string)
+	if !ok || !strings.HasPrefix(newFileID, "cli-upload-") {
+		t.Fatalf("files[1].id = %#v, want generated cli upload id", files[1]["id"])
+	}
+	if ids := richContentFileEmbedIDsFromBody(t, srv.putJSON); !reflect.DeepEqual(ids, []string{"file_old", newFileID}) {
+		t.Fatalf("rich_content fileEmbed ids = %#v, want existing file then new upload", ids)
+	}
+	if types := firstRichContentNodeTypesFromBody(t, srv.putJSON); !reflect.DeepEqual(types, []string{"fileEmbed", "fileEmbed", "paragraph"}) {
+		t.Fatalf("rich_content node types = %#v, want adjacent file embeds then one trailing paragraph", types)
 	}
 }
 
@@ -677,8 +761,8 @@ func TestUpdate_FileDryRunPrefetchesButDoesNotUploadOrPut(t *testing.T) {
 		t.Fatalf("dry-run upload id = %#v, want generated cli upload id", files[1]["id"])
 	}
 	richContent := productUpdateJSONRichContent(t, payload.Request.Body)
-	if got := firstRichContentFileEmbedID(t, richContent[0]); got != newFileID {
-		t.Fatalf("dry-run fileEmbed id = %q, want new file id %q", got, newFileID)
+	if ids := fileEmbedIDs(richContent); !reflect.DeepEqual(ids, []string{"file_b", newFileID}) {
+		t.Fatalf("dry-run fileEmbed ids = %#v, want preserved file then new upload", ids)
 	}
 }
 
