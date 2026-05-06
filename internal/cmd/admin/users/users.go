@@ -9,6 +9,9 @@ func NewUsersCmd() *cobra.Command {
 		Example: `  gumroad admin users info --email user@example.com
   gumroad admin users suspension --email user@example.com
   gumroad admin users mark-compliant --email user@example.com
+  gumroad admin users watch --email user@example.com --revenue-threshold 200 --note "Review next buyers"
+  gumroad admin users update-watch --email user@example.com --revenue-threshold 500
+  gumroad admin users unwatch --email user@example.com
   gumroad admin users suspend --email user@example.com --note "Chargeback risk confirmed"
   gumroad admin users reset-password --email user@example.com
   gumroad admin users update-email --current-email old@example.com --new-email new@example.com
@@ -19,6 +22,9 @@ func NewUsersCmd() *cobra.Command {
 	cmd.AddCommand(newInfoCmd())
 	cmd.AddCommand(newSuspensionCmd())
 	cmd.AddCommand(newMarkCompliantCmd())
+	cmd.AddCommand(newWatchCmd())
+	cmd.AddCommand(newUpdateWatchCmd())
+	cmd.AddCommand(newUnwatchCmd())
 	cmd.AddCommand(newSuspendCmd())
 	cmd.AddCommand(newResetPasswordCmd())
 	cmd.AddCommand(newUpdateEmailCmd())

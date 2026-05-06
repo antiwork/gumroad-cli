@@ -19,6 +19,7 @@ func NewAdminCmd() *cobra.Command {
   gumroad admin licenses lookup --key <license-key>
   gumroad admin users info --email <email>
   gumroad admin users suspension --email <email>
+  gumroad admin users watch --email <email> --revenue-threshold 200
   gumroad admin payouts list --email <email>
   gumroad admin payouts pause --email <email>`,
 	}

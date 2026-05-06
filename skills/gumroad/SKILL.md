@@ -77,6 +77,19 @@ gumroad user --json --no-input
 gumroad user --json --jq '.user.email' --no-input
 ```
 
+### admin — Internal admin API
+
+```sh
+# Inspect user risk, payout, and watchlist state
+gumroad admin users info --email seller@example.com --json --non-interactive
+
+# Watchlist state does not pause payouts or change user risk state
+gumroad admin users watch --email seller@example.com --revenue-threshold 200 --note "Review next buyers" --yes --json --non-interactive
+gumroad admin users update-watch --email seller@example.com --revenue-threshold 500 --yes --json --non-interactive
+gumroad admin users update-watch --email seller@example.com --revenue-threshold 500 --clear-note --yes --json --non-interactive
+gumroad admin users unwatch --email seller@example.com --yes --json --non-interactive
+```
+
 ### products — Manage products
 
 ```sh

@@ -20,17 +20,18 @@ type infoResponse struct {
 }
 
 type userInfo struct {
-	Email                          string      `json:"email"`
-	Name                           string      `json:"name"`
-	Username                       string      `json:"username"`
-	ProfileURL                     string      `json:"profile_url"`
-	Country                        string      `json:"country"`
-	CreatedAt                      string      `json:"created_at"`
-	DeletedAt                      string      `json:"deleted_at"`
-	RiskState                      riskState   `json:"risk_state"`
-	TwoFactorAuthenticationEnabled bool        `json:"two_factor_authentication_enabled"`
-	Payouts                        payoutsInfo `json:"payouts"`
-	Stats                          statsInfo   `json:"stats"`
+	Email                          string           `json:"email"`
+	Name                           string           `json:"name"`
+	Username                       string           `json:"username"`
+	ProfileURL                     string           `json:"profile_url"`
+	Country                        string           `json:"country"`
+	CreatedAt                      string           `json:"created_at"`
+	DeletedAt                      string           `json:"deleted_at"`
+	RiskState                      riskState        `json:"risk_state"`
+	ActiveWatchedUser              *watchedUserInfo `json:"active_watched_user"`
+	TwoFactorAuthenticationEnabled bool             `json:"two_factor_authentication_enabled"`
+	Payouts                        payoutsInfo      `json:"payouts"`
+	Stats                          statsInfo        `json:"stats"`
 }
 
 type riskState struct {
@@ -136,6 +137,11 @@ func renderInfo(opts cmdutil.Options, email string, info userInfo) error {
 	}
 	fmt.Fprintf(&b, "Two-factor: %s\n", twoFactor)
 
+	if info.ActiveWatchedUser != nil {
+		fmt.Fprintln(&b)
+		writeWatchlist(&b, info.ActiveWatchedUser)
+	}
+
 	fmt.Fprintln(&b)
 	writePayouts(&b, info.Payouts)
 
@@ -177,6 +183,28 @@ func writeRiskState(b *strings.Builder, risk riskState) {
 	}
 	if risk.LastStatusChangedAt != "" {
 		fmt.Fprintf(b, "  last status change: %s\n", risk.LastStatusChangedAt)
+	}
+}
+
+func writeWatchlist(b *strings.Builder, watchedUser *watchedUserInfo) {
+	fmt.Fprintln(b, "Watchlist: active")
+	if watchedUser.ID != "" {
+		fmt.Fprintf(b, "  id: %s\n", watchedUser.ID)
+	}
+	if watchedUser.RevenueThresholdCents > 0 {
+		fmt.Fprintf(b, "  revenue: %s of %s\n", formatWatchMoney(watchedUser.RevenueCents), formatWatchMoney(watchedUser.RevenueThresholdCents))
+	}
+	if watchedUser.UnpaidBalanceCents > 0 {
+		fmt.Fprintf(b, "  unpaid balance: %s\n", formatWatchMoney(watchedUser.UnpaidBalanceCents))
+	}
+	if watchedUser.Notes != "" {
+		fmt.Fprintf(b, "  note: %s\n", watchedUser.Notes)
+	}
+	if watchedUser.CreatedAt != "" {
+		fmt.Fprintf(b, "  created: %s\n", watchedUser.CreatedAt)
+	}
+	if watchedUser.LastSyncedAt != "" {
+		fmt.Fprintf(b, "  last synced: %s\n", watchedUser.LastSyncedAt)
 	}
 }
 

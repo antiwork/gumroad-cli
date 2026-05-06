@@ -160,6 +160,42 @@ func TestInfoFlagsSuspendedUserAndPausedPayouts(t *testing.T) {
 	}
 }
 
+func TestInfoRendersActiveWatchedUser(t *testing.T) {
+	payload := sampleInfoPayload()
+	user := payload["user"].(map[string]any)
+	user["active_watched_user"] = map[string]any{
+		"id":                      "watch_123",
+		"revenue_threshold_cents": 20000,
+		"revenue_cents":           12500,
+		"unpaid_balance_cents":    2500,
+		"notes":                   "Check next independent buyers",
+		"created_at":              "2026-05-01T10:00:00Z",
+		"last_synced_at":          "2026-05-06T12:00:00Z",
+	}
+
+	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, payload)
+	})
+
+	cmd := testutil.Command(newInfoCmd(), testutil.Quiet(false))
+	cmd.SetArgs([]string{"--email", "seller@example.com"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	for _, want := range []string{
+		"Watchlist: active",
+		"id: watch_123",
+		"revenue: $125.00 of $200.00",
+		"unpaid balance: $25.00",
+		"note: Check next independent buyers",
+		"created: 2026-05-01T10:00:00Z",
+		"last synced: 2026-05-06T12:00:00Z",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q: %q", want, out)
+		}
+	}
+}
+
 func TestInfoSuppressesDuplicateEmailLineWhenNameIsEmpty(t *testing.T) {
 	payload := sampleInfoPayload()
 	user := payload["user"].(map[string]any)

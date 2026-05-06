@@ -107,6 +107,12 @@ Run `gumroad <command> --help` for usage details and examples.
 
 Admin commands use a separate internal token. Run `gumroad auth login` and check the admin box to store one locally. Mutating admin commands use that stored token in normal interactive runs so the acting admin can be shown before the request; CI and agents can pass `--non-interactive` with `GUMROAD_ADMIN_TOKEN`. For local testing, set `GUMROAD_ADMIN_API_BASE_URL`.
 
+```sh
+gumroad admin users watch --email seller@example.com --revenue-threshold 200 --note "Review next buyers"
+gumroad admin users update-watch --email seller@example.com --revenue-threshold 500
+gumroad admin users unwatch --email seller@example.com
+```
+
 ## File attachments
 
 ```sh
