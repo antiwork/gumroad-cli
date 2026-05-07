@@ -15,29 +15,34 @@ import (
 )
 
 type watchRequest struct {
-	Email            string `json:"email"`
+	UserID           string `json:"user_id"`
+	ExpectedEmail    string `json:"expected_email,omitempty"`
 	RevenueThreshold string `json:"revenue_threshold"`
 	Notes            string `json:"notes,omitempty"`
 }
 
 type updateWatchRequest struct {
-	Email            string  `json:"email"`
+	UserID           string  `json:"user_id"`
+	ExpectedEmail    string  `json:"expected_email,omitempty"`
 	RevenueThreshold string  `json:"revenue_threshold"`
 	Notes            *string `json:"notes,omitempty"`
 }
 
 type unwatchRequest struct {
-	Email string `json:"email"`
+	UserID        string `json:"user_id"`
+	ExpectedEmail string `json:"expected_email,omitempty"`
 }
 
 type watchResponse struct {
 	Success     bool             `json:"success"`
+	UserID      string           `json:"user_id"`
 	Message     string           `json:"message"`
 	WatchedUser *watchedUserInfo `json:"watched_user"`
 }
 
 type unwatchResponse struct {
 	Success bool   `json:"success"`
+	UserID  string `json:"user_id"`
 	Message string `json:"message"`
 }
 
@@ -53,7 +58,7 @@ type watchedUserInfo struct {
 
 func newWatchCmd() *cobra.Command {
 	var (
-		email            string
+		targetFlags      userMutationFlags
 		revenueThreshold string
 		note             string
 	)
@@ -64,28 +69,30 @@ func newWatchCmd() *cobra.Command {
 		Long: `Add a user to the admin watchlist without changing their risk state or
 payout status. The revenue threshold is entered as a normal money amount, for
 example 200 or 200.00.`,
-		Example: `  gumroad admin users watch --email seller@example.com --revenue-threshold 200
-  gumroad admin users watch --email seller@example.com --revenue-threshold 200 --note "Check next independent buyers"`,
+		Example: `  gumroad admin users watch --user-id 2245593582708 --revenue-threshold 200
+  gumroad admin users watch --user-id 2245593582708 --expected-email seller@example.com --revenue-threshold 200 --note "Check next independent buyers"`,
 		Args: cmdutil.ExactArgs(0),
 		RunE: func(c *cobra.Command, args []string) error {
 			opts := cmdutil.OptionsFrom(c)
-			if email == "" {
-				return cmdutil.MissingFlagError(c, "--email")
+			target, err := resolveUserMutationTarget(c, targetFlags)
+			if err != nil {
+				return err
 			}
 			threshold, thresholdCents, err := parseRevenueThreshold(c, revenueThreshold)
 			if err != nil {
 				return err
 			}
 
-			ok, err := cmdutil.ConfirmAction(opts, fmt.Sprintf("Add %s to the watchlist with revenue threshold %s?", email, formatWatchMoney(thresholdCents)))
+			identifier := target.identifier()
+			ok, err := cmdutil.ConfirmAction(opts, fmt.Sprintf("Add user_id %s to the watchlist with revenue threshold %s?", identifier, formatWatchMoney(thresholdCents)))
 			if err != nil {
 				return err
 			}
 			if !ok {
-				return cmdutil.PrintCancelledAction(opts, "watch user "+email, email)
+				return cmdutil.PrintCancelledAction(opts, "watch user_id "+identifier, identifier)
 			}
 
-			req := watchRequest{Email: email, RevenueThreshold: threshold, Notes: note}
+			req := watchRequest{UserID: target.UserID, ExpectedEmail: target.ExpectedEmail, RevenueThreshold: threshold, Notes: note}
 			path := "users/watch"
 
 			if opts.DryRun {
@@ -104,11 +111,11 @@ example 200 or 200.00.`,
 			if err != nil {
 				return err
 			}
-			return renderWatchAction(opts, email, decoded.Message, decoded.WatchedUser)
+			return renderWatchAction(opts, fallback(decoded.UserID, identifier), decoded.Message, decoded.WatchedUser)
 		},
 	}
 
-	cmd.Flags().StringVar(&email, "email", "", "User email (required)")
+	addUserMutationFlags(cmd, &targetFlags)
 	cmd.Flags().StringVar(&revenueThreshold, "revenue-threshold", "", "Revenue threshold as a money amount, for example 200 or 200.00 (required)")
 	cmd.Flags().StringVar(&note, "note", "", "Optional watch note")
 
@@ -117,7 +124,7 @@ example 200 or 200.00.`,
 
 func newUpdateWatchCmd() *cobra.Command {
 	var (
-		email            string
+		targetFlags      userMutationFlags
 		revenueThreshold string
 		note             string
 		clearNote        bool
@@ -128,14 +135,15 @@ func newUpdateWatchCmd() *cobra.Command {
 		Short: "Update a user's active watchlist entry",
 		Long: `Update the active watchlist entry for a user. When --note is omitted, the
 existing note is preserved. Use --clear-note to remove the existing note.`,
-		Example: `  gumroad admin users update-watch --email seller@example.com --revenue-threshold 500
-  gumroad admin users update-watch --email seller@example.com --revenue-threshold 500 --note "Still monitoring"
-  gumroad admin users update-watch --email seller@example.com --revenue-threshold 500 --clear-note`,
+		Example: `  gumroad admin users update-watch --user-id 2245593582708 --revenue-threshold 500
+  gumroad admin users update-watch --user-id 2245593582708 --revenue-threshold 500 --note "Still monitoring"
+  gumroad admin users update-watch --user-id 2245593582708 --revenue-threshold 500 --clear-note`,
 		Args: cmdutil.ExactArgs(0),
 		RunE: func(c *cobra.Command, args []string) error {
 			opts := cmdutil.OptionsFrom(c)
-			if email == "" {
-				return cmdutil.MissingFlagError(c, "--email")
+			target, err := resolveUserMutationTarget(c, targetFlags)
+			if err != nil {
+				return err
 			}
 			if c.Flags().Changed("note") && clearNote {
 				return cmdutil.UsageErrorf(c, "--note and --clear-note cannot be used together")
@@ -146,7 +154,8 @@ existing note is preserved. Use --clear-note to remove the existing note.`,
 			}
 
 			notes := watchNotesPointer(c, note, clearNote)
-			confirmMsg := fmt.Sprintf("Update watch for %s to revenue threshold %s?", email, formatWatchMoney(thresholdCents))
+			identifier := target.identifier()
+			confirmMsg := fmt.Sprintf("Update watch for user_id %s to revenue threshold %s?", identifier, formatWatchMoney(thresholdCents))
 			switch {
 			case clearNote:
 				confirmMsg += " (note will be cleared)"
@@ -159,10 +168,10 @@ existing note is preserved. Use --clear-note to remove the existing note.`,
 				return err
 			}
 			if !ok {
-				return cmdutil.PrintCancelledAction(opts, "update watch for "+email, email)
+				return cmdutil.PrintCancelledAction(opts, "update watch for user_id "+identifier, identifier)
 			}
 
-			req := updateWatchRequest{Email: email, RevenueThreshold: threshold, Notes: notes}
+			req := updateWatchRequest{UserID: target.UserID, ExpectedEmail: target.ExpectedEmail, RevenueThreshold: threshold, Notes: notes}
 			path := "users/update_watch"
 
 			if opts.DryRun {
@@ -181,11 +190,11 @@ existing note is preserved. Use --clear-note to remove the existing note.`,
 			if err != nil {
 				return err
 			}
-			return renderWatchAction(opts, email, decoded.Message, decoded.WatchedUser)
+			return renderWatchAction(opts, fallback(decoded.UserID, identifier), decoded.Message, decoded.WatchedUser)
 		},
 	}
 
-	cmd.Flags().StringVar(&email, "email", "", "User email (required)")
+	addUserMutationFlags(cmd, &targetFlags)
 	cmd.Flags().StringVar(&revenueThreshold, "revenue-threshold", "", "Revenue threshold as a money amount, for example 500 or 500.00 (required)")
 	cmd.Flags().StringVar(&note, "note", "", "Watch note")
 	cmd.Flags().BoolVar(&clearNote, "clear-note", false, "Clear the existing watch note")
@@ -194,34 +203,35 @@ existing note is preserved. Use --clear-note to remove the existing note.`,
 }
 
 func newUnwatchCmd() *cobra.Command {
-	var email string
+	var targetFlags userMutationFlags
 
 	cmd := &cobra.Command{
 		Use:   "unwatch",
 		Short: "Remove a user from the admin watchlist",
-		Example: `  gumroad admin users unwatch --email seller@example.com
-  gumroad admin users unwatch --email seller@example.com --yes`,
+		Example: `  gumroad admin users unwatch --user-id 2245593582708
+  gumroad admin users unwatch --user-id 2245593582708 --yes`,
 		Args: cmdutil.ExactArgs(0),
 		RunE: func(c *cobra.Command, args []string) error {
 			opts := cmdutil.OptionsFrom(c)
-			if email == "" {
-				return cmdutil.MissingFlagError(c, "--email")
+			target, err := resolveUserMutationTarget(c, targetFlags)
+			if err != nil {
+				return err
 			}
 
-			ok, err := cmdutil.ConfirmAction(opts, "Remove "+email+" from the watchlist?")
+			identifier := target.identifier()
+			ok, err := cmdutil.ConfirmAction(opts, "Remove user_id "+identifier+" from the watchlist?")
 			if err != nil {
 				return err
 			}
 			if !ok {
-				return cmdutil.PrintCancelledAction(opts, "unwatch user "+email, email)
+				return cmdutil.PrintCancelledAction(opts, "unwatch user_id "+identifier, identifier)
 			}
 
-			req := unwatchRequest{Email: email}
+			req := unwatchRequest{UserID: target.UserID, ExpectedEmail: target.ExpectedEmail}
 			path := "users/unwatch"
 
 			if opts.DryRun {
-				params := url.Values{}
-				params.Set("email", email)
+				params := userMutationParams(target)
 				return cmdutil.PrintDryRunRequest(opts, http.MethodPost, adminapi.AdminPath(path), params)
 			}
 
@@ -237,11 +247,11 @@ func newUnwatchCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return renderUnwatchAction(opts, email, decoded)
+			return renderUnwatchAction(opts, fallback(decoded.UserID, identifier), decoded)
 		},
 	}
 
-	cmd.Flags().StringVar(&email, "email", "", "User email (required)")
+	addUserMutationFlags(cmd, &targetFlags)
 
 	return cmd
 }
@@ -273,7 +283,10 @@ func watchNotesPointer(cmd *cobra.Command, note string, clearNote bool) *string 
 
 func watchDryRunParams(req watchRequest) url.Values {
 	params := url.Values{}
-	params.Set("email", req.Email)
+	params.Set("user_id", req.UserID)
+	if req.ExpectedEmail != "" {
+		params.Set("expected_email", req.ExpectedEmail)
+	}
 	params.Set("revenue_threshold", req.RevenueThreshold)
 	if req.Notes != "" {
 		params.Set("notes", req.Notes)
@@ -283,7 +296,10 @@ func watchDryRunParams(req watchRequest) url.Values {
 
 func updateWatchDryRunParams(req updateWatchRequest) url.Values {
 	params := url.Values{}
-	params.Set("email", req.Email)
+	params.Set("user_id", req.UserID)
+	if req.ExpectedEmail != "" {
+		params.Set("expected_email", req.ExpectedEmail)
+	}
 	params.Set("revenue_threshold", req.RevenueThreshold)
 	if req.Notes != nil {
 		params.Set("notes", *req.Notes)
@@ -291,11 +307,11 @@ func updateWatchDryRunParams(req updateWatchRequest) url.Values {
 	return params
 }
 
-func renderWatchAction(opts cmdutil.Options, email, message string, watchedUser *watchedUserInfo) error {
+func renderWatchAction(opts cmdutil.Options, userID, message string, watchedUser *watchedUserInfo) error {
 	message = fallback(message, "Watchlist updated")
 
 	if opts.PlainOutput {
-		row := []string{"true", message, email}
+		row := []string{"true", message, userID}
 		if watchedUser != nil {
 			row = append(row,
 				watchedUser.ID,
@@ -317,19 +333,19 @@ func renderWatchAction(opts cmdutil.Options, email, message string, watchedUser 
 	if err := output.Writeln(opts.Out(), opts.Style().Green(message)); err != nil {
 		return err
 	}
-	if email != "" {
-		if err := output.Writef(opts.Out(), "Email: %s\n", email); err != nil {
+	if userID != "" {
+		if err := output.Writef(opts.Out(), "User ID: %s\n", userID); err != nil {
 			return err
 		}
 	}
 	return writeWatchedUser(opts.Out(), watchedUser)
 }
 
-func renderUnwatchAction(opts cmdutil.Options, email string, resp unwatchResponse) error {
+func renderUnwatchAction(opts cmdutil.Options, userID string, resp unwatchResponse) error {
 	message := fallback(resp.Message, "User removed from watchlist")
 
 	if opts.PlainOutput {
-		return output.PrintPlain(opts.Out(), [][]string{{"true", message, email}})
+		return output.PrintPlain(opts.Out(), [][]string{{"true", message, userID}})
 	}
 	if opts.Quiet {
 		return nil
@@ -337,8 +353,8 @@ func renderUnwatchAction(opts cmdutil.Options, email string, resp unwatchRespons
 	if err := output.Writeln(opts.Out(), opts.Style().Green(message)); err != nil {
 		return err
 	}
-	if email != "" {
-		return output.Writef(opts.Out(), "Email: %s\n", email)
+	if userID != "" {
+		return output.Writef(opts.Out(), "User ID: %s\n", userID)
 	}
 	return nil
 }

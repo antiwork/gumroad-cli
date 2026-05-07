@@ -10,7 +10,7 @@ import (
 	"github.com/antiwork/gumroad-cli/internal/testutil"
 )
 
-func TestSuspendRequiresEmailOrExternalID(t *testing.T) {
+func TestSuspendRequiresUserID(t *testing.T) {
 	cmd := newSuspendCmd()
 	cmd.SetArgs([]string{})
 
@@ -18,12 +18,12 @@ func TestSuspendRequiresEmailOrExternalID(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected missing identifier error")
 	}
-	if !strings.Contains(err.Error(), "supply --email or --external-id") {
+	if !strings.Contains(err.Error(), "missing required flag: --user-id") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
-func TestSuspendSendsExternalID(t *testing.T) {
+func TestSuspendSendsUserID(t *testing.T) {
 	var body suspendRequest
 
 	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
@@ -35,7 +35,7 @@ func TestSuspendSendsExternalID(t *testing.T) {
 			t.Fatalf("decode body: %v", err)
 		}
 		if strings.Contains(string(raw), `"email"`) {
-			t.Errorf("email field must be omitted when only --external-id is supplied, got %q", raw)
+			t.Errorf("email field must be omitted when only --user-id is supplied, got %q", raw)
 		}
 		testutil.JSON(t, w, map[string]any{
 			"success": true,
@@ -45,18 +45,18 @@ func TestSuspendSendsExternalID(t *testing.T) {
 	})
 
 	cmd := testutil.Command(newSuspendCmd(), testutil.Yes(true), testutil.Quiet(false))
-	cmd.SetArgs([]string{"--external-id", "2245593582708"})
+	cmd.SetArgs([]string{"--user-id", "2245593582708"})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
-	if body.ExternalID != "2245593582708" || body.Email != "" {
-		t.Errorf("got email=%q external_id=%q, want only external_id", body.Email, body.ExternalID)
+	if body.UserID != "2245593582708" || body.ExpectedEmail != "" {
+		t.Errorf("got user_id=%q expected_email=%q, want only user_id", body.UserID, body.ExpectedEmail)
 	}
-	if !strings.Contains(out, "External ID: 2245593582708") {
-		t.Errorf("expected External ID label when only --external-id is supplied: %q", out)
+	if !strings.Contains(out, "User ID: 2245593582708") {
+		t.Errorf("expected User ID label when only --user-id is supplied: %q", out)
 	}
 }
 
-func TestSuspendForwardsBothEmailAndExternalID(t *testing.T) {
+func TestSuspendForwardsExpectedEmail(t *testing.T) {
 	var body suspendRequest
 
 	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
@@ -72,13 +72,13 @@ func TestSuspendForwardsBothEmailAndExternalID(t *testing.T) {
 
 	cmd := testutil.Command(newSuspendCmd(), testutil.Yes(true))
 	cmd.SetArgs([]string{
-		"--email", "seller@example.com",
-		"--external-id", "2245593582708",
+		"--user-id", "2245593582708",
+		"--expected-email", "seller@example.com",
 	})
 	testutil.MustExecute(t, cmd)
 
-	if body.Email != "seller@example.com" || body.ExternalID != "2245593582708" {
-		t.Errorf("got email=%q external_id=%q, want both forwarded", body.Email, body.ExternalID)
+	if body.ExpectedEmail != "seller@example.com" || body.UserID != "2245593582708" {
+		t.Errorf("got expected_email=%q user_id=%q, want both forwarded", body.ExpectedEmail, body.UserID)
 	}
 }
 
@@ -88,7 +88,7 @@ func TestSuspendRequiresConfirmation(t *testing.T) {
 	})
 
 	cmd := testutil.Command(newSuspendCmd(), testutil.NoInput(true))
-	cmd.SetArgs([]string{"--email", "seller@example.com"})
+	cmd.SetArgs([]string{"--user-id", "2245593582708"})
 
 	err := cmd.Execute()
 	if err == nil {
@@ -99,7 +99,7 @@ func TestSuspendRequiresConfirmation(t *testing.T) {
 	}
 }
 
-func TestSuspendSendsEmailAndSuspensionNote(t *testing.T) {
+func TestSuspendSendsUserIDExpectedEmailAndSuspensionNote(t *testing.T) {
 	var gotMethod, gotPath, gotQuery, gotAuth string
 	var body suspendRequest
 
@@ -123,22 +123,22 @@ func TestSuspendSendsEmailAndSuspensionNote(t *testing.T) {
 	})
 
 	cmd := testutil.Command(newSuspendCmd(), testutil.Yes(true), testutil.Quiet(false))
-	cmd.SetArgs([]string{"--email", "seller@example.com", "--note", "Chargeback risk confirmed"})
+	cmd.SetArgs([]string{"--user-id", "2245593582708", "--expected-email", "seller@example.com", "--note", "Chargeback risk confirmed"})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
 	if gotMethod != "POST" || gotPath != "/internal/admin/users/suspend_for_fraud" {
 		t.Fatalf("got %s %s, want POST /internal/admin/users/suspend_for_fraud", gotMethod, gotPath)
 	}
 	if gotQuery != "" {
-		t.Fatalf("email/note must not appear in query string, got %q", gotQuery)
+		t.Fatalf("body fields must not appear in query string, got %q", gotQuery)
 	}
 	if gotAuth != "Bearer admin-token" {
 		t.Fatalf("got auth %q, want Bearer admin-token", gotAuth)
 	}
-	if body.Email != "seller@example.com" || body.SuspensionNote != "Chargeback risk confirmed" {
+	if body.UserID != "2245593582708" || body.ExpectedEmail != "seller@example.com" || body.SuspensionNote != "Chargeback risk confirmed" {
 		t.Fatalf("unexpected request body: %#v", body)
 	}
-	for _, want := range []string{"User suspended for fraud", "Email: seller@example.com", "Status: suspended_for_fraud"} {
+	for _, want := range []string{"User suspended for fraud", "User ID: 2245593582708", "Status: suspended_for_fraud"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("output missing %q: %q", want, out)
 		}
@@ -151,14 +151,14 @@ func TestSuspendDryRunDoesNotContactEndpoint(t *testing.T) {
 	})
 
 	cmd := testutil.Command(newSuspendCmd(), testutil.DryRun(true), testutil.NoInput(true))
-	cmd.SetArgs([]string{"--email", "seller@example.com", "--note", "Chargeback risk confirmed"})
+	cmd.SetArgs([]string{"--user-id", "2245593582708", "--expected-email", "seller@example.com", "--note", "Chargeback risk confirmed"})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
 	if !strings.Contains(out, "POST") || !strings.Contains(out, "/internal/admin/users/suspend_for_fraud") {
 		t.Errorf("expected dry-run preview to mention POST and the suspend_for_fraud path, got: %q", out)
 	}
-	if !strings.Contains(out, "email: seller@example.com") || !strings.Contains(out, "suspension_note: Chargeback risk confirmed") {
-		t.Errorf("expected dry-run preview to include email and suspension_note, got: %q", out)
+	if !strings.Contains(out, "user_id: 2245593582708") || !strings.Contains(out, "expected_email: seller@example.com") || !strings.Contains(out, "suspension_note: Chargeback risk confirmed") {
+		t.Errorf("expected dry-run preview to include user_id, expected_email, and suspension_note, got: %q", out)
 	}
 }
 
@@ -172,7 +172,7 @@ func TestSuspendJSONPreservesResponse(t *testing.T) {
 	})
 
 	cmd := testutil.Command(newSuspendCmd(), testutil.Yes(true), testutil.JSONOutput())
-	cmd.SetArgs([]string{"--email", "seller@example.com"})
+	cmd.SetArgs([]string{"--user-id", "2245593582708"})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
 	var resp riskActionResponse
@@ -194,10 +194,10 @@ func TestSuspendPlainOutput(t *testing.T) {
 	})
 
 	cmd := testutil.Command(newSuspendCmd(), testutil.Yes(true), testutil.PlainOutput())
-	cmd.SetArgs([]string{"--email", "seller@example.com"})
+	cmd.SetArgs([]string{"--user-id", "2245593582708"})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
-	want := "true\tUser suspended for fraud\tseller@example.com\tsuspended_for_fraud"
+	want := "true\tUser suspended for fraud\t2245593582708\tsuspended_for_fraud"
 	if strings.TrimSpace(out) != want {
 		t.Fatalf("unexpected plain output: %q", out)
 	}

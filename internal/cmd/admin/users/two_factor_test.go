@@ -31,27 +31,27 @@ func TestTwoFactor_NamespaceWiresLeaves(t *testing.T) {
 	}
 }
 
-func TestTwoFactor_EnableRequiresEmailOrExternalID(t *testing.T) {
+func TestTwoFactor_EnableRequiresUserID(t *testing.T) {
 	cmd := newTwoFactorEnableCmd()
 	cmd.SetArgs([]string{})
 
 	err := cmd.Execute()
-	if err == nil || !strings.Contains(err.Error(), "supply --email or --external-id") {
+	if err == nil || !strings.Contains(err.Error(), "missing required flag: --user-id") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
-func TestTwoFactor_DisableRequiresEmailOrExternalID(t *testing.T) {
+func TestTwoFactor_DisableRequiresUserID(t *testing.T) {
 	cmd := newTwoFactorDisableCmd()
 	cmd.SetArgs([]string{})
 
 	err := cmd.Execute()
-	if err == nil || !strings.Contains(err.Error(), "supply --email or --external-id") {
+	if err == nil || !strings.Contains(err.Error(), "missing required flag: --user-id") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
-func TestTwoFactor_DisableSendsExternalID(t *testing.T) {
+func TestTwoFactor_DisableSendsUserID(t *testing.T) {
 	var body twoFactorRequest
 
 	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
@@ -63,7 +63,7 @@ func TestTwoFactor_DisableSendsExternalID(t *testing.T) {
 			t.Fatalf("decode body: %v", err)
 		}
 		if strings.Contains(string(raw), `"email"`) {
-			t.Errorf("email field must be omitted when only --external-id is supplied, got %q", raw)
+			t.Errorf("email field must be omitted when only --user-id is supplied, got %q", raw)
 		}
 		testutil.JSON(t, w, map[string]any{
 			"message":                           "Two-factor authentication disabled",
@@ -72,18 +72,18 @@ func TestTwoFactor_DisableSendsExternalID(t *testing.T) {
 	})
 
 	cmd := testutil.Command(newTwoFactorDisableCmd(), testutil.Yes(true), testutil.Quiet(false))
-	cmd.SetArgs([]string{"--external-id", "2245593582708"})
+	cmd.SetArgs([]string{"--user-id", "2245593582708"})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
-	if body.ExternalID != "2245593582708" || body.Email != "" || body.Enabled {
-		t.Errorf("got email=%q external_id=%q enabled=%v, want only external_id + enabled=false", body.Email, body.ExternalID, body.Enabled)
+	if body.UserID != "2245593582708" || body.ExpectedEmail != "" || body.Enabled {
+		t.Errorf("got user_id=%q expected_email=%q enabled=%v, want only user_id + enabled=false", body.UserID, body.ExpectedEmail, body.Enabled)
 	}
 	if !strings.Contains(out, "Two-factor: disabled") {
 		t.Errorf("expected disabled state in output: %q", out)
 	}
 }
 
-func TestTwoFactor_ForwardsBothEmailAndExternalID(t *testing.T) {
+func TestTwoFactor_ForwardsExpectedEmail(t *testing.T) {
 	var body twoFactorRequest
 
 	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
@@ -97,11 +97,11 @@ func TestTwoFactor_ForwardsBothEmailAndExternalID(t *testing.T) {
 	})
 
 	cmd := testutil.Command(newTwoFactorDisableCmd(), testutil.Yes(true))
-	cmd.SetArgs([]string{"--email", "user@example.com", "--external-id", "2245593582708"})
+	cmd.SetArgs([]string{"--user-id", "2245593582708", "--expected-email", "user@example.com"})
 	testutil.MustExecute(t, cmd)
 
-	if body.Email != "user@example.com" || body.ExternalID != "2245593582708" {
-		t.Errorf("got email=%q external_id=%q, want both forwarded", body.Email, body.ExternalID)
+	if body.ExpectedEmail != "user@example.com" || body.UserID != "2245593582708" {
+		t.Errorf("got expected_email=%q user_id=%q, want both forwarded", body.ExpectedEmail, body.UserID)
 	}
 }
 
@@ -111,7 +111,7 @@ func TestTwoFactor_RequiresConfirmation(t *testing.T) {
 	})
 
 	cmd := testutil.Command(newTwoFactorDisableCmd(), testutil.NoInput(true))
-	cmd.SetArgs([]string{"--email", "user@example.com"})
+	cmd.SetArgs([]string{"--user-id", "2245593582708"})
 
 	err := cmd.Execute()
 	if err == nil {
@@ -139,14 +139,14 @@ func TestTwoFactor_EnableSendsEnabledTrue(t *testing.T) {
 	})
 
 	cmd := testutil.Command(newTwoFactorEnableCmd(), testutil.Yes(true), testutil.Quiet(false))
-	cmd.SetArgs([]string{"--email", "user@example.com"})
+	cmd.SetArgs([]string{"--user-id", "2245593582708"})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
 	if gotMethod != "POST" || gotPath != "/internal/admin/users/two_factor_authentication" {
 		t.Fatalf("got %s %s, want POST /internal/admin/users/two_factor_authentication", gotMethod, gotPath)
 	}
-	if body.Email != "user@example.com" || !body.Enabled {
-		t.Errorf("got email=%q enabled=%v, want user@example.com / true", body.Email, body.Enabled)
+	if body.UserID != "2245593582708" || !body.Enabled {
+		t.Errorf("got user_id=%q enabled=%v, want 2245593582708 / true", body.UserID, body.Enabled)
 	}
 	if !strings.Contains(out, "Two-factor: enabled") {
 		t.Errorf("expected two-factor state in output: %q", out)
@@ -175,7 +175,7 @@ func TestTwoFactor_DisableSendsEnabledFalse(t *testing.T) {
 	})
 
 	cmd := testutil.Command(newTwoFactorDisableCmd(), testutil.Yes(true), testutil.Quiet(false))
-	cmd.SetArgs([]string{"--email", "user@example.com"})
+	cmd.SetArgs([]string{"--user-id", "2245593582708"})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
 	if body.Enabled {
@@ -195,7 +195,7 @@ func TestTwoFactor_DryRunDoesNotPost(t *testing.T) {
 	})
 
 	cmd := testutil.Command(newTwoFactorDisableCmd(), testutil.DryRun(true), testutil.NoInput(true))
-	cmd.SetArgs([]string{"--email", "user@example.com"})
+	cmd.SetArgs([]string{"--user-id", "2245593582708"})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
 	if !strings.Contains(out, "POST") || !strings.Contains(out, "/internal/admin/users/two_factor_authentication") {
@@ -203,6 +203,9 @@ func TestTwoFactor_DryRunDoesNotPost(t *testing.T) {
 	}
 	if !strings.Contains(out, "enabled: false") {
 		t.Errorf("expected enabled=false in dry-run preview, got: %q", out)
+	}
+	if !strings.Contains(out, "user_id: 2245593582708") {
+		t.Errorf("expected user_id in dry-run preview, got: %q", out)
 	}
 }
 
@@ -215,7 +218,7 @@ func TestTwoFactor_JSONPreservesResponse(t *testing.T) {
 	})
 
 	cmd := testutil.Command(newTwoFactorDisableCmd(), testutil.Yes(true), testutil.JSONOutput())
-	cmd.SetArgs([]string{"--email", "user@example.com"})
+	cmd.SetArgs([]string{"--user-id", "2245593582708"})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
 	var resp struct {
@@ -239,10 +242,10 @@ func TestTwoFactor_FallbackMessageDerivedFromServerState(t *testing.T) {
 	})
 
 	cmd := testutil.Command(newTwoFactorEnableCmd(), testutil.Yes(true), testutil.Quiet(false))
-	cmd.SetArgs([]string{"--email", "user@example.com"})
+	cmd.SetArgs([]string{"--user-id", "2245593582708"})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
-	if !strings.Contains(out, "Two-factor authentication disabled for user@example.com") {
+	if !strings.Contains(out, "Two-factor authentication disabled for user_id 2245593582708") {
 		t.Errorf("fallback headline must reflect the server-reported state (false), not the operator's request, got: %q", out)
 	}
 	if strings.Contains(out, "Two-factor authentication enabled for") {
@@ -262,10 +265,10 @@ func TestTwoFactor_PlainOutput(t *testing.T) {
 	})
 
 	cmd := testutil.Command(newTwoFactorEnableCmd(), testutil.Yes(true), testutil.PlainOutput())
-	cmd.SetArgs([]string{"--email", "user@example.com"})
+	cmd.SetArgs([]string{"--user-id", "2245593582708"})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
-	want := "true\tTwo-factor authentication enabled\tuser@example.com\tenabled"
+	want := "true\tTwo-factor authentication enabled\t2245593582708\tenabled"
 	if strings.TrimSpace(out) != want {
 		t.Fatalf("unexpected plain output: %q", out)
 	}

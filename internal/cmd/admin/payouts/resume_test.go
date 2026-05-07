@@ -10,15 +10,15 @@ import (
 	"github.com/antiwork/gumroad-cli/internal/testutil"
 )
 
-func TestResume_RequiresEmail(t *testing.T) {
+func TestResume_RequiresUserID(t *testing.T) {
 	cmd := newResumeCmd()
 	cmd.SetArgs([]string{})
 
 	err := cmd.Execute()
 	if err == nil {
-		t.Fatal("expected missing email error")
+		t.Fatal("expected missing user ID error")
 	}
-	if !strings.Contains(err.Error(), "missing required flag: --email") {
+	if !strings.Contains(err.Error(), "missing required flag: --user-id") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -29,7 +29,7 @@ func TestResume_RequiresConfirmation(t *testing.T) {
 	})
 
 	cmd := testutil.Command(newResumeCmd(), testutil.NoInput(true))
-	cmd.SetArgs([]string{"--email", "seller@example.com"})
+	cmd.SetArgs([]string{"--user-id", "2245593582708"})
 
 	err := cmd.Execute()
 	if err == nil {
@@ -40,7 +40,7 @@ func TestResume_RequiresConfirmation(t *testing.T) {
 	}
 }
 
-func TestResume_SendsEmailOnly(t *testing.T) {
+func TestResume_SendsUserIDOnly(t *testing.T) {
 	var gotMethod, gotPath, gotAuth, gotQuery string
 	var body resumeRequest
 
@@ -57,13 +57,13 @@ func TestResume_SendsEmailOnly(t *testing.T) {
 			t.Fatalf("decode body: %v", err)
 		}
 		testutil.JSON(t, w, map[string]any{
-			"message":        "Payouts resumed for seller@example.com",
+			"message":        "Payouts resumed for 2245593582708",
 			"payouts_paused": false,
 		})
 	})
 
 	cmd := testutil.Command(newResumeCmd(), testutil.Yes(true), testutil.Quiet(false))
-	cmd.SetArgs([]string{"--email", "seller@example.com"})
+	cmd.SetArgs([]string{"--user-id", "2245593582708"})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
 	if gotMethod != "POST" || gotPath != "/internal/admin/payouts/resume" {
@@ -73,12 +73,12 @@ func TestResume_SendsEmailOnly(t *testing.T) {
 		t.Fatalf("got auth %q, want Bearer admin-token", gotAuth)
 	}
 	if gotQuery != "" {
-		t.Fatalf("email must not appear in query string, got %q", gotQuery)
+		t.Fatalf("body fields must not appear in query string, got %q", gotQuery)
 	}
-	if body.Email != "seller@example.com" {
-		t.Fatalf("got email %q, want seller@example.com", body.Email)
+	if body.UserID != "2245593582708" {
+		t.Fatalf("got user_id %q, want 2245593582708", body.UserID)
 	}
-	for _, want := range []string{"Payouts resumed for seller@example.com", "Email: seller@example.com", "Payouts: resumed"} {
+	for _, want := range []string{"Payouts resumed for 2245593582708", "User ID: 2245593582708", "Payouts: resumed"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output missing %q: %q", want, out)
 		}
@@ -95,7 +95,7 @@ func TestResume_NotPausedShortCircuit(t *testing.T) {
 	})
 
 	cmd := testutil.Command(newResumeCmd(), testutil.Yes(true), testutil.Quiet(false))
-	cmd.SetArgs([]string{"--email", "seller@example.com"})
+	cmd.SetArgs([]string{"--user-id", "2245593582708"})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
 	for _, want := range []string{"Payouts are not paused", "Status: not_paused", "Payouts: resumed"} {
@@ -111,14 +111,14 @@ func TestResume_DryRunDoesNotContactEndpoint(t *testing.T) {
 	})
 
 	cmd := testutil.Command(newResumeCmd(), testutil.DryRun(true), testutil.NoInput(true))
-	cmd.SetArgs([]string{"--email", "seller@example.com"})
+	cmd.SetArgs([]string{"--user-id", "2245593582708", "--expected-email", "seller@example.com"})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
 	if !strings.Contains(out, "POST") || !strings.Contains(out, "/internal/admin/payouts/resume") {
 		t.Errorf("expected dry-run preview to mention POST and the resume path, got: %q", out)
 	}
-	if !strings.Contains(out, "email: seller@example.com") {
-		t.Errorf("expected dry-run preview to include email, got: %q", out)
+	if !strings.Contains(out, "user_id: 2245593582708") || !strings.Contains(out, "expected_email: seller@example.com") {
+		t.Errorf("expected dry-run preview to include user_id and expected_email, got: %q", out)
 	}
 }
 
@@ -132,7 +132,7 @@ func TestResume_JSONPreservesResponse(t *testing.T) {
 	})
 
 	cmd := testutil.Command(newResumeCmd(), testutil.Yes(true), testutil.JSONOutput())
-	cmd.SetArgs([]string{"--email", "seller@example.com"})
+	cmd.SetArgs([]string{"--user-id", "2245593582708"})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
 	var resp payoutsActionResponse
@@ -147,16 +147,16 @@ func TestResume_JSONPreservesResponse(t *testing.T) {
 func TestResume_PlainOutput(t *testing.T) {
 	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
 		testutil.JSON(t, w, map[string]any{
-			"message":        "Payouts resumed for seller@example.com",
+			"message":        "Payouts resumed for 2245593582708",
 			"payouts_paused": false,
 		})
 	})
 
 	cmd := testutil.Command(newResumeCmd(), testutil.Yes(true), testutil.PlainOutput())
-	cmd.SetArgs([]string{"--email", "seller@example.com"})
+	cmd.SetArgs([]string{"--user-id", "2245593582708"})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
-	want := "true\tPayouts resumed for seller@example.com\tseller@example.com\t\tresumed"
+	want := "true\tPayouts resumed for 2245593582708\t2245593582708\t\tresumed"
 	if strings.TrimSpace(out) != want {
 		t.Fatalf("unexpected plain output: %q", out)
 	}

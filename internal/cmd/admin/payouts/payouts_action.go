@@ -7,12 +7,13 @@ import (
 
 type payoutsActionResponse struct {
 	Success       bool   `json:"success"`
+	UserID        string `json:"user_id"`
 	Status        string `json:"status"`
 	Message       string `json:"message"`
 	PayoutsPaused bool   `json:"payouts_paused"`
 }
 
-func renderPayoutsAction(opts cmdutil.Options, email string, resp payoutsActionResponse) error {
+func renderPayoutsAction(opts cmdutil.Options, userID string, resp payoutsActionResponse) error {
 	message := resp.Message
 	if message == "" {
 		message = resp.Status
@@ -25,7 +26,7 @@ func renderPayoutsAction(opts cmdutil.Options, email string, resp payoutsActionR
 
 	if opts.PlainOutput {
 		return output.PrintPlain(opts.Out(), [][]string{
-			{"true", message, email, resp.Status, state},
+			{"true", message, userID, resp.Status, state},
 		})
 	}
 
@@ -37,8 +38,8 @@ func renderPayoutsAction(opts cmdutil.Options, email string, resp payoutsActionR
 	if err := output.Writeln(opts.Out(), style.Green(message)); err != nil {
 		return err
 	}
-	if email != "" {
-		if err := output.Writef(opts.Out(), "Email: %s\n", email); err != nil {
+	if userID != "" {
+		if err := output.Writef(opts.Out(), "User ID: %s\n", userID); err != nil {
 			return err
 		}
 	}

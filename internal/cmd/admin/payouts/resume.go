@@ -2,7 +2,6 @@ package payouts
 
 import (
 	"net/http"
-	"net/url"
 
 	"github.com/antiwork/gumroad-cli/internal/adminapi"
 	"github.com/antiwork/gumroad-cli/internal/admincmd"
@@ -11,40 +10,41 @@ import (
 )
 
 type resumeRequest struct {
-	Email string `json:"email"`
+	UserID        string `json:"user_id"`
+	ExpectedEmail string `json:"expected_email,omitempty"`
 }
 
 func newResumeCmd() *cobra.Command {
-	var email string
+	var targetFlags mutationFlags
 
 	cmd := &cobra.Command{
 		Use:   "resume",
 		Short: "Resume payouts for a user as an admin",
 		Long: `Resume internal payouts for a user. The server records a "Payouts resumed."
 audit comment on the user automatically.`,
-		Example: `  gumroad admin payouts resume --email seller@example.com
-  gumroad admin payouts resume --email seller@example.com --yes`,
+		Example: `  gumroad admin payouts resume --user-id 2245593582708
+  gumroad admin payouts resume --user-id 2245593582708 --expected-email seller@example.com --yes`,
 		Args: cmdutil.ExactArgs(0),
 		RunE: func(c *cobra.Command, args []string) error {
 			opts := cmdutil.OptionsFrom(c)
-			if email == "" {
-				return cmdutil.MissingFlagError(c, "--email")
+			target, err := resolveMutationTarget(c, targetFlags)
+			if err != nil {
+				return err
 			}
 
-			ok, err := cmdutil.ConfirmAction(opts, "Resume payouts for "+email+"?")
+			ok, err := cmdutil.ConfirmAction(opts, "Resume payouts for user_id "+target.UserID+"?")
 			if err != nil {
 				return err
 			}
 			if !ok {
-				return cmdutil.PrintCancelledAction(opts, "resume payouts for "+email, email)
+				return cmdutil.PrintCancelledAction(opts, "resume payouts for user_id "+target.UserID, target.UserID)
 			}
 
-			req := resumeRequest{Email: email}
+			req := resumeRequest{UserID: target.UserID, ExpectedEmail: target.ExpectedEmail}
 			path := "payouts/resume"
 
 			if opts.DryRun {
-				params := url.Values{}
-				params.Set("email", email)
+				params := mutationParams(target)
 				return cmdutil.PrintDryRunRequest(opts, http.MethodPost, adminapi.AdminPath(path), params)
 			}
 
@@ -61,11 +61,11 @@ audit comment on the user automatically.`,
 			if err != nil {
 				return err
 			}
-			return renderPayoutsAction(opts, email, decoded)
+			return renderPayoutsAction(opts, fallbackStr(decoded.UserID, target.UserID), decoded)
 		},
 	}
 
-	cmd.Flags().StringVar(&email, "email", "", "User email (required)")
+	addMutationFlags(cmd, &targetFlags)
 
 	return cmd
 }

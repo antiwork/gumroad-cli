@@ -7,15 +7,9 @@ import (
 
 type riskActionResponse struct {
 	Success bool   `json:"success"`
+	UserID  string `json:"user_id"`
 	Status  string `json:"status"`
 	Message string `json:"message"`
-}
-
-func riskActionLabel(email, externalID string) string {
-	if email == "" && externalID != "" {
-		return "External ID"
-	}
-	return "Email"
 }
 
 func renderRiskAction(opts cmdutil.Options, label, identifier string, resp riskActionResponse) error {

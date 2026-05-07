@@ -13,6 +13,7 @@ import (
 )
 
 type payoutsResponse struct {
+	UserID               string   `json:"user_id"`
 	LastPayouts          []payout `json:"last_payouts"`
 	NextPayoutDate       string   `json:"next_payout_date"`
 	BalanceForNextPayout string   `json:"balance_for_next_payout"`
@@ -31,11 +32,12 @@ type payout struct {
 }
 
 type listRequest struct {
-	Email string `json:"email"`
+	Email  string `json:"email,omitempty"`
+	UserID string `json:"user_id,omitempty"`
 }
 
 func newListCmd() *cobra.Command {
-	var email string
+	var lookup lookupFlags
 
 	cmd := &cobra.Command{
 		Use:   "list",
@@ -43,30 +45,36 @@ func newListCmd() *cobra.Command {
 		Args:  cmdutil.ExactArgs(0),
 		RunE: func(c *cobra.Command, args []string) error {
 			opts := cmdutil.OptionsFrom(c)
-			if email == "" {
-				return cmdutil.MissingFlagError(c, "--email")
+			target, err := resolveLookupTarget(c, lookup)
+			if err != nil {
+				return err
 			}
 
-			return admincmd.RunPostJSONDecoded[payoutsResponse](opts, "Fetching payouts...", "/payouts/list", listRequest{Email: email}, func(resp payoutsResponse) error {
-				return renderPayouts(opts, email, resp)
+			return admincmd.RunPostJSONDecoded[payoutsResponse](opts, "Fetching payouts...", "/payouts/list", listRequest{Email: target.Email, UserID: target.UserID}, func(resp payoutsResponse) error {
+				return renderPayouts(opts, target.identifier(), resp)
 			})
 		},
 	}
 
-	cmd.Flags().StringVar(&email, "email", "", "User email (required)")
+	addLookupFlags(cmd, &lookup)
 
 	return cmd
 }
 
-func renderPayouts(opts cmdutil.Options, email string, resp payoutsResponse) error {
+func renderPayouts(opts cmdutil.Options, identifier string, resp payoutsResponse) error {
 	if opts.PlainOutput {
-		return writePayoutsPlain(opts.Out(), email, resp)
+		return writePayoutsPlain(opts.Out(), identifier, resp)
 	}
 
 	style := opts.Style()
 	return output.WithPager(opts.Out(), opts.Err(), func(w io.Writer) error {
-		if err := output.Writeln(w, style.Bold(email)); err != nil {
+		if err := output.Writeln(w, style.Bold(identifier)); err != nil {
 			return err
+		}
+		if resp.UserID != "" {
+			if err := output.Writef(w, "User ID: %s\n", resp.UserID); err != nil {
+				return err
+			}
 		}
 		if resp.NextPayoutDate != "" {
 			if err := output.Writef(w, "Next payout: %s\n", resp.NextPayoutDate); err != nil {
@@ -93,15 +101,15 @@ func renderPayouts(opts cmdutil.Options, email string, resp payoutsResponse) err
 	})
 }
 
-func writePayoutsPlain(w io.Writer, email string, resp payoutsResponse) error {
+func writePayoutsPlain(w io.Writer, identifier string, resp payoutsResponse) error {
 	if len(resp.LastPayouts) == 0 {
-		return output.PrintPlain(w, [][]string{{email, "", "", "", "", "", "", resp.NextPayoutDate, resp.BalanceForNextPayout, resp.PayoutNote}})
+		return output.PrintPlain(w, [][]string{{identifier, "", "", "", "", "", "", resp.NextPayoutDate, resp.BalanceForNextPayout, resp.PayoutNote}})
 	}
 
 	rows := make([][]string, 0, len(resp.LastPayouts))
 	for _, p := range resp.LastPayouts {
 		rows = append(rows, []string{
-			email,
+			identifier,
 			p.ExternalID,
 			formatAmount(p),
 			p.State,

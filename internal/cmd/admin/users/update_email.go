@@ -2,7 +2,6 @@ package users
 
 import (
 	"net/http"
-	"net/url"
 
 	"github.com/antiwork/gumroad-cli/internal/adminapi"
 	"github.com/antiwork/gumroad-cli/internal/admincmd"
@@ -12,12 +11,13 @@ import (
 )
 
 type updateEmailRequest struct {
-	CurrentEmail string `json:"current_email,omitempty"`
-	ExternalID   string `json:"external_id,omitempty"`
-	NewEmail     string `json:"new_email"`
+	UserID        string `json:"user_id"`
+	ExpectedEmail string `json:"expected_email,omitempty"`
+	NewEmail      string `json:"new_email"`
 }
 
 type updateEmailResponse struct {
+	UserID              string `json:"user_id"`
 	Message             string `json:"message"`
 	UnconfirmedEmail    string `json:"unconfirmed_email"`
 	PendingConfirmation bool   `json:"pending_confirmation"`
@@ -25,9 +25,9 @@ type updateEmailResponse struct {
 
 func newUpdateEmailCmd() *cobra.Command {
 	var (
-		currentEmail string
-		externalID   string
-		newEmail     string
+		targetFlags       userMutationFlags
+		currentEmailAlias string
+		newEmail          string
 	)
 
 	cmd := &cobra.Command{
@@ -38,24 +38,30 @@ unconfirmed email and a confirmation message is sent to it; the user
 must click the confirmation link before the new address takes effect.
 Until then the existing email remains active.
 
-Identify the user with --current-email or --external-id. When both are
-supplied, the server resolves by --external-id.`,
-		Example: `  gumroad admin users update-email --current-email old@example.com --new-email new@example.com
-  gumroad admin users update-email --external-id 2245593582708 --new-email new@example.com
-  gumroad admin users update-email --current-email old@example.com --new-email new@example.com --yes`,
+Identify the user with --user-id. Pass --expected-email as an optional guard
+against acting on an account whose email has changed.`,
+		Example: `  gumroad admin users update-email --user-id 2245593582708 --new-email new@example.com
+  gumroad admin users update-email --user-id 2245593582708 --expected-email old@example.com --new-email new@example.com
+  gumroad admin users update-email --user-id 2245593582708 --new-email new@example.com --yes`,
 		Args: cmdutil.ExactArgs(0),
 		RunE: func(c *cobra.Command, args []string) error {
 			opts := cmdutil.OptionsFrom(c)
-			if currentEmail == "" && externalID == "" {
-				return cmdutil.UsageErrorf(c, "supply --current-email or --external-id")
+			if currentEmailAlias != "" {
+				if targetFlags.ExpectedEmail != "" && targetFlags.ExpectedEmail != currentEmailAlias {
+					return cmdutil.UsageErrorf(c, "--expected-email and --current-email must match")
+				}
+				targetFlags.ExpectedEmail = currentEmailAlias
+			}
+			target, err := resolveUserMutationTarget(c, targetFlags)
+			if err != nil {
+				return err
 			}
 			if newEmail == "" {
 				return cmdutil.MissingFlagError(c, "--new-email")
 			}
 
-			identifier := userIdentifier(currentEmail, externalID)
-			label := updateEmailLabel(currentEmail, externalID)
-			confirmSubject := updateEmailSubject(label, identifier)
+			identifier := target.identifier()
+			confirmSubject := target.subject()
 			ok, err := cmdutil.ConfirmAction(opts, "Change "+confirmSubject+" to "+newEmail+"? The user must confirm via email before the change takes effect.")
 			if err != nil {
 				return err
@@ -64,16 +70,10 @@ supplied, the server resolves by --external-id.`,
 				return cmdutil.PrintCancelledAction(opts, "update email from "+confirmSubject+" to "+newEmail, identifier)
 			}
 
-			req := updateEmailRequest{CurrentEmail: currentEmail, ExternalID: externalID, NewEmail: newEmail}
+			req := updateEmailRequest{UserID: target.UserID, ExpectedEmail: target.ExpectedEmail, NewEmail: newEmail}
 
 			if opts.DryRun {
-				params := url.Values{}
-				if currentEmail != "" {
-					params.Set("current_email", currentEmail)
-				}
-				if externalID != "" {
-					params.Set("external_id", externalID)
-				}
+				params := userMutationParams(target)
 				params.Set("new_email", newEmail)
 				return cmdutil.PrintDryRunRequest(opts, http.MethodPost, adminapi.AdminPath("/users/update_email"), params)
 			}
@@ -91,20 +91,21 @@ supplied, the server resolves by --external-id.`,
 			if err != nil {
 				return err
 			}
-			return renderUpdateEmail(opts, label, identifier, newEmail, decoded)
+			return renderUpdateEmail(opts, fallback(decoded.UserID, identifier), newEmail, decoded)
 		},
 	}
 
-	cmd.Flags().StringVar(&currentEmail, "current-email", "", "User's current email")
-	cmd.Flags().StringVar(&externalID, "external-id", "", "User external ID")
+	addUserMutationFlags(cmd, &targetFlags)
+	cmd.Flags().StringVar(&currentEmailAlias, "current-email", "", "Alias for --expected-email")
+	_ = cmd.Flags().MarkHidden("current-email")
 	cmd.Flags().StringVar(&newEmail, "new-email", "", "New email to stage (required)")
 
 	return cmd
 }
 
-func renderUpdateEmail(opts cmdutil.Options, label, identifier, newEmail string, resp updateEmailResponse) error {
+func renderUpdateEmail(opts cmdutil.Options, identifier, newEmail string, resp updateEmailResponse) error {
 	unconfirmed := fallback(resp.UnconfirmedEmail, newEmail)
-	subject := updateEmailSubject(label, identifier)
+	subject := "user_id " + identifier
 	defaultMessage := "Email change applied: " + subject + " → " + unconfirmed
 	if resp.PendingConfirmation {
 		defaultMessage = "Email change pending confirmation: " + subject + " → " + unconfirmed
@@ -126,7 +127,7 @@ func renderUpdateEmail(opts cmdutil.Options, label, identifier, newEmail string,
 	if err := output.Writeln(opts.Out(), opts.Style().Green(message)); err != nil {
 		return err
 	}
-	if err := output.Writef(opts.Out(), "%s: %s\n", label, identifier); err != nil {
+	if err := output.Writef(opts.Out(), "User ID: %s\n", identifier); err != nil {
 		return err
 	}
 	if resp.PendingConfirmation {
@@ -135,20 +136,6 @@ func renderUpdateEmail(opts cmdutil.Options, label, identifier, newEmail string,
 		}
 	}
 	return output.Writef(opts.Out(), "Confirmed by user: %s\n", boolLabel(!resp.PendingConfirmation))
-}
-
-func updateEmailLabel(currentEmail, externalID string) string {
-	if currentEmail == "" && externalID != "" {
-		return "External ID"
-	}
-	return "Current"
-}
-
-func updateEmailSubject(label, identifier string) string {
-	if label == "External ID" {
-		return "external_id " + identifier
-	}
-	return identifier
 }
 
 func boolLabel(b bool) string {

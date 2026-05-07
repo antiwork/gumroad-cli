@@ -2,7 +2,6 @@ package users
 
 import (
 	"net/http"
-	"net/url"
 
 	"github.com/antiwork/gumroad-cli/internal/adminapi"
 	"github.com/antiwork/gumroad-cli/internal/admincmd"
@@ -12,19 +11,17 @@ import (
 )
 
 type resetPasswordRequest struct {
-	Email      string `json:"email,omitempty"`
-	ExternalID string `json:"external_id,omitempty"`
+	UserID        string `json:"user_id"`
+	ExpectedEmail string `json:"expected_email,omitempty"`
 }
 
 type resetPasswordResponse struct {
+	UserID  string `json:"user_id"`
 	Message string `json:"message"`
 }
 
 func newResetPasswordCmd() *cobra.Command {
-	var (
-		email      string
-		externalID string
-	)
+	var targetFlags userMutationFlags
 
 	cmd := &cobra.Command{
 		Use:   "reset-password",
@@ -32,37 +29,32 @@ func newResetPasswordCmd() *cobra.Command {
 		Long: `Send Devise password reset instructions to a user. The email is delivered
 to the address currently on file for the user, not to the admin.
 
-Identify the user with --email or --external-id. When both are supplied, the
-server resolves by --external-id.`,
-		Example: `  gumroad admin users reset-password --email user@example.com
-  gumroad admin users reset-password --external-id 2245593582708
-  gumroad admin users reset-password --email user@example.com --yes`,
+Identify the user with --user-id. Pass --expected-email as an optional guard
+against acting on an account whose email has changed.`,
+		Example: `  gumroad admin users reset-password --user-id 2245593582708
+  gumroad admin users reset-password --user-id 2245593582708 --expected-email user@example.com
+  gumroad admin users reset-password --user-id 2245593582708 --yes`,
 		Args: cmdutil.ExactArgs(0),
 		RunE: func(c *cobra.Command, args []string) error {
 			opts := cmdutil.OptionsFrom(c)
-			if err := requireEmailOrExternalID(c, email, externalID); err != nil {
+			target, err := resolveUserMutationTarget(c, targetFlags)
+			if err != nil {
 				return err
 			}
 
-			identifier := userIdentifier(email, externalID)
-			ok, err := cmdutil.ConfirmAction(opts, "Send password reset instructions to "+identifier+"?")
+			identifier := target.identifier()
+			ok, err := cmdutil.ConfirmAction(opts, "Send password reset instructions to user_id "+identifier+"?")
 			if err != nil {
 				return err
 			}
 			if !ok {
-				return cmdutil.PrintCancelledAction(opts, "reset password for "+identifier, identifier)
+				return cmdutil.PrintCancelledAction(opts, "reset password for user_id "+identifier, identifier)
 			}
 
-			req := resetPasswordRequest{Email: email, ExternalID: externalID}
+			req := resetPasswordRequest{UserID: target.UserID, ExpectedEmail: target.ExpectedEmail}
 
 			if opts.DryRun {
-				params := url.Values{}
-				if email != "" {
-					params.Set("email", email)
-				}
-				if externalID != "" {
-					params.Set("external_id", externalID)
-				}
+				params := userMutationParams(target)
 				return cmdutil.PrintDryRunRequest(opts, http.MethodPost, adminapi.AdminPath("/users/reset_password"), params)
 			}
 
@@ -79,18 +71,17 @@ server resolves by --external-id.`,
 			if err != nil {
 				return err
 			}
-			return renderResetPassword(opts, identifier, decoded)
+			return renderResetPassword(opts, fallback(decoded.UserID, identifier), decoded)
 		},
 	}
 
-	cmd.Flags().StringVar(&email, "email", "", "User email")
-	cmd.Flags().StringVar(&externalID, "external-id", "", "User external ID")
+	addUserMutationFlags(cmd, &targetFlags)
 
 	return cmd
 }
 
 func renderResetPassword(opts cmdutil.Options, identifier string, resp resetPasswordResponse) error {
-	message := fallback(resp.Message, "Reset password instructions sent to "+identifier)
+	message := fallback(resp.Message, "Reset password instructions sent to user_id "+identifier)
 
 	if opts.PlainOutput {
 		return output.PrintPlain(opts.Out(), [][]string{{"true", message, identifier}})

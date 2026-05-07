@@ -12,12 +12,13 @@ import (
 )
 
 type infoRequest struct {
-	Email      string `json:"email,omitempty"`
-	ExternalID string `json:"external_id,omitempty"`
+	Email  string `json:"email,omitempty"`
+	UserID string `json:"user_id,omitempty"`
 }
 
 type infoResponse struct {
-	User userInfo `json:"user"`
+	UserID string   `json:"user_id"`
+	User   userInfo `json:"user"`
 }
 
 type userInfo struct {
@@ -62,10 +63,7 @@ type statsInfo struct {
 }
 
 func newInfoCmd() *cobra.Command {
-	var (
-		email      string
-		externalID string
-	)
+	var lookup userLookupFlags
 
 	cmd := &cobra.Command{
 		Use:   "info",
@@ -75,32 +73,32 @@ risk state, two-factor state, payouts state, and earnings/sales stats into a
 single response. Mirrors the admin web user-detail page so support workflows
 can resolve from a single CLI invocation.
 
-Identify the user with --email or --external-id. When both are supplied, the
-server resolves by --external-id.`,
+Identify the user with --email or --user-id. When both are supplied, the
+server resolves by --user-id.`,
 		Example: `  gumroad admin users info --email user@example.com
-  gumroad admin users info --external-id 2245593582708
+  gumroad admin users info --user-id 2245593582708
   gumroad admin users info --email user@example.com --json`,
 		Args: cmdutil.ExactArgs(0),
 		RunE: func(c *cobra.Command, args []string) error {
 			opts := cmdutil.OptionsFrom(c)
-			if err := requireEmailOrExternalID(c, email, externalID); err != nil {
+			target, err := resolveUserLookupTarget(c, lookup)
+			if err != nil {
 				return err
 			}
 
-			identifier := userIdentifier(email, externalID)
-			return admincmd.RunPostJSONDecoded[infoResponse](opts, "Fetching user info...", "/users/info", infoRequest{Email: email, ExternalID: externalID}, func(resp infoResponse) error {
-				return renderInfo(opts, identifier, resp.User)
+			identifier := target.identifier()
+			return admincmd.RunPostJSONDecoded[infoResponse](opts, "Fetching user info...", "/users/info", infoRequest{Email: target.Email, UserID: target.UserID}, func(resp infoResponse) error {
+				return renderInfo(opts, identifier, resp.UserID, resp.User)
 			})
 		},
 	}
 
-	cmd.Flags().StringVar(&email, "email", "", "User email")
-	cmd.Flags().StringVar(&externalID, "external-id", "", "User external ID")
+	addUserLookupFlags(cmd, &lookup)
 
 	return cmd
 }
 
-func renderInfo(opts cmdutil.Options, identifier string, info userInfo) error {
+func renderInfo(opts cmdutil.Options, identifier, userID string, info userInfo) error {
 	if opts.PlainOutput {
 		return output.PrintPlain(opts.Out(), [][]string{{
 			fallback(info.Email, identifier),
@@ -132,6 +130,7 @@ func renderInfo(opts cmdutil.Options, identifier string, info userInfo) error {
 	if info.Email != headline {
 		writeOptional(&b, "Email", info.Email)
 	}
+	writeOptional(&b, "User ID", userID)
 	writeOptional(&b, "Username", info.Username)
 	writeOptional(&b, "Profile", info.ProfileURL)
 	writeOptional(&b, "Country", info.Country)

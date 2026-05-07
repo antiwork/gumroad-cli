@@ -11,14 +11,15 @@ import (
 )
 
 type pauseRequest struct {
-	Email  string `json:"email"`
-	Reason string `json:"reason,omitempty"`
+	UserID        string `json:"user_id"`
+	ExpectedEmail string `json:"expected_email,omitempty"`
+	Reason        string `json:"reason,omitempty"`
 }
 
 func newPauseCmd() *cobra.Command {
 	var (
-		email  string
-		reason string
+		targetFlags mutationFlags
+		reason      string
 	)
 
 	cmd := &cobra.Command{
@@ -27,29 +28,30 @@ func newPauseCmd() *cobra.Command {
 		Long: `Pause internal payouts for a user. Pass --reason to record an audit comment
 on the user explaining why payouts were paused; the comment is omitted when no
 reason is provided.`,
-		Example: `  gumroad admin payouts pause --email seller@example.com
-  gumroad admin payouts pause --email seller@example.com --reason "Verification pending"
-  gumroad admin payouts pause --email seller@example.com --yes`,
+		Example: `  gumroad admin payouts pause --user-id 2245593582708
+  gumroad admin payouts pause --user-id 2245593582708 --expected-email seller@example.com --reason "Verification pending"
+  gumroad admin payouts pause --user-id 2245593582708 --yes`,
 		Args: cmdutil.ExactArgs(0),
 		RunE: func(c *cobra.Command, args []string) error {
 			opts := cmdutil.OptionsFrom(c)
-			if email == "" {
-				return cmdutil.MissingFlagError(c, "--email")
+			target, err := resolveMutationTarget(c, targetFlags)
+			if err != nil {
+				return err
 			}
 
-			confirmMsg := "Pause payouts for " + email + "?"
+			confirmMsg := "Pause payouts for user_id " + target.UserID + "?"
 			if reason != "" {
-				confirmMsg = "Pause payouts for " + email + "? (reason will be recorded)"
+				confirmMsg = "Pause payouts for user_id " + target.UserID + "? (reason will be recorded)"
 			}
 			ok, err := cmdutil.ConfirmAction(opts, confirmMsg)
 			if err != nil {
 				return err
 			}
 			if !ok {
-				return cmdutil.PrintCancelledAction(opts, "pause payouts for "+email, email)
+				return cmdutil.PrintCancelledAction(opts, "pause payouts for user_id "+target.UserID, target.UserID)
 			}
 
-			req := pauseRequest{Email: email, Reason: reason}
+			req := pauseRequest{UserID: target.UserID, ExpectedEmail: target.ExpectedEmail, Reason: reason}
 			path := "payouts/pause"
 
 			if opts.DryRun {
@@ -69,11 +71,11 @@ reason is provided.`,
 			if err != nil {
 				return err
 			}
-			return renderPayoutsAction(opts, email, decoded)
+			return renderPayoutsAction(opts, fallbackStr(decoded.UserID, target.UserID), decoded)
 		},
 	}
 
-	cmd.Flags().StringVar(&email, "email", "", "User email (required)")
+	addMutationFlags(cmd, &targetFlags)
 	cmd.Flags().StringVar(&reason, "reason", "", "Audit comment recorded against the user")
 
 	return cmd
@@ -81,7 +83,10 @@ reason is provided.`,
 
 func pauseDryRunParams(req pauseRequest) url.Values {
 	params := url.Values{}
-	params.Set("email", req.Email)
+	params.Set("user_id", req.UserID)
+	if req.ExpectedEmail != "" {
+		params.Set("expected_email", req.ExpectedEmail)
+	}
 	if req.Reason != "" {
 		params.Set("reason", req.Reason)
 	}

@@ -8,47 +8,45 @@ import (
 )
 
 type suspensionResponse struct {
+	UserID    string `json:"user_id"`
 	Status    string `json:"status"`
 	UpdatedAt string `json:"updated_at"`
 	AppealURL string `json:"appeal_url"`
 }
 
 type suspensionRequest struct {
-	Email      string `json:"email,omitempty"`
-	ExternalID string `json:"external_id,omitempty"`
+	Email  string `json:"email,omitempty"`
+	UserID string `json:"user_id,omitempty"`
 }
 
 func newSuspensionCmd() *cobra.Command {
-	var (
-		email      string
-		externalID string
-	)
+	var lookup userLookupFlags
 
 	cmd := &cobra.Command{
 		Use:   "suspension",
 		Short: "View a user's suspension status",
 		Long: `View a user's suspension status.
 
-Identify the user with --email or --external-id. When both are supplied, the
-server resolves by --external-id.`,
+Identify the user with --email or --user-id. When both are supplied, the
+server resolves by --user-id.`,
 		Example: `  gumroad admin users suspension --email user@example.com
-  gumroad admin users suspension --external-id 2245593582708`,
+  gumroad admin users suspension --user-id 2245593582708`,
 		Args: cmdutil.ExactArgs(0),
 		RunE: func(c *cobra.Command, args []string) error {
 			opts := cmdutil.OptionsFrom(c)
-			if err := requireEmailOrExternalID(c, email, externalID); err != nil {
+			target, err := resolveUserLookupTarget(c, lookup)
+			if err != nil {
 				return err
 			}
 
-			identifier := userIdentifier(email, externalID)
-			return admincmd.RunPostJSONDecoded[suspensionResponse](opts, "Fetching suspension info...", "/users/suspension", suspensionRequest{Email: email, ExternalID: externalID}, func(resp suspensionResponse) error {
+			identifier := target.identifier()
+			return admincmd.RunPostJSONDecoded[suspensionResponse](opts, "Fetching suspension info...", "/users/suspension", suspensionRequest{Email: target.Email, UserID: target.UserID}, func(resp suspensionResponse) error {
 				return renderSuspension(opts, identifier, resp)
 			})
 		},
 	}
 
-	cmd.Flags().StringVar(&email, "email", "", "User email")
-	cmd.Flags().StringVar(&externalID, "external-id", "", "User external ID")
+	addUserLookupFlags(cmd, &lookup)
 
 	return cmd
 }
@@ -66,6 +64,11 @@ func renderSuspension(opts cmdutil.Options, identifier string, resp suspensionRe
 	}
 	if resp.Status != "" {
 		if err := output.Writef(opts.Out(), "Status: %s\n", resp.Status); err != nil {
+			return err
+		}
+	}
+	if resp.UserID != "" {
+		if err := output.Writef(opts.Out(), "User ID: %s\n", resp.UserID); err != nil {
 			return err
 		}
 	}

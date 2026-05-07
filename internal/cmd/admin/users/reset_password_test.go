@@ -10,7 +10,7 @@ import (
 	"github.com/antiwork/gumroad-cli/internal/testutil"
 )
 
-func TestResetPassword_RequiresEmailOrExternalID(t *testing.T) {
+func TestResetPassword_RequiresUserID(t *testing.T) {
 	cmd := newResetPasswordCmd()
 	cmd.SetArgs([]string{})
 
@@ -18,12 +18,12 @@ func TestResetPassword_RequiresEmailOrExternalID(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected missing identifier error")
 	}
-	if !strings.Contains(err.Error(), "supply --email or --external-id") {
+	if !strings.Contains(err.Error(), "missing required flag: --user-id") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
-func TestResetPassword_PostsExternalID(t *testing.T) {
+func TestResetPassword_PostsUserID(t *testing.T) {
 	var body resetPasswordRequest
 
 	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
@@ -35,24 +35,24 @@ func TestResetPassword_PostsExternalID(t *testing.T) {
 			t.Fatalf("decode body: %v", err)
 		}
 		if strings.Contains(string(raw), `"email"`) {
-			t.Errorf("email field must be omitted when only --external-id is supplied, got %q", raw)
+			t.Errorf("email field must be omitted when only --user-id is supplied, got %q", raw)
 		}
 		testutil.JSON(t, w, map[string]any{"message": "Reset password instructions sent"})
 	})
 
 	cmd := testutil.Command(newResetPasswordCmd(), testutil.Yes(true), testutil.Quiet(false))
-	cmd.SetArgs([]string{"--external-id", "2245593582708"})
+	cmd.SetArgs([]string{"--user-id", "2245593582708"})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
-	if body.ExternalID != "2245593582708" || body.Email != "" {
-		t.Errorf("got email=%q external_id=%q, want only external_id", body.Email, body.ExternalID)
+	if body.UserID != "2245593582708" || body.ExpectedEmail != "" {
+		t.Errorf("got user_id=%q expected_email=%q, want only user_id", body.UserID, body.ExpectedEmail)
 	}
 	if !strings.Contains(out, "Reset password instructions sent") {
 		t.Errorf("expected success message: %q", out)
 	}
 }
 
-func TestResetPassword_ForwardsBothWhenEmailAndExternalIDSupplied(t *testing.T) {
+func TestResetPassword_ForwardsExpectedEmail(t *testing.T) {
 	var body resetPasswordRequest
 
 	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
@@ -63,14 +63,14 @@ func TestResetPassword_ForwardsBothWhenEmailAndExternalIDSupplied(t *testing.T) 
 	})
 
 	cmd := testutil.Command(newResetPasswordCmd(), testutil.Yes(true))
-	cmd.SetArgs([]string{"--email", "user@example.com", "--external-id", "2245593582708"})
+	cmd.SetArgs([]string{"--user-id", "2245593582708", "--expected-email", "user@example.com"})
 	testutil.MustExecute(t, cmd)
 
-	if body.Email != "user@example.com" {
-		t.Errorf("got email %q, want user@example.com", body.Email)
+	if body.UserID != "2245593582708" {
+		t.Errorf("got user_id %q, want 2245593582708", body.UserID)
 	}
-	if body.ExternalID != "2245593582708" {
-		t.Errorf("got external_id %q, want 2245593582708", body.ExternalID)
+	if body.ExpectedEmail != "user@example.com" {
+		t.Errorf("got expected_email %q, want user@example.com", body.ExpectedEmail)
 	}
 }
 
@@ -80,7 +80,7 @@ func TestResetPassword_RequiresConfirmation(t *testing.T) {
 	})
 
 	cmd := testutil.Command(newResetPasswordCmd(), testutil.NoInput(true))
-	cmd.SetArgs([]string{"--email", "user@example.com"})
+	cmd.SetArgs([]string{"--user-id", "2245593582708"})
 
 	err := cmd.Execute()
 	if err == nil {
@@ -91,7 +91,7 @@ func TestResetPassword_RequiresConfirmation(t *testing.T) {
 	}
 }
 
-func TestResetPassword_PostsEmail(t *testing.T) {
+func TestResetPassword_PostsUserIDToEndpoint(t *testing.T) {
 	var gotMethod, gotPath, gotAuth, gotQuery string
 	var body resetPasswordRequest
 
@@ -109,7 +109,7 @@ func TestResetPassword_PostsEmail(t *testing.T) {
 	})
 
 	cmd := testutil.Command(newResetPasswordCmd(), testutil.Yes(true), testutil.Quiet(false))
-	cmd.SetArgs([]string{"--email", "user@example.com"})
+	cmd.SetArgs([]string{"--user-id", "2245593582708"})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
 	if gotMethod != "POST" || gotPath != "/internal/admin/users/reset_password" {
@@ -119,10 +119,10 @@ func TestResetPassword_PostsEmail(t *testing.T) {
 		t.Fatalf("got auth %q, want Bearer admin-token", gotAuth)
 	}
 	if gotQuery != "" {
-		t.Fatalf("email must not appear in query string, got %q", gotQuery)
+		t.Fatalf("body fields must not appear in query string, got %q", gotQuery)
 	}
-	if body.Email != "user@example.com" {
-		t.Fatalf("got email %q, want user@example.com", body.Email)
+	if body.UserID != "2245593582708" {
+		t.Fatalf("got user_id %q, want 2245593582708", body.UserID)
 	}
 	if !strings.Contains(out, "Reset password instructions sent") {
 		t.Errorf("expected success message: %q", out)
@@ -135,14 +135,16 @@ func TestResetPassword_DryRunDoesNotPost(t *testing.T) {
 	})
 
 	cmd := testutil.Command(newResetPasswordCmd(), testutil.DryRun(true), testutil.NoInput(true))
-	cmd.SetArgs([]string{"--email", "user@example.com"})
+	cmd.SetArgs([]string{"--user-id", "2245593582708", "--expected-email", "user@example.com"})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
 	if !strings.Contains(out, "POST") || !strings.Contains(out, "/internal/admin/users/reset_password") {
 		t.Errorf("expected dry-run preview, got: %q", out)
 	}
-	if !strings.Contains(out, "email: user@example.com") {
-		t.Errorf("expected email in dry-run preview, got: %q", out)
+	for _, want := range []string{"user_id: 2245593582708", "expected_email: user@example.com"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("expected %q in dry-run preview, got: %q", want, out)
+		}
 	}
 }
 
@@ -152,7 +154,7 @@ func TestResetPassword_JSONPreservesResponse(t *testing.T) {
 	})
 
 	cmd := testutil.Command(newResetPasswordCmd(), testutil.Yes(true), testutil.JSONOutput())
-	cmd.SetArgs([]string{"--email", "user@example.com"})
+	cmd.SetArgs([]string{"--user-id", "2245593582708"})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
 	var resp struct {
@@ -173,10 +175,10 @@ func TestResetPassword_PlainOutput(t *testing.T) {
 	})
 
 	cmd := testutil.Command(newResetPasswordCmd(), testutil.Yes(true), testutil.PlainOutput())
-	cmd.SetArgs([]string{"--email", "user@example.com"})
+	cmd.SetArgs([]string{"--user-id", "2245593582708"})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
-	want := "true\tReset password instructions sent\tuser@example.com"
+	want := "true\tReset password instructions sent\t2245593582708"
 	if strings.TrimSpace(out) != want {
 		t.Fatalf("unexpected plain output: %q", out)
 	}
@@ -192,7 +194,7 @@ func TestResetPassword_UserNotFoundSurfaces(t *testing.T) {
 	})
 
 	cmd := testutil.Command(newResetPasswordCmd(), testutil.Yes(true))
-	cmd.SetArgs([]string{"--email", "missing@example.com"})
+	cmd.SetArgs([]string{"--user-id", "missing"})
 
 	err := cmd.Execute()
 	if err == nil || !strings.Contains(err.Error(), "User not found") {

@@ -10,22 +10,22 @@ import (
 	"github.com/antiwork/gumroad-cli/internal/testutil"
 )
 
-func TestIssue_RequiresEmail(t *testing.T) {
+func TestIssue_RequiresUserID(t *testing.T) {
 	cmd := newIssueCmd()
 	cmd.SetArgs([]string{"--through", "2020-01-01", "--processor", "stripe"})
 
 	err := cmd.Execute()
 	if err == nil {
-		t.Fatal("expected missing email error")
+		t.Fatal("expected missing user ID error")
 	}
-	if !strings.Contains(err.Error(), "missing required flag: --email") {
+	if !strings.Contains(err.Error(), "missing required flag: --user-id") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
 func TestIssue_RequiresThrough(t *testing.T) {
 	cmd := newIssueCmd()
-	cmd.SetArgs([]string{"--email", "seller@example.com", "--processor", "stripe"})
+	cmd.SetArgs([]string{"--user-id", "2245593582708", "--processor", "stripe"})
 
 	err := cmd.Execute()
 	if err == nil || !strings.Contains(err.Error(), "--through") {
@@ -35,7 +35,7 @@ func TestIssue_RequiresThrough(t *testing.T) {
 
 func TestIssue_RequiresProcessor(t *testing.T) {
 	cmd := newIssueCmd()
-	cmd.SetArgs([]string{"--email", "seller@example.com", "--through", "2020-01-01"})
+	cmd.SetArgs([]string{"--user-id", "2245593582708", "--through", "2020-01-01"})
 
 	err := cmd.Execute()
 	if err == nil || !strings.Contains(err.Error(), "--processor") {
@@ -45,7 +45,7 @@ func TestIssue_RequiresProcessor(t *testing.T) {
 
 func TestIssue_RejectsInvalidProcessor(t *testing.T) {
 	cmd := newIssueCmd()
-	cmd.SetArgs([]string{"--email", "seller@example.com", "--through", "2020-01-01", "--processor", "wire"})
+	cmd.SetArgs([]string{"--user-id", "2245593582708", "--through", "2020-01-01", "--processor", "wire"})
 
 	err := cmd.Execute()
 	if err == nil || !strings.Contains(err.Error(), "stripe") {
@@ -55,7 +55,7 @@ func TestIssue_RejectsInvalidProcessor(t *testing.T) {
 
 func TestIssue_SplitRequiresPaypal(t *testing.T) {
 	cmd := newIssueCmd()
-	cmd.SetArgs([]string{"--email", "seller@example.com", "--through", "2020-01-01", "--processor", "stripe", "--split"})
+	cmd.SetArgs([]string{"--user-id", "2245593582708", "--through", "2020-01-01", "--processor", "stripe", "--split"})
 
 	err := cmd.Execute()
 	if err == nil {
@@ -68,7 +68,7 @@ func TestIssue_SplitRequiresPaypal(t *testing.T) {
 
 func TestIssue_RejectsFutureThrough(t *testing.T) {
 	cmd := newIssueCmd()
-	cmd.SetArgs([]string{"--email", "seller@example.com", "--through", "2099-01-01", "--processor", "stripe"})
+	cmd.SetArgs([]string{"--user-id", "2245593582708", "--through", "2099-01-01", "--processor", "stripe"})
 
 	err := cmd.Execute()
 	if err == nil || !strings.Contains(err.Error(), "past") {
@@ -78,7 +78,7 @@ func TestIssue_RejectsFutureThrough(t *testing.T) {
 
 func TestIssue_RejectsBadDateFormat(t *testing.T) {
 	cmd := newIssueCmd()
-	cmd.SetArgs([]string{"--email", "seller@example.com", "--through", "04/30/2026", "--processor", "stripe"})
+	cmd.SetArgs([]string{"--user-id", "2245593582708", "--through", "04/30/2026", "--processor", "stripe"})
 
 	err := cmd.Execute()
 	if err == nil || !strings.Contains(err.Error(), "YYYY-MM-DD") {
@@ -92,7 +92,7 @@ func TestIssue_RequiresConfirmation(t *testing.T) {
 	})
 
 	cmd := testutil.Command(newIssueCmd(), testutil.NoInput(true))
-	cmd.SetArgs([]string{"--email", "seller@example.com", "--through", "2020-01-01", "--processor", "stripe"})
+	cmd.SetArgs([]string{"--user-id", "2245593582708", "--through", "2020-01-01", "--processor", "stripe"})
 
 	err := cmd.Execute()
 	if err == nil {
@@ -131,7 +131,7 @@ func TestIssue_SendsRequestAndShowsResult(t *testing.T) {
 	})
 
 	cmd := testutil.Command(newIssueCmd(), testutil.Yes(true), testutil.Quiet(false))
-	cmd.SetArgs([]string{"--email", "seller@example.com", "--through", "2020-01-01", "--processor", "PayPal", "--split"})
+	cmd.SetArgs([]string{"--user-id", "2245593582708", "--expected-email", "seller@example.com", "--through", "2020-01-01", "--processor", "PayPal", "--split"})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
 	if gotMethod != "POST" || gotPath != "/internal/admin/payouts/issue" {
@@ -140,7 +140,7 @@ func TestIssue_SendsRequestAndShowsResult(t *testing.T) {
 	if gotAuth != "Bearer admin-token" {
 		t.Fatalf("got auth %q, want Bearer admin-token", gotAuth)
 	}
-	if body.Email != "seller@example.com" || body.PayoutProcessor != "paypal" || body.PayoutPeriodEndDate != "2020-01-01" || !body.ShouldSplitTheAmount {
+	if body.UserID != "2245593582708" || body.ExpectedEmail != "seller@example.com" || body.PayoutProcessor != "paypal" || body.PayoutPeriodEndDate != "2020-01-01" || !body.ShouldSplitTheAmount {
 		t.Fatalf("unexpected body: %+v", body)
 	}
 	for _, want := range []string{"pay_abc", "5000 USD cents", "processing"} {
@@ -160,7 +160,7 @@ func TestIssue_ServerErrorSurfacesMessageAndNonZeroExit(t *testing.T) {
 	})
 
 	cmd := testutil.Command(newIssueCmd(), testutil.Yes(true))
-	cmd.SetArgs([]string{"--email", "seller@example.com", "--through", "2020-01-01", "--processor", "stripe"})
+	cmd.SetArgs([]string{"--user-id", "2245593582708", "--through", "2020-01-01", "--processor", "stripe"})
 
 	err := cmd.Execute()
 	if err == nil {
@@ -180,7 +180,7 @@ func TestIssue_JSONPreservesResponse(t *testing.T) {
 	})
 
 	cmd := testutil.Command(newIssueCmd(), testutil.Yes(true), testutil.JSONOutput())
-	cmd.SetArgs([]string{"--email", "seller@example.com", "--through", "2020-01-01", "--processor", "stripe"})
+	cmd.SetArgs([]string{"--user-id", "2245593582708", "--through", "2020-01-01", "--processor", "stripe"})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
 	var resp issueResponse
@@ -207,7 +207,7 @@ func TestIssue_PlainOutput(t *testing.T) {
 	})
 
 	cmd := testutil.Command(newIssueCmd(), testutil.Yes(true), testutil.PlainOutput())
-	cmd.SetArgs([]string{"--email", "seller@example.com", "--through", "2020-01-01", "--processor", "stripe"})
+	cmd.SetArgs([]string{"--user-id", "2245593582708", "--through", "2020-01-01", "--processor", "stripe"})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
 	if !strings.Contains(out, "pay_abc") || !strings.Contains(out, "5000 USD cents") || !strings.Contains(out, "processing") {
@@ -224,7 +224,7 @@ func TestIssue_RendersAmountWithoutCurrency(t *testing.T) {
 	})
 
 	cmd := testutil.Command(newIssueCmd(), testutil.Yes(true), testutil.Quiet(false))
-	cmd.SetArgs([]string{"--email", "seller@example.com", "--through", "2020-01-01", "--processor", "stripe"})
+	cmd.SetArgs([]string{"--user-id", "2245593582708", "--through", "2020-01-01", "--processor", "stripe"})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
 	if !strings.Contains(out, "5000 cents") {
@@ -238,7 +238,7 @@ func TestIssue_CancelledByUser(t *testing.T) {
 	})
 
 	cmd := testutil.Command(newIssueCmd(), testutil.NoInput(true), testutil.DryRun(false))
-	cmd.SetArgs([]string{"--email", "seller@example.com", "--through", "2020-01-01", "--processor", "stripe"})
+	cmd.SetArgs([]string{"--user-id", "2245593582708", "--through", "2020-01-01", "--processor", "stripe"})
 
 	err := cmd.Execute()
 	if err == nil {
@@ -252,10 +252,10 @@ func TestIssue_DryRunDoesNotContactEndpoint(t *testing.T) {
 	})
 
 	cmd := testutil.Command(newIssueCmd(), testutil.DryRun(true), testutil.NoInput(true))
-	cmd.SetArgs([]string{"--email", "seller@example.com", "--through", "2020-01-01", "--processor", "paypal", "--split"})
+	cmd.SetArgs([]string{"--user-id", "2245593582708", "--expected-email", "seller@example.com", "--through", "2020-01-01", "--processor", "paypal", "--split"})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
-	for _, want := range []string{"POST", "/internal/admin/payouts/issue", "email: seller@example.com", "payout_processor: paypal", "payout_period_end_date: 2020-01-01", "should_split_the_amount: true"} {
+	for _, want := range []string{"POST", "/internal/admin/payouts/issue", "user_id: 2245593582708", "expected_email: seller@example.com", "payout_processor: paypal", "payout_period_end_date: 2020-01-01", "should_split_the_amount: true"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("dry-run output missing %q: %q", want, out)
 		}

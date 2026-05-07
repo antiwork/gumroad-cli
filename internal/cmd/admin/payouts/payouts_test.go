@@ -58,15 +58,15 @@ func TestListUsesInternalAdminEndpoint(t *testing.T) {
 	}
 }
 
-func TestListRequiresEmail(t *testing.T) {
+func TestListRequiresEmailOrUserID(t *testing.T) {
 	cmd := newListCmd()
 	cmd.SetArgs([]string{})
 
 	err := cmd.Execute()
 	if err == nil {
-		t.Fatal("expected missing email error")
+		t.Fatal("expected missing identifier error")
 	}
-	if !strings.Contains(err.Error(), "missing required flag: --email") {
+	if !strings.Contains(err.Error(), "supply --email or --user-id") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }

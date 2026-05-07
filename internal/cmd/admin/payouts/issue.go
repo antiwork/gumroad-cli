@@ -16,7 +16,8 @@ import (
 )
 
 type issueRequest struct {
-	Email                string `json:"email"`
+	UserID               string `json:"user_id"`
+	ExpectedEmail        string `json:"expected_email,omitempty"`
 	PayoutProcessor      string `json:"payout_processor"`
 	PayoutPeriodEndDate  string `json:"payout_period_end_date"`
 	ShouldSplitTheAmount bool   `json:"should_split_the_amount,omitempty"`
@@ -24,6 +25,7 @@ type issueRequest struct {
 
 type issueResponse struct {
 	Success bool        `json:"success"`
+	UserID  string      `json:"user_id"`
 	Message string      `json:"message"`
 	Payout  issuePayout `json:"payout"`
 }
@@ -38,10 +40,10 @@ type issuePayout struct {
 
 func newIssueCmd() *cobra.Command {
 	var (
-		email     string
-		through   string
-		processor string
-		split     bool
+		targetFlags mutationFlags
+		through     string
+		processor   string
+		split       bool
 	)
 
 	cmd := &cobra.Command{
@@ -54,13 +56,14 @@ The --through date is the payout period end date and must be in the past
 server to split the payout amount across multiple PayPal transfers.
 
 This moves money. --yes is required.`,
-		Example: `  gumroad admin payouts issue --email seller@example.com --through 2026-04-30 --processor stripe --yes
-  gumroad admin payouts issue --email seller@example.com --through 2026-04-30 --processor paypal --split --yes`,
+		Example: `  gumroad admin payouts issue --user-id 2245593582708 --through 2026-04-30 --processor stripe --yes
+  gumroad admin payouts issue --user-id 2245593582708 --expected-email seller@example.com --through 2026-04-30 --processor paypal --split --yes`,
 		Args: cmdutil.ExactArgs(0),
 		RunE: func(c *cobra.Command, args []string) error {
 			opts := cmdutil.OptionsFrom(c)
-			if email == "" {
-				return cmdutil.MissingFlagError(c, "--email")
+			target, err := resolveMutationTarget(c, targetFlags)
+			if err != nil {
+				return err
 			}
 			if through == "" {
 				return cmdutil.MissingFlagError(c, "--through")
@@ -85,19 +88,20 @@ This moves money. --yes is required.`,
 			}
 
 			req := issueRequest{
-				Email:                email,
+				UserID:               target.UserID,
+				ExpectedEmail:        target.ExpectedEmail,
 				PayoutProcessor:      normalizedProcessor,
 				PayoutPeriodEndDate:  through,
 				ShouldSplitTheAmount: split,
 			}
 
-			confirmMsg := "Issue manual " + normalizedProcessor + " payout for " + email + " through " + through + "? This moves money."
+			confirmMsg := "Issue manual " + normalizedProcessor + " payout for user_id " + target.UserID + " through " + through + "? This moves money."
 			ok, err := cmdutil.ConfirmAction(opts, confirmMsg)
 			if err != nil {
 				return err
 			}
 			if !ok {
-				return cmdutil.PrintCancelledAction(opts, "issue payout for "+email, email)
+				return cmdutil.PrintCancelledAction(opts, "issue payout for user_id "+target.UserID, target.UserID)
 			}
 
 			path := "payouts/issue"
@@ -119,11 +123,11 @@ This moves money. --yes is required.`,
 			if err != nil {
 				return err
 			}
-			return renderIssue(opts, email, decoded)
+			return renderIssue(opts, fallbackStr(decoded.UserID, target.UserID), decoded)
 		},
 	}
 
-	cmd.Flags().StringVar(&email, "email", "", "Seller email (required)")
+	addMutationFlags(cmd, &targetFlags)
 	cmd.Flags().StringVar(&through, "through", "", "Payout period end date in YYYY-MM-DD (required, must be in the past)")
 	cmd.Flags().StringVar(&processor, "processor", "", "Payout processor: stripe or paypal (required)")
 	cmd.Flags().BoolVar(&split, "split", false, "Split the amount across multiple PayPal transfers (paypal only)")
@@ -133,7 +137,10 @@ This moves money. --yes is required.`,
 
 func issueDryRunParams(req issueRequest) url.Values {
 	params := url.Values{}
-	params.Set("email", req.Email)
+	params.Set("user_id", req.UserID)
+	if req.ExpectedEmail != "" {
+		params.Set("expected_email", req.ExpectedEmail)
+	}
 	params.Set("payout_processor", req.PayoutProcessor)
 	params.Set("payout_period_end_date", req.PayoutPeriodEndDate)
 	if req.ShouldSplitTheAmount {
@@ -142,14 +149,14 @@ func issueDryRunParams(req issueRequest) url.Values {
 	return params
 }
 
-func renderIssue(opts cmdutil.Options, email string, resp issueResponse) error {
-	headline := fallbackStr(resp.Message, "Issued payout for "+email)
+func renderIssue(opts cmdutil.Options, userID string, resp issueResponse) error {
+	headline := fallbackStr(resp.Message, "Issued payout for user_id "+userID)
 
 	if opts.PlainOutput {
 		return output.PrintPlain(opts.Out(), [][]string{{
 			"true",
 			headline,
-			email,
+			userID,
 			resp.Payout.ExternalID,
 			formatIssueAmount(resp.Payout),
 			resp.Payout.State,
@@ -164,6 +171,11 @@ func renderIssue(opts cmdutil.Options, email string, resp issueResponse) error {
 	style := opts.Style()
 	if err := output.Writeln(opts.Out(), style.Green(headline)); err != nil {
 		return err
+	}
+	if userID != "" {
+		if err := output.Writef(opts.Out(), "User ID: %s\n", userID); err != nil {
+			return err
+		}
 	}
 	if resp.Payout.ExternalID != "" {
 		if err := output.Writef(opts.Out(), "Payout ID: %s\n", resp.Payout.ExternalID); err != nil {

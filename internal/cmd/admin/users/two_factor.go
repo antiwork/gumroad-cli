@@ -2,7 +2,6 @@ package users
 
 import (
 	"net/http"
-	"net/url"
 
 	"github.com/antiwork/gumroad-cli/internal/adminapi"
 	"github.com/antiwork/gumroad-cli/internal/admincmd"
@@ -12,12 +11,13 @@ import (
 )
 
 type twoFactorRequest struct {
-	Email      string `json:"email,omitempty"`
-	ExternalID string `json:"external_id,omitempty"`
-	Enabled    bool   `json:"enabled"`
+	UserID        string `json:"user_id"`
+	ExpectedEmail string `json:"expected_email,omitempty"`
+	Enabled       bool   `json:"enabled"`
 }
 
 type twoFactorResponse struct {
+	UserID                         string `json:"user_id"`
 	Message                        string `json:"message"`
 	TwoFactorAuthenticationEnabled bool   `json:"two_factor_authentication_enabled"`
 }
@@ -26,9 +26,9 @@ func newTwoFactorCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "two-factor",
 		Short: "Enable or disable two-factor authentication for a user",
-		Example: `  gumroad admin users two-factor enable --email user@example.com
-  gumroad admin users two-factor disable --email user@example.com
-  gumroad admin users two-factor disable --external-id 2245593582708`,
+		Example: `  gumroad admin users two-factor enable --user-id 2245593582708
+  gumroad admin users two-factor disable --user-id 2245593582708
+  gumroad admin users two-factor disable --user-id 2245593582708 --expected-email user@example.com`,
 	}
 
 	cmd.AddCommand(newTwoFactorEnableCmd())
@@ -38,36 +38,28 @@ func newTwoFactorCmd() *cobra.Command {
 }
 
 func newTwoFactorEnableCmd() *cobra.Command {
-	var (
-		email      string
-		externalID string
-	)
+	var targetFlags userMutationFlags
 
 	cmd := &cobra.Command{
 		Use:   "enable",
 		Short: "Enable two-factor authentication for a user",
 		Long: `Enable two-factor authentication for a user.
 
-Identify the user with --email or --external-id. When both are supplied,
-the server resolves by --external-id.`,
+Identify the user with --user-id. Pass --expected-email as an optional guard
+against acting on an account whose email has changed.`,
 		Args: cmdutil.ExactArgs(0),
 		RunE: func(c *cobra.Command, args []string) error {
-			identifier := userIdentifier(email, externalID)
-			return runTwoFactor(c, email, externalID, true, "Enable two-factor authentication for "+identifier+"?", "enable two-factor for "+identifier, "Enabling two-factor authentication...")
+			return runTwoFactor(c, targetFlags, true, "enable", "Enabling two-factor authentication...")
 		},
 	}
 
-	cmd.Flags().StringVar(&email, "email", "", "User email")
-	cmd.Flags().StringVar(&externalID, "external-id", "", "User external ID")
+	addUserMutationFlags(cmd, &targetFlags)
 
 	return cmd
 }
 
 func newTwoFactorDisableCmd() *cobra.Command {
-	var (
-		email      string
-		externalID string
-	)
+	var targetFlags userMutationFlags
 
 	cmd := &cobra.Command{
 		Use:   "disable",
@@ -76,28 +68,33 @@ func newTwoFactorDisableCmd() *cobra.Command {
 credential is destroyed; they will lose 2FA on their next login and any
 recovery codes they had become invalid.
 
-Identify the user with --email or --external-id. When both are supplied,
-the server resolves by --external-id.`,
+Identify the user with --user-id. Pass --expected-email as an optional guard
+against acting on an account whose email has changed.`,
 		Args: cmdutil.ExactArgs(0),
 		RunE: func(c *cobra.Command, args []string) error {
-			identifier := userIdentifier(email, externalID)
-			return runTwoFactor(c, email, externalID, false, "Disable two-factor authentication for "+identifier+"? Their TOTP credential will be destroyed and they will lose 2FA on next login.", "disable two-factor for "+identifier, "Disabling two-factor authentication...")
+			return runTwoFactor(c, targetFlags, false, "disable", "Disabling two-factor authentication...")
 		},
 	}
 
-	cmd.Flags().StringVar(&email, "email", "", "User email")
-	cmd.Flags().StringVar(&externalID, "external-id", "", "User external ID")
+	addUserMutationFlags(cmd, &targetFlags)
 
 	return cmd
 }
 
-func runTwoFactor(c *cobra.Command, email, externalID string, enabled bool, confirmMsg, cancelAction, spinnerMsg string) error {
+func runTwoFactor(c *cobra.Command, flags userMutationFlags, enabled bool, verb, spinnerMsg string) error {
 	opts := cmdutil.OptionsFrom(c)
-	if err := requireEmailOrExternalID(c, email, externalID); err != nil {
+	target, err := resolveUserMutationTarget(c, flags)
+	if err != nil {
 		return err
 	}
 
-	identifier := userIdentifier(email, externalID)
+	identifier := target.identifier()
+	confirmMsg := "Enable two-factor authentication for user_id " + identifier + "?"
+	cancelAction := "enable two-factor for user_id " + identifier
+	if verb == "disable" {
+		confirmMsg = "Disable two-factor authentication for user_id " + identifier + "? Their TOTP credential will be destroyed and they will lose 2FA on next login."
+		cancelAction = "disable two-factor for user_id " + identifier
+	}
 	ok, err := cmdutil.ConfirmAction(opts, confirmMsg)
 	if err != nil {
 		return err
@@ -106,16 +103,10 @@ func runTwoFactor(c *cobra.Command, email, externalID string, enabled bool, conf
 		return cmdutil.PrintCancelledAction(opts, cancelAction, identifier)
 	}
 
-	req := twoFactorRequest{Email: email, ExternalID: externalID, Enabled: enabled}
+	req := twoFactorRequest{UserID: target.UserID, ExpectedEmail: target.ExpectedEmail, Enabled: enabled}
 
 	if opts.DryRun {
-		params := url.Values{}
-		if email != "" {
-			params.Set("email", email)
-		}
-		if externalID != "" {
-			params.Set("external_id", externalID)
-		}
+		params := userMutationParams(target)
 		if enabled {
 			params.Set("enabled", "true")
 		} else {
@@ -137,7 +128,7 @@ func runTwoFactor(c *cobra.Command, email, externalID string, enabled bool, conf
 	if err != nil {
 		return err
 	}
-	return renderTwoFactor(opts, identifier, decoded)
+	return renderTwoFactor(opts, fallback(decoded.UserID, identifier), decoded)
 }
 
 func renderTwoFactor(opts cmdutil.Options, identifier string, resp twoFactorResponse) error {
@@ -147,7 +138,7 @@ func renderTwoFactor(opts cmdutil.Options, identifier string, resp twoFactorResp
 	}
 	message := resp.Message
 	if message == "" {
-		message = "Two-factor authentication " + state + " for " + identifier
+		message = "Two-factor authentication " + state + " for user_id " + identifier
 	}
 
 	if opts.PlainOutput {
