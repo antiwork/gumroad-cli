@@ -61,8 +61,56 @@ func TestUpdateEmail_PostsExternalIDAndNewEmail(t *testing.T) {
 	if body.ExternalID != "2245593582708" || body.CurrentEmail != "" || body.NewEmail != "new@example.com" {
 		t.Errorf("got current=%q external_id=%q new=%q, want only external_id + new_email", body.CurrentEmail, body.ExternalID, body.NewEmail)
 	}
-	if !strings.Contains(out, "Current: 2245593582708") {
-		t.Errorf("expected current line to fall back to the external_id when current-email was not supplied: %q", out)
+	if !strings.Contains(out, "External ID: 2245593582708") {
+		t.Errorf("when only --external-id is supplied the identifier line must use the External ID label, not the Current label that connotes an email: %q", out)
+	}
+	if strings.Contains(out, "Current: 2245593582708") {
+		t.Errorf("Current label must not carry the external_id (reads as if the external_id were the current email): %q", out)
+	}
+}
+
+func TestUpdateEmail_FallbackHeadlineQualifiesExternalID(t *testing.T) {
+	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{
+			"message":              "",
+			"unconfirmed_email":    "new@example.com",
+			"pending_confirmation": true,
+		})
+	})
+
+	cmd := testutil.Command(newUpdateEmailCmd(), testutil.Yes(true), testutil.Quiet(false))
+	cmd.SetArgs([]string{"--external-id", "2245593582708", "--new-email", "new@example.com"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	if !strings.Contains(out, "external_id 2245593582708 → new@example.com") {
+		t.Errorf("fallback headline must qualify the external_id (without this prefix it reads as an email→email change): %q", out)
+	}
+	if strings.Contains(out, ": 2245593582708 → ") {
+		t.Errorf("fallback headline must not place a bare external_id where an email is expected: %q", out)
+	}
+}
+
+func TestUpdateEmail_LabelStaysCurrentWhenCurrentEmailSupplied(t *testing.T) {
+	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{
+			"message":              "",
+			"unconfirmed_email":    "new@example.com",
+			"pending_confirmation": true,
+		})
+	})
+
+	cmd := testutil.Command(newUpdateEmailCmd(), testutil.Yes(true), testutil.Quiet(false))
+	cmd.SetArgs([]string{"--current-email", "old@example.com", "--new-email", "new@example.com"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	if !strings.Contains(out, "Current: old@example.com") {
+		t.Errorf("when --current-email is supplied the identifier line must keep the Current label: %q", out)
+	}
+	if strings.Contains(out, "External ID:") {
+		t.Errorf("External ID label must not appear when --external-id is not supplied: %q", out)
+	}
+	if !strings.Contains(out, "Email change pending confirmation: old@example.com → new@example.com") {
+		t.Errorf("email-supplied headline must not be qualified with external_id: %q", out)
 	}
 }
 

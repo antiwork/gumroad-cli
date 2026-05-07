@@ -54,12 +54,14 @@ supplied, the server resolves by --external-id.`,
 			}
 
 			identifier := userIdentifier(currentEmail, externalID)
-			ok, err := cmdutil.ConfirmAction(opts, "Change "+identifier+" to "+newEmail+"? The user must confirm via email before the change takes effect.")
+			label := updateEmailLabel(currentEmail, externalID)
+			confirmSubject := updateEmailSubject(label, identifier)
+			ok, err := cmdutil.ConfirmAction(opts, "Change "+confirmSubject+" to "+newEmail+"? The user must confirm via email before the change takes effect.")
 			if err != nil {
 				return err
 			}
 			if !ok {
-				return cmdutil.PrintCancelledAction(opts, "update email from "+identifier+" to "+newEmail, identifier)
+				return cmdutil.PrintCancelledAction(opts, "update email from "+confirmSubject+" to "+newEmail, identifier)
 			}
 
 			req := updateEmailRequest{CurrentEmail: currentEmail, ExternalID: externalID, NewEmail: newEmail}
@@ -89,7 +91,7 @@ supplied, the server resolves by --external-id.`,
 			if err != nil {
 				return err
 			}
-			return renderUpdateEmail(opts, identifier, newEmail, decoded)
+			return renderUpdateEmail(opts, label, identifier, newEmail, decoded)
 		},
 	}
 
@@ -100,11 +102,12 @@ supplied, the server resolves by --external-id.`,
 	return cmd
 }
 
-func renderUpdateEmail(opts cmdutil.Options, identifier, newEmail string, resp updateEmailResponse) error {
+func renderUpdateEmail(opts cmdutil.Options, label, identifier, newEmail string, resp updateEmailResponse) error {
 	unconfirmed := fallback(resp.UnconfirmedEmail, newEmail)
-	defaultMessage := "Email change applied: " + identifier + " → " + unconfirmed
+	subject := updateEmailSubject(label, identifier)
+	defaultMessage := "Email change applied: " + subject + " → " + unconfirmed
 	if resp.PendingConfirmation {
-		defaultMessage = "Email change pending confirmation: " + identifier + " → " + unconfirmed
+		defaultMessage = "Email change pending confirmation: " + subject + " → " + unconfirmed
 	}
 	message := fallback(resp.Message, defaultMessage)
 	pending := "false"
@@ -123,7 +126,7 @@ func renderUpdateEmail(opts cmdutil.Options, identifier, newEmail string, resp u
 	if err := output.Writeln(opts.Out(), opts.Style().Green(message)); err != nil {
 		return err
 	}
-	if err := output.Writef(opts.Out(), "Current: %s\n", identifier); err != nil {
+	if err := output.Writef(opts.Out(), "%s: %s\n", label, identifier); err != nil {
 		return err
 	}
 	if resp.PendingConfirmation {
@@ -132,6 +135,20 @@ func renderUpdateEmail(opts cmdutil.Options, identifier, newEmail string, resp u
 		}
 	}
 	return output.Writef(opts.Out(), "Confirmed by user: %s\n", boolLabel(!resp.PendingConfirmation))
+}
+
+func updateEmailLabel(currentEmail, externalID string) string {
+	if currentEmail == "" && externalID != "" {
+		return "External ID"
+	}
+	return "Current"
+}
+
+func updateEmailSubject(label, identifier string) string {
+	if label == "External ID" {
+		return "external_id " + identifier
+	}
+	return identifier
 }
 
 func boolLabel(b bool) string {
