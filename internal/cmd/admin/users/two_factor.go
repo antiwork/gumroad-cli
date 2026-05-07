@@ -46,7 +46,9 @@ func newTwoFactorEnableCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "enable",
 		Short: "Enable two-factor authentication for a user",
-		Long: `Identify the user with --email or --external-id. When both are supplied,
+		Long: `Enable two-factor authentication for a user.
+
+Identify the user with --email or --external-id. When both are supplied,
 the server resolves by --external-id.`,
 		Args: cmdutil.ExactArgs(0),
 		RunE: func(c *cobra.Command, args []string) error {
