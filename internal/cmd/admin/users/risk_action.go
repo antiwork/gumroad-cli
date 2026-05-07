@@ -11,7 +11,18 @@ type riskActionResponse struct {
 	Message string `json:"message"`
 }
 
-func renderRiskAction(opts cmdutil.Options, email string, resp riskActionResponse) error {
+func riskActionLabel(email, externalID string) string {
+	if email == "" && externalID != "" {
+		return "External ID"
+	}
+	return "Email"
+}
+
+func renderRiskAction(opts cmdutil.Options, identifier string, resp riskActionResponse) error {
+	return renderRiskActionWithLabel(opts, "Email", identifier, resp)
+}
+
+func renderRiskActionWithLabel(opts cmdutil.Options, label, identifier string, resp riskActionResponse) error {
 	message := resp.Message
 	if message == "" {
 		message = resp.Status
@@ -19,7 +30,7 @@ func renderRiskAction(opts cmdutil.Options, email string, resp riskActionRespons
 
 	if opts.PlainOutput {
 		return output.PrintPlain(opts.Out(), [][]string{
-			{"true", message, email, resp.Status},
+			{"true", message, identifier, resp.Status},
 		})
 	}
 
@@ -31,8 +42,8 @@ func renderRiskAction(opts cmdutil.Options, email string, resp riskActionRespons
 	if err := output.Writeln(opts.Out(), style.Green(message)); err != nil {
 		return err
 	}
-	if email != "" {
-		if err := output.Writef(opts.Out(), "Email: %s\n", email); err != nil {
+	if identifier != "" {
+		if err := output.Writef(opts.Out(), "%s: %s\n", label, identifier); err != nil {
 			return err
 		}
 	}

@@ -12,7 +12,8 @@ import (
 )
 
 type infoRequest struct {
-	Email string `json:"email"`
+	Email      string `json:"email,omitempty"`
+	ExternalID string `json:"external_id,omitempty"`
 }
 
 type infoResponse struct {
@@ -61,7 +62,10 @@ type statsInfo struct {
 }
 
 func newInfoCmd() *cobra.Command {
-	var email string
+	var (
+		email      string
+		externalID string
+	)
 
 	cmd := &cobra.Command{
 		Use:   "info",
@@ -69,31 +73,37 @@ func newInfoCmd() *cobra.Command {
 		Long: `View a comprehensive admin info payload for a user, combining identity,
 risk state, two-factor state, payouts state, and earnings/sales stats into a
 single response. Mirrors the admin web user-detail page so support workflows
-can resolve from a single CLI invocation.`,
+can resolve from a single CLI invocation.
+
+Identify the user with --email or --external-id. When both are supplied, the
+server resolves by --external-id.`,
 		Example: `  gumroad admin users info --email user@example.com
+  gumroad admin users info --external-id 2245593582708
   gumroad admin users info --email user@example.com --json`,
 		Args: cmdutil.ExactArgs(0),
 		RunE: func(c *cobra.Command, args []string) error {
 			opts := cmdutil.OptionsFrom(c)
-			if email == "" {
-				return cmdutil.MissingFlagError(c, "--email")
+			if err := requireEmailOrExternalID(c, email, externalID); err != nil {
+				return err
 			}
 
-			return admincmd.RunPostJSONDecoded[infoResponse](opts, "Fetching user info...", "/users/info", infoRequest{Email: email}, func(resp infoResponse) error {
-				return renderInfo(opts, email, resp.User)
+			identifier := userIdentifier(email, externalID)
+			return admincmd.RunPostJSONDecoded[infoResponse](opts, "Fetching user info...", "/users/info", infoRequest{Email: email, ExternalID: externalID}, func(resp infoResponse) error {
+				return renderInfo(opts, identifier, resp.User)
 			})
 		},
 	}
 
-	cmd.Flags().StringVar(&email, "email", "", "User email (required)")
+	cmd.Flags().StringVar(&email, "email", "", "User email")
+	cmd.Flags().StringVar(&externalID, "external-id", "", "User external ID")
 
 	return cmd
 }
 
-func renderInfo(opts cmdutil.Options, email string, info userInfo) error {
+func renderInfo(opts cmdutil.Options, identifier string, info userInfo) error {
 	if opts.PlainOutput {
 		return output.PrintPlain(opts.Out(), [][]string{{
-			fallback(info.Email, email),
+			fallback(info.Email, identifier),
 			info.Name,
 			info.Username,
 			fallback(info.RiskState.Status, info.RiskState.UserRiskState),
@@ -116,7 +126,7 @@ func renderInfo(opts cmdutil.Options, email string, info userInfo) error {
 
 	headline := info.Name
 	if headline == "" {
-		headline = fallback(info.Email, email)
+		headline = fallback(info.Email, identifier)
 	}
 	fmt.Fprintln(&b, style.Bold(headline))
 	if info.Email != headline {

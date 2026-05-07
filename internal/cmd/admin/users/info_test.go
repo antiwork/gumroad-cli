@@ -50,16 +50,77 @@ func sampleInfoPayload() map[string]any {
 	}
 }
 
-func TestInfoRequiresEmail(t *testing.T) {
+func TestInfoRequiresEmailOrExternalID(t *testing.T) {
 	cmd := newInfoCmd()
 	cmd.SetArgs([]string{})
 
 	err := cmd.Execute()
 	if err == nil {
-		t.Fatal("expected missing email error")
+		t.Fatal("expected missing identifier error")
 	}
-	if !strings.Contains(err.Error(), "missing required flag: --email") {
+	if !strings.Contains(err.Error(), "supply --email or --external-id") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestInfoResolvesByExternalID(t *testing.T) {
+	var body infoRequest
+
+	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
+		raw, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("read body: %v", err)
+		}
+		if err := json.Unmarshal(raw, &body); err != nil {
+			t.Fatalf("decode body: %v", err)
+		}
+		if !strings.Contains(string(raw), `"external_id"`) {
+			t.Fatalf("expected external_id in request body, got %q", raw)
+		}
+		if strings.Contains(string(raw), `"email"`) {
+			t.Fatalf("email field must be omitted when only --external-id is supplied, got %q", raw)
+		}
+		testutil.JSON(t, w, sampleInfoPayload())
+	})
+
+	cmd := testutil.Command(newInfoCmd(), testutil.Quiet(false))
+	cmd.SetArgs([]string{"--external-id", "2245593582708"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	if body.ExternalID != "2245593582708" {
+		t.Fatalf("got external_id %q, want 2245593582708", body.ExternalID)
+	}
+	if body.Email != "" {
+		t.Errorf("expected email to be empty, got %q", body.Email)
+	}
+	if !strings.Contains(out, "Seller One") {
+		t.Errorf("expected resolved user info in output: %q", out)
+	}
+}
+
+func TestInfoSendsBothWhenEmailAndExternalIDSupplied(t *testing.T) {
+	var body infoRequest
+
+	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
+		raw, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("read body: %v", err)
+		}
+		if err := json.Unmarshal(raw, &body); err != nil {
+			t.Fatalf("decode body: %v", err)
+		}
+		testutil.JSON(t, w, sampleInfoPayload())
+	})
+
+	cmd := testutil.Command(newInfoCmd(), testutil.Quiet(false))
+	cmd.SetArgs([]string{"--email", "seller@example.com", "--external-id", "2245593582708"})
+	testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	if body.Email != "seller@example.com" {
+		t.Errorf("got email %q, want seller@example.com (server prefers external_id but CLI forwards both)", body.Email)
+	}
+	if body.ExternalID != "2245593582708" {
+		t.Errorf("got external_id %q, want 2245593582708", body.ExternalID)
 	}
 }
 

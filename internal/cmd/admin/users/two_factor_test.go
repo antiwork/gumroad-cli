@@ -31,23 +31,77 @@ func TestTwoFactor_NamespaceWiresLeaves(t *testing.T) {
 	}
 }
 
-func TestTwoFactor_EnableRequiresEmail(t *testing.T) {
+func TestTwoFactor_EnableRequiresEmailOrExternalID(t *testing.T) {
 	cmd := newTwoFactorEnableCmd()
 	cmd.SetArgs([]string{})
 
 	err := cmd.Execute()
-	if err == nil || !strings.Contains(err.Error(), "missing required flag: --email") {
+	if err == nil || !strings.Contains(err.Error(), "supply --email or --external-id") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
-func TestTwoFactor_DisableRequiresEmail(t *testing.T) {
+func TestTwoFactor_DisableRequiresEmailOrExternalID(t *testing.T) {
 	cmd := newTwoFactorDisableCmd()
 	cmd.SetArgs([]string{})
 
 	err := cmd.Execute()
-	if err == nil || !strings.Contains(err.Error(), "missing required flag: --email") {
+	if err == nil || !strings.Contains(err.Error(), "supply --email or --external-id") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestTwoFactor_DisableSendsExternalID(t *testing.T) {
+	var body twoFactorRequest
+
+	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
+		raw, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("read body: %v", err)
+		}
+		if err := json.Unmarshal(raw, &body); err != nil {
+			t.Fatalf("decode body: %v", err)
+		}
+		if strings.Contains(string(raw), `"email"`) {
+			t.Errorf("email field must be omitted when only --external-id is supplied, got %q", raw)
+		}
+		testutil.JSON(t, w, map[string]any{
+			"message":                           "Two-factor authentication disabled",
+			"two_factor_authentication_enabled": false,
+		})
+	})
+
+	cmd := testutil.Command(newTwoFactorDisableCmd(), testutil.Yes(true), testutil.Quiet(false))
+	cmd.SetArgs([]string{"--external-id", "2245593582708"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	if body.ExternalID != "2245593582708" || body.Email != "" || body.Enabled {
+		t.Errorf("got email=%q external_id=%q enabled=%v, want only external_id + enabled=false", body.Email, body.ExternalID, body.Enabled)
+	}
+	if !strings.Contains(out, "Two-factor: disabled") {
+		t.Errorf("expected disabled state in output: %q", out)
+	}
+}
+
+func TestTwoFactor_ForwardsBothEmailAndExternalID(t *testing.T) {
+	var body twoFactorRequest
+
+	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode body: %v", err)
+		}
+		testutil.JSON(t, w, map[string]any{
+			"message":                           "Two-factor authentication disabled",
+			"two_factor_authentication_enabled": false,
+		})
+	})
+
+	cmd := testutil.Command(newTwoFactorDisableCmd(), testutil.Yes(true))
+	cmd.SetArgs([]string{"--email", "user@example.com", "--external-id", "2245593582708"})
+	testutil.MustExecute(t, cmd)
+
+	if body.Email != "user@example.com" || body.ExternalID != "2245593582708" {
+		t.Errorf("got email=%q external_id=%q, want both forwarded", body.Email, body.ExternalID)
 	}
 }
 

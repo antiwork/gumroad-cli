@@ -10,16 +10,75 @@ import (
 	"github.com/antiwork/gumroad-cli/internal/testutil"
 )
 
-func TestMarkCompliantRequiresEmail(t *testing.T) {
+func TestMarkCompliantRequiresEmailOrExternalID(t *testing.T) {
 	cmd := newMarkCompliantCmd()
 	cmd.SetArgs([]string{})
 
 	err := cmd.Execute()
 	if err == nil {
-		t.Fatal("expected missing email error")
+		t.Fatal("expected missing identifier error")
 	}
-	if !strings.Contains(err.Error(), "missing required flag: --email") {
+	if !strings.Contains(err.Error(), "supply --email or --external-id") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestMarkCompliantSendsExternalID(t *testing.T) {
+	var body markCompliantRequest
+
+	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
+		raw, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("read body: %v", err)
+		}
+		if err := json.Unmarshal(raw, &body); err != nil {
+			t.Fatalf("decode body: %v", err)
+		}
+		if strings.Contains(string(raw), `"email"`) {
+			t.Errorf("email field must be omitted when only --external-id is supplied, got %q", raw)
+		}
+		testutil.JSON(t, w, map[string]any{
+			"success": true,
+			"status":  "marked_compliant",
+			"message": "User marked compliant",
+		})
+	})
+
+	cmd := testutil.Command(newMarkCompliantCmd(), testutil.Yes(true), testutil.Quiet(false))
+	cmd.SetArgs([]string{"--external-id", "2245593582708"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	if body.ExternalID != "2245593582708" || body.Email != "" {
+		t.Errorf("got email=%q external_id=%q, want only external_id", body.Email, body.ExternalID)
+	}
+	if !strings.Contains(out, "External ID: 2245593582708") {
+		t.Errorf("expected External ID label when only --external-id is supplied: %q", out)
+	}
+}
+
+func TestMarkCompliantForwardsBothEmailAndExternalID(t *testing.T) {
+	var body markCompliantRequest
+
+	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode body: %v", err)
+		}
+		testutil.JSON(t, w, map[string]any{
+			"success": true,
+			"status":  "marked_compliant",
+			"message": "User marked compliant",
+		})
+	})
+
+	cmd := testutil.Command(newMarkCompliantCmd(), testutil.Yes(true))
+	cmd.SetArgs([]string{
+		"--email", "seller@example.com",
+		"--external-id", "2245593582708",
+	})
+	testutil.MustExecute(t, cmd)
+
+	if body.Email != "seller@example.com" || body.ExternalID != "2245593582708" {
+		t.Errorf("got email=%q external_id=%q, want both forwarded", body.Email, body.ExternalID)
 	}
 }
 

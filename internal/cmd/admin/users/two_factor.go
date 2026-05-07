@@ -12,8 +12,9 @@ import (
 )
 
 type twoFactorRequest struct {
-	Email   string `json:"email"`
-	Enabled bool   `json:"enabled"`
+	Email      string `json:"email,omitempty"`
+	ExternalID string `json:"external_id,omitempty"`
+	Enabled    bool   `json:"enabled"`
 }
 
 type twoFactorResponse struct {
@@ -26,7 +27,8 @@ func newTwoFactorCmd() *cobra.Command {
 		Use:   "two-factor",
 		Short: "Enable or disable two-factor authentication for a user",
 		Example: `  gumroad admin users two-factor enable --email user@example.com
-  gumroad admin users two-factor disable --email user@example.com`,
+  gumroad admin users two-factor disable --email user@example.com
+  gumroad admin users two-factor disable --external-id 2245593582708`,
 	}
 
 	cmd.AddCommand(newTwoFactorEnableCmd())
@@ -36,61 +38,82 @@ func newTwoFactorCmd() *cobra.Command {
 }
 
 func newTwoFactorEnableCmd() *cobra.Command {
-	var email string
+	var (
+		email      string
+		externalID string
+	)
 
 	cmd := &cobra.Command{
 		Use:   "enable",
 		Short: "Enable two-factor authentication for a user",
-		Args:  cmdutil.ExactArgs(0),
+		Long: `Identify the user with --email or --external-id. When both are supplied,
+the server resolves by --external-id.`,
+		Args: cmdutil.ExactArgs(0),
 		RunE: func(c *cobra.Command, args []string) error {
-			return runTwoFactor(c, email, true, "Enable two-factor authentication for "+email+"?", "enable two-factor for "+email, "Enabling two-factor authentication...")
+			identifier := userIdentifier(email, externalID)
+			return runTwoFactor(c, email, externalID, true, "Enable two-factor authentication for "+identifier+"?", "enable two-factor for "+identifier, "Enabling two-factor authentication...")
 		},
 	}
 
-	cmd.Flags().StringVar(&email, "email", "", "User email (required)")
+	cmd.Flags().StringVar(&email, "email", "", "User email")
+	cmd.Flags().StringVar(&externalID, "external-id", "", "User external ID")
 
 	return cmd
 }
 
 func newTwoFactorDisableCmd() *cobra.Command {
-	var email string
+	var (
+		email      string
+		externalID string
+	)
 
 	cmd := &cobra.Command{
 		Use:   "disable",
 		Short: "Disable two-factor authentication for a user",
 		Long: `Disable two-factor authentication for a user. The user's existing TOTP
 credential is destroyed; they will lose 2FA on their next login and any
-recovery codes they had become invalid.`,
+recovery codes they had become invalid.
+
+Identify the user with --email or --external-id. When both are supplied,
+the server resolves by --external-id.`,
 		Args: cmdutil.ExactArgs(0),
 		RunE: func(c *cobra.Command, args []string) error {
-			return runTwoFactor(c, email, false, "Disable two-factor authentication for "+email+"? Their TOTP credential will be destroyed and they will lose 2FA on next login.", "disable two-factor for "+email, "Disabling two-factor authentication...")
+			identifier := userIdentifier(email, externalID)
+			return runTwoFactor(c, email, externalID, false, "Disable two-factor authentication for "+identifier+"? Their TOTP credential will be destroyed and they will lose 2FA on next login.", "disable two-factor for "+identifier, "Disabling two-factor authentication...")
 		},
 	}
 
-	cmd.Flags().StringVar(&email, "email", "", "User email (required)")
+	cmd.Flags().StringVar(&email, "email", "", "User email")
+	cmd.Flags().StringVar(&externalID, "external-id", "", "User external ID")
 
 	return cmd
 }
 
-func runTwoFactor(c *cobra.Command, email string, enabled bool, confirmMsg, cancelAction, spinnerMsg string) error {
+func runTwoFactor(c *cobra.Command, email, externalID string, enabled bool, confirmMsg, cancelAction, spinnerMsg string) error {
 	opts := cmdutil.OptionsFrom(c)
-	if email == "" {
-		return cmdutil.MissingFlagError(c, "--email")
+	if err := requireEmailOrExternalID(c, email, externalID); err != nil {
+		return err
 	}
 
+	identifier := userIdentifier(email, externalID)
 	ok, err := cmdutil.ConfirmAction(opts, confirmMsg)
 	if err != nil {
 		return err
 	}
 	if !ok {
-		return cmdutil.PrintCancelledAction(opts, cancelAction, email)
+		return cmdutil.PrintCancelledAction(opts, cancelAction, identifier)
 	}
 
-	req := twoFactorRequest{Email: email, Enabled: enabled}
+	req := twoFactorRequest{Email: email, ExternalID: externalID, Enabled: enabled}
 
 	if opts.DryRun {
 		params := url.Values{}
-		params.Set("email", email)
+		if email != "" {
+			params.Set("email", email)
+		}
+		if externalID != "" {
+			params.Set("external_id", externalID)
+		}
 		if enabled {
 			params.Set("enabled", "true")
 		} else {
@@ -112,21 +135,21 @@ func runTwoFactor(c *cobra.Command, email string, enabled bool, confirmMsg, canc
 	if err != nil {
 		return err
 	}
-	return renderTwoFactor(opts, email, decoded)
+	return renderTwoFactor(opts, identifier, decoded)
 }
 
-func renderTwoFactor(opts cmdutil.Options, email string, resp twoFactorResponse) error {
+func renderTwoFactor(opts cmdutil.Options, identifier string, resp twoFactorResponse) error {
 	state := "disabled"
 	if resp.TwoFactorAuthenticationEnabled {
 		state = "enabled"
 	}
 	message := resp.Message
 	if message == "" {
-		message = "Two-factor authentication " + state + " for " + email
+		message = "Two-factor authentication " + state + " for " + identifier
 	}
 
 	if opts.PlainOutput {
-		return output.PrintPlain(opts.Out(), [][]string{{"true", message, email, state}})
+		return output.PrintPlain(opts.Out(), [][]string{{"true", message, identifier, state}})
 	}
 
 	if opts.Quiet {

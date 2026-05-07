@@ -3,6 +3,7 @@ package users
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"net/http"
 	"regexp"
 	"strings"
@@ -11,14 +12,15 @@ import (
 	"github.com/antiwork/gumroad-cli/internal/testutil"
 )
 
-func TestAddComment_RequiresEmailAndContent(t *testing.T) {
+func TestAddComment_RequiresIdentifierAndContent(t *testing.T) {
 	cases := []struct {
 		name string
 		args []string
 		want string
 	}{
-		{"missing-email", []string{"--content", "x"}, "missing required flag: --email"},
-		{"missing-content", []string{"--email", "user@example.com"}, "missing required flag: --content"},
+		{"missing-identifier", []string{"--content", "x"}, "supply --email or --external-id"},
+		{"missing-content-with-email", []string{"--email", "user@example.com"}, "missing required flag: --content"},
+		{"missing-content-with-external-id", []string{"--external-id", "2245593582708"}, "missing required flag: --content"},
 	}
 
 	for _, tc := range cases {
@@ -30,6 +32,62 @@ func TestAddComment_RequiresEmailAndContent(t *testing.T) {
 				t.Fatalf("got %v, want error containing %q", err, tc.want)
 			}
 		})
+	}
+}
+
+func TestAddComment_PostsExternalID(t *testing.T) {
+	var body addCommentRequest
+
+	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
+		raw, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("read body: %v", err)
+		}
+		if err := json.Unmarshal(raw, &body); err != nil {
+			t.Fatalf("decode body: %v", err)
+		}
+		if strings.Contains(string(raw), `"email"`) {
+			t.Errorf("email field must be omitted when only --external-id is supplied, got %q", raw)
+		}
+		testutil.JSON(t, w, map[string]any{
+			"comment": map[string]any{"id": "c_1", "comment_type": "Note"},
+		})
+	})
+
+	cmd := testutil.Command(newAddCommentCmd(), testutil.Yes(true), testutil.Quiet(false))
+	cmd.SetArgs([]string{"--external-id", "2245593582708", "--content", "test note"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	if body.ExternalID != "2245593582708" || body.Email != "" {
+		t.Errorf("got email=%q external_id=%q, want only external_id", body.Email, body.ExternalID)
+	}
+	if !strings.Contains(out, "Added admin note to 2245593582708") {
+		t.Errorf("expected confirmation referencing the external_id: %q", out)
+	}
+}
+
+func TestAddComment_ForwardsBothEmailAndExternalID(t *testing.T) {
+	var body addCommentRequest
+
+	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode body: %v", err)
+		}
+		testutil.JSON(t, w, map[string]any{
+			"comment": map[string]any{"id": "c_1", "comment_type": "Note"},
+		})
+	})
+
+	cmd := testutil.Command(newAddCommentCmd(), testutil.Yes(true))
+	cmd.SetArgs([]string{
+		"--email", "user@example.com",
+		"--external-id", "2245593582708",
+		"--content", "test note",
+	})
+	testutil.MustExecute(t, cmd)
+
+	if body.Email != "user@example.com" || body.ExternalID != "2245593582708" {
+		t.Errorf("got email=%q external_id=%q, want both forwarded", body.Email, body.ExternalID)
 	}
 }
 

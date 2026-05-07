@@ -12,7 +12,8 @@ import (
 )
 
 type updateEmailRequest struct {
-	CurrentEmail string `json:"current_email"`
+	CurrentEmail string `json:"current_email,omitempty"`
+	ExternalID   string `json:"external_id,omitempty"`
 	NewEmail     string `json:"new_email"`
 }
 
@@ -25,6 +26,7 @@ type updateEmailResponse struct {
 func newUpdateEmailCmd() *cobra.Command {
 	var (
 		currentEmail string
+		externalID   string
 		newEmail     string
 	)
 
@@ -34,32 +36,42 @@ func newUpdateEmailCmd() *cobra.Command {
 		Long: `Stage a change to a user's email address. The new address is set as the
 unconfirmed email and a confirmation message is sent to it; the user
 must click the confirmation link before the new address takes effect.
-Until then the existing email remains active.`,
+Until then the existing email remains active.
+
+Identify the user with --current-email or --external-id. When both are
+supplied, the server resolves by --external-id.`,
 		Example: `  gumroad admin users update-email --current-email old@example.com --new-email new@example.com
+  gumroad admin users update-email --external-id 2245593582708 --new-email new@example.com
   gumroad admin users update-email --current-email old@example.com --new-email new@example.com --yes`,
 		Args: cmdutil.ExactArgs(0),
 		RunE: func(c *cobra.Command, args []string) error {
 			opts := cmdutil.OptionsFrom(c)
-			if currentEmail == "" {
-				return cmdutil.MissingFlagError(c, "--current-email")
+			if currentEmail == "" && externalID == "" {
+				return cmdutil.UsageErrorf(c, "supply --current-email or --external-id")
 			}
 			if newEmail == "" {
 				return cmdutil.MissingFlagError(c, "--new-email")
 			}
 
-			ok, err := cmdutil.ConfirmAction(opts, "Change "+currentEmail+" to "+newEmail+"? The user must confirm via email before the change takes effect.")
+			identifier := userIdentifier(currentEmail, externalID)
+			ok, err := cmdutil.ConfirmAction(opts, "Change "+identifier+" to "+newEmail+"? The user must confirm via email before the change takes effect.")
 			if err != nil {
 				return err
 			}
 			if !ok {
-				return cmdutil.PrintCancelledAction(opts, "update email from "+currentEmail+" to "+newEmail, currentEmail)
+				return cmdutil.PrintCancelledAction(opts, "update email from "+identifier+" to "+newEmail, identifier)
 			}
 
-			req := updateEmailRequest{CurrentEmail: currentEmail, NewEmail: newEmail}
+			req := updateEmailRequest{CurrentEmail: currentEmail, ExternalID: externalID, NewEmail: newEmail}
 
 			if opts.DryRun {
 				params := url.Values{}
-				params.Set("current_email", currentEmail)
+				if currentEmail != "" {
+					params.Set("current_email", currentEmail)
+				}
+				if externalID != "" {
+					params.Set("external_id", externalID)
+				}
 				params.Set("new_email", newEmail)
 				return cmdutil.PrintDryRunRequest(opts, http.MethodPost, adminapi.AdminPath("/users/update_email"), params)
 			}
@@ -77,21 +89,22 @@ Until then the existing email remains active.`,
 			if err != nil {
 				return err
 			}
-			return renderUpdateEmail(opts, currentEmail, newEmail, decoded)
+			return renderUpdateEmail(opts, identifier, newEmail, decoded)
 		},
 	}
 
-	cmd.Flags().StringVar(&currentEmail, "current-email", "", "User's current email (required)")
+	cmd.Flags().StringVar(&currentEmail, "current-email", "", "User's current email")
+	cmd.Flags().StringVar(&externalID, "external-id", "", "User external ID")
 	cmd.Flags().StringVar(&newEmail, "new-email", "", "New email to stage (required)")
 
 	return cmd
 }
 
-func renderUpdateEmail(opts cmdutil.Options, currentEmail, newEmail string, resp updateEmailResponse) error {
+func renderUpdateEmail(opts cmdutil.Options, identifier, newEmail string, resp updateEmailResponse) error {
 	unconfirmed := fallback(resp.UnconfirmedEmail, newEmail)
-	defaultMessage := "Email change applied: " + currentEmail + " → " + unconfirmed
+	defaultMessage := "Email change applied: " + identifier + " → " + unconfirmed
 	if resp.PendingConfirmation {
-		defaultMessage = "Email change pending confirmation: " + currentEmail + " → " + unconfirmed
+		defaultMessage = "Email change pending confirmation: " + identifier + " → " + unconfirmed
 	}
 	message := fallback(resp.Message, defaultMessage)
 	pending := "false"
@@ -100,7 +113,7 @@ func renderUpdateEmail(opts cmdutil.Options, currentEmail, newEmail string, resp
 	}
 
 	if opts.PlainOutput {
-		return output.PrintPlain(opts.Out(), [][]string{{"true", message, currentEmail, unconfirmed, pending}})
+		return output.PrintPlain(opts.Out(), [][]string{{"true", message, identifier, unconfirmed, pending}})
 	}
 
 	if opts.Quiet {
@@ -110,7 +123,7 @@ func renderUpdateEmail(opts cmdutil.Options, currentEmail, newEmail string, resp
 	if err := output.Writeln(opts.Out(), opts.Style().Green(message)); err != nil {
 		return err
 	}
-	if err := output.Writef(opts.Out(), "Current: %s\n", currentEmail); err != nil {
+	if err := output.Writef(opts.Out(), "Current: %s\n", identifier); err != nil {
 		return err
 	}
 	if resp.PendingConfirmation {

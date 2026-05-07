@@ -1,12 +1,16 @@
 package users
 
-import "github.com/spf13/cobra"
+import (
+	"github.com/antiwork/gumroad-cli/internal/cmdutil"
+	"github.com/spf13/cobra"
+)
 
 func NewUsersCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "users",
 		Short: "Read and manage admin user records",
 		Example: `  gumroad admin users info --email user@example.com
+  gumroad admin users info --external-id 2245593582708
   gumroad admin users suspension --email user@example.com
   gumroad admin users mark-compliant --email user@example.com
   gumroad admin users watch --email user@example.com --revenue-threshold 200 --note "Review next buyers"
@@ -39,4 +43,18 @@ func fallback(value, alt string) string {
 		return alt
 	}
 	return value
+}
+
+func userIdentifier(email, externalID string) string {
+	if email != "" {
+		return email
+	}
+	return externalID
+}
+
+func requireEmailOrExternalID(cmd *cobra.Command, email, externalID string) error {
+	if email == "" && externalID == "" {
+		return cmdutil.UsageErrorf(cmd, "supply --email or --external-id")
+	}
+	return nil
 }
