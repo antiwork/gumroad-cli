@@ -283,6 +283,31 @@ func TestInfoSuppressesDuplicateEmailLineWhenNameIsEmpty(t *testing.T) {
 	}
 }
 
+func TestInfoSuppressesDuplicateUserIDLineWhenHeadlineIsUserID(t *testing.T) {
+	payload := sampleInfoPayload()
+	user := payload["user"].(map[string]any)
+	user["name"] = ""
+	user["email"] = ""
+
+	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, payload)
+	})
+
+	cmd := testutil.Command(newInfoCmd(), testutil.Quiet(false))
+	cmd.SetArgs([]string{"--user-id", "2245593582708"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	if strings.Count(out, "2245593582708") != 1 {
+		t.Fatalf("expected user_id to appear once, got: %q", out)
+	}
+	if strings.Contains(out, "User ID: 2245593582708") {
+		t.Errorf("User ID line must be suppressed when headline already shows the user_id: %q", out)
+	}
+	if !strings.Contains(out, "Username: sellerone") {
+		t.Errorf("downstream lines must still render: %q", out)
+	}
+}
+
 func TestInfoFallsBackToUserRiskStateWhenStatusIsEmpty(t *testing.T) {
 	payload := sampleInfoPayload()
 	risk := payload["user"].(map[string]any)["risk_state"].(map[string]any)

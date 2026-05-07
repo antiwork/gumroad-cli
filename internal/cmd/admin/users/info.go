@@ -130,7 +130,9 @@ func renderInfo(opts cmdutil.Options, identifier, userID string, info userInfo) 
 	if info.Email != headline {
 		writeOptional(&b, "Email", info.Email)
 	}
-	writeOptional(&b, "User ID", userID)
+	if userID != headline {
+		writeOptional(&b, "User ID", userID)
+	}
 	writeOptional(&b, "Username", info.Username)
 	writeOptional(&b, "Profile", info.ProfileURL)
 	writeOptional(&b, "Country", info.Country)
