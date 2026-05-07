@@ -67,7 +67,7 @@ func renderSuspension(opts cmdutil.Options, identifier string, resp suspensionRe
 			return err
 		}
 	}
-	if resp.UserID != "" {
+	if resp.UserID != "" && resp.UserID != identifier {
 		if err := output.Writef(opts.Out(), "User ID: %s\n", resp.UserID); err != nil {
 			return err
 		}

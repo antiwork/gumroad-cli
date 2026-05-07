@@ -79,6 +79,7 @@ func TestSuspensionResolvesByUserID(t *testing.T) {
 			t.Fatalf("decode body: %v", err)
 		}
 		testutil.JSON(t, w, map[string]any{
+			"user_id":    "2245593582708",
 			"status":     "Suspended",
 			"updated_at": "2026-04-24T12:00:00Z",
 		})
@@ -96,6 +97,9 @@ func TestSuspensionResolvesByUserID(t *testing.T) {
 	}
 	if !strings.Contains(out, "2245593582708") {
 		t.Errorf("expected user_id in headline output: %q", out)
+	}
+	if strings.Contains(out, "User ID: 2245593582708") {
+		t.Errorf("must not repeat user_id immediately after the headline: %q", out)
 	}
 }
 
