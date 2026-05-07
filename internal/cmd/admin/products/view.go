@@ -3,6 +3,7 @@ package products
 import (
 	"fmt"
 	"io"
+	"math"
 	"net/url"
 	"strconv"
 	"strings"
@@ -216,7 +217,10 @@ func formatPrice(cents api.JSONInt, currency string) string {
 	return formatted + " " + code
 }
 
-const bytesPerKiB = 1024
+const (
+	bytesPerKiB    = 1024
+	fileSizeDigits = 1
+)
 
 func formatFileSize(bytes int) string {
 	if bytes < 0 {
@@ -231,9 +235,14 @@ func formatFileSize(bytes int) string {
 	for _, u := range units {
 		size /= bytesPerKiB
 		unit = u
-		if size < bytesPerKiB {
+		if displayedKiB(size) < float64(bytesPerKiB) {
 			break
 		}
 	}
-	return fmt.Sprintf("%.1f %s", size, unit)
+	return fmt.Sprintf("%.*f %s", fileSizeDigits, size, unit)
+}
+
+func displayedKiB(size float64) float64 {
+	scale := math.Pow10(fileSizeDigits)
+	return math.Round(size*scale) / scale
 }
