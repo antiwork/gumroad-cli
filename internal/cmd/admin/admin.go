@@ -3,6 +3,7 @@ package admin
 import (
 	adminlicenses "github.com/antiwork/gumroad-cli/internal/cmd/admin/licenses"
 	adminpayouts "github.com/antiwork/gumroad-cli/internal/cmd/admin/payouts"
+	adminproducts "github.com/antiwork/gumroad-cli/internal/cmd/admin/products"
 	adminpurchases "github.com/antiwork/gumroad-cli/internal/cmd/admin/purchases"
 	adminusers "github.com/antiwork/gumroad-cli/internal/cmd/admin/users"
 	"github.com/spf13/cobra"
@@ -21,13 +22,16 @@ func NewAdminCmd() *cobra.Command {
   gumroad admin users suspension --email <email>
   gumroad admin users watch --email <email> --revenue-threshold 200
   gumroad admin payouts list --email <email>
-  gumroad admin payouts pause --email <email>`,
+  gumroad admin payouts pause --email <email>
+  gumroad admin products list --email <email>
+  gumroad admin products view <product-id>`,
 	}
 
 	cmd.AddCommand(adminpurchases.NewPurchasesCmd())
 	cmd.AddCommand(adminlicenses.NewLicensesCmd())
 	cmd.AddCommand(adminusers.NewUsersCmd())
 	cmd.AddCommand(adminpayouts.NewPayoutsCmd())
+	cmd.AddCommand(adminproducts.NewProductsCmd())
 
 	return cmd
 }
