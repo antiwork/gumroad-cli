@@ -2,6 +2,7 @@ package users
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -96,6 +97,16 @@ func TestSuspendRequiresConfirmation(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "--yes") {
 		t.Errorf("error should mention --yes: %v", err)
+	}
+}
+
+func TestSuspendConfirmationMessageUsesUserIDOnce(t *testing.T) {
+	got := fmt.Sprintf(suspendConfirmationMessage, "2245593582708")
+	if !strings.Contains(got, "Suspend user_id 2245593582708 for fraud?") {
+		t.Fatalf("unexpected confirmation message: %q", got)
+	}
+	if strings.Contains(got, "user user_id") {
+		t.Fatalf("confirmation message repeats user wording: %q", got)
 	}
 }
 

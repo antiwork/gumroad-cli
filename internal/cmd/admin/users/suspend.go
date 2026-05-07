@@ -11,7 +11,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const suspendConfirmationMessage = "Suspend user %s for fraud? This freezes payouts and disables the seller's products."
+const suspendConfirmationMessage = "Suspend user_id %s for fraud? This freezes payouts and disables the seller's products."
 
 type suspendRequest struct {
 	UserID         string `json:"user_id"`
@@ -45,7 +45,7 @@ against acting on an account whose email has changed.`,
 			}
 
 			identifier := target.identifier()
-			ok, err := cmdutil.ConfirmAction(opts, fmt.Sprintf(suspendConfirmationMessage, "user_id "+identifier))
+			ok, err := cmdutil.ConfirmAction(opts, fmt.Sprintf(suspendConfirmationMessage, identifier))
 			if err != nil {
 				return err
 			}

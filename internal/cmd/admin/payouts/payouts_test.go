@@ -22,6 +22,7 @@ func TestListUsesInternalAdminEndpoint(t *testing.T) {
 		}
 		gotEmail = payload.Email
 		testutil.JSON(t, w, map[string]any{
+			"user_id": "2245593582708",
 			"last_payouts": []map[string]any{
 				{
 					"external_id": "pay_123", "amount_cents": 5000, "currency": "usd",
@@ -51,10 +52,29 @@ func TestListUsesInternalAdminEndpoint(t *testing.T) {
 	if gotAuth != "Bearer admin-token" {
 		t.Fatalf("got auth %q, want Bearer admin-token", gotAuth)
 	}
-	for _, want := range []string{"seller@example.com", "Next payout: 2026-04-30", "$25.00", "Manual review", "pay_123", "5000 USD cents"} {
+	for _, want := range []string{"seller@example.com", "User ID: 2245593582708", "Next payout: 2026-04-30", "$25.00", "Manual review", "pay_123", "5000 USD cents"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("output missing %q: %q", want, out)
 		}
+	}
+}
+
+func TestListDoesNotRepeatUserIDWhenUsedAsLookup(t *testing.T) {
+	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{
+			"user_id": "2245593582708",
+		})
+	})
+
+	cmd := testutil.Command(newListCmd())
+	cmd.SetArgs([]string{"--user-id", "2245593582708"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	if strings.Contains(out, "User ID: 2245593582708") {
+		t.Fatalf("must not repeat user_id immediately after the headline: %q", out)
+	}
+	if strings.Count(out, "2245593582708") != 1 {
+		t.Fatalf("expected user_id to appear once, got: %q", out)
 	}
 }
 

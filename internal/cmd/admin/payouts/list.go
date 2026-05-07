@@ -71,7 +71,7 @@ func renderPayouts(opts cmdutil.Options, identifier string, resp payoutsResponse
 		if err := output.Writeln(w, style.Bold(identifier)); err != nil {
 			return err
 		}
-		if resp.UserID != "" {
+		if resp.UserID != "" && resp.UserID != identifier {
 			if err := output.Writef(w, "User ID: %s\n", resp.UserID); err != nil {
 				return err
 			}

@@ -147,6 +147,24 @@ func TestUpdateEmail_ForwardsExpectedEmailAndUserID(t *testing.T) {
 	}
 }
 
+func TestUpdateEmail_CurrentEmailAndEmailAliasMismatchNamesTypedFlags(t *testing.T) {
+	cmd := newUpdateEmailCmd()
+	cmd.SetArgs([]string{
+		"--user-id", "2245593582708",
+		"--email", "old@example.com",
+		"--current-email", "other@example.com",
+		"--new-email", "new@example.com",
+	})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected alias mismatch error")
+	}
+	if !strings.Contains(err.Error(), "--current-email and --email must match") {
+		t.Fatalf("got %v, want error naming the two typed aliases", err)
+	}
+}
+
 func TestUpdateEmail_RequiresConfirmation(t *testing.T) {
 	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
 		t.Error("should not reach API without confirmation")

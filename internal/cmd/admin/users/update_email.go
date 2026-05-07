@@ -50,6 +50,9 @@ against acting on an account whose email has changed.`,
 				if targetFlags.ExpectedEmail != "" && targetFlags.ExpectedEmail != currentEmailAlias {
 					return cmdutil.UsageErrorf(c, "--expected-email and --current-email must match")
 				}
+				if targetFlags.ExpectedEmailAlias != "" && targetFlags.ExpectedEmailAlias != currentEmailAlias {
+					return cmdutil.UsageErrorf(c, "--current-email and --email must match")
+				}
 				targetFlags.ExpectedEmail = currentEmailAlias
 			}
 			target, err := resolveUserMutationTarget(c, targetFlags)
