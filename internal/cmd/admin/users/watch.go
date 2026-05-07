@@ -227,7 +227,7 @@ func newUnwatchCmd() *cobra.Command {
 				return cmdutil.PrintCancelledAction(opts, "unwatch user_id "+identifier, identifier)
 			}
 
-			req := unwatchRequest{UserID: target.UserID, ExpectedEmail: target.ExpectedEmail}
+			req := unwatchRequest(target)
 			path := "users/unwatch"
 
 			if opts.DryRun {

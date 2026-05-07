@@ -40,7 +40,7 @@ audit comment on the user automatically.`,
 				return cmdutil.PrintCancelledAction(opts, "resume payouts for user_id "+target.UserID, target.UserID)
 			}
 
-			req := resumeRequest{UserID: target.UserID, ExpectedEmail: target.ExpectedEmail}
+			req := resumeRequest(target)
 			path := "payouts/resume"
 
 			if opts.DryRun {

@@ -87,7 +87,7 @@ server resolves by --user-id.`,
 			}
 
 			identifier := target.identifier()
-			return admincmd.RunPostJSONDecoded[infoResponse](opts, "Fetching user info...", "/users/info", infoRequest{Email: target.Email, UserID: target.UserID}, func(resp infoResponse) error {
+			return admincmd.RunPostJSONDecoded[infoResponse](opts, "Fetching user info...", "/users/info", infoRequest(target), func(resp infoResponse) error {
 				return renderInfo(opts, identifier, resp.UserID, resp.User)
 			})
 		},

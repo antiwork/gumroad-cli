@@ -50,7 +50,7 @@ func newListCmd() *cobra.Command {
 				return err
 			}
 
-			return admincmd.RunPostJSONDecoded[payoutsResponse](opts, "Fetching payouts...", "/payouts/list", listRequest{Email: target.Email, UserID: target.UserID}, func(resp payoutsResponse) error {
+			return admincmd.RunPostJSONDecoded[payoutsResponse](opts, "Fetching payouts...", "/payouts/list", listRequest(target), func(resp payoutsResponse) error {
 				return renderPayouts(opts, target.identifier(), resp)
 			})
 		},

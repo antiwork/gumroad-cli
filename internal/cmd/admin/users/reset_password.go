@@ -51,7 +51,7 @@ against acting on an account whose email has changed.`,
 				return cmdutil.PrintCancelledAction(opts, "reset password for user_id "+identifier, identifier)
 			}
 
-			req := resetPasswordRequest{UserID: target.UserID, ExpectedEmail: target.ExpectedEmail}
+			req := resetPasswordRequest(target)
 
 			if opts.DryRun {
 				params := userMutationParams(target)

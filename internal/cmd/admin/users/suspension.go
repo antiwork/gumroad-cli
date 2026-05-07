@@ -40,7 +40,7 @@ server resolves by --user-id.`,
 			}
 
 			identifier := target.identifier()
-			return admincmd.RunPostJSONDecoded[suspensionResponse](opts, "Fetching suspension info...", "/users/suspension", suspensionRequest{Email: target.Email, UserID: target.UserID}, func(resp suspensionResponse) error {
+			return admincmd.RunPostJSONDecoded[suspensionResponse](opts, "Fetching suspension info...", "/users/suspension", suspensionRequest(target), func(resp suspensionResponse) error {
 				return renderSuspension(opts, identifier, resp)
 			})
 		},
