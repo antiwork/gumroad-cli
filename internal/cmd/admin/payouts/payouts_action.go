@@ -1,6 +1,9 @@
 package payouts
 
 import (
+	"io"
+	"strings"
+
 	"github.com/antiwork/gumroad-cli/internal/cmdutil"
 	"github.com/antiwork/gumroad-cli/internal/output"
 )
@@ -38,10 +41,8 @@ func renderPayoutsAction(opts cmdutil.Options, userID string, resp payoutsAction
 	if err := output.Writeln(opts.Out(), style.Green(message)); err != nil {
 		return err
 	}
-	if userID != "" {
-		if err := output.Writef(opts.Out(), "User ID: %s\n", userID); err != nil {
-			return err
-		}
+	if err := writeUserIDLine(opts.Out(), message, userID); err != nil {
+		return err
 	}
 	if resp.Status != "" {
 		if err := output.Writef(opts.Out(), "Status: %s\n", resp.Status); err != nil {
@@ -49,4 +50,11 @@ func renderPayoutsAction(opts cmdutil.Options, userID string, resp payoutsAction
 		}
 	}
 	return output.Writef(opts.Out(), "Payouts: %s\n", state)
+}
+
+func writeUserIDLine(w io.Writer, message, userID string) error {
+	if userID == "" || strings.Contains(message, userID) {
+		return nil
+	}
+	return output.Writef(w, "User ID: %s\n", userID)
 }

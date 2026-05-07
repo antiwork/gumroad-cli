@@ -1,7 +1,11 @@
 package users
 
 import (
+	"io"
+	"strings"
+
 	"github.com/antiwork/gumroad-cli/internal/cmdutil"
+	"github.com/antiwork/gumroad-cli/internal/output"
 	"github.com/spf13/cobra"
 )
 
@@ -43,6 +47,13 @@ func fallback(value, alt string) string {
 		return alt
 	}
 	return value
+}
+
+func writeIdentifierLine(w io.Writer, label, message, identifier string) error {
+	if identifier == "" || strings.Contains(message, identifier) {
+		return nil
+	}
+	return output.Writef(w, "%s: %s\n", label, identifier)
 }
 
 func userIdentifier(email, externalID string) string {

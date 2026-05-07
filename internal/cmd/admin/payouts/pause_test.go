@@ -85,10 +85,16 @@ func TestPause_OmitsReasonWhenAbsent(t *testing.T) {
 	if _, present := bodyKeys["reason"]; present {
 		t.Errorf("reason must be omitted when not set, got body keys: %v", bodyKeys)
 	}
-	for _, want := range []string{"Payouts paused for 2245593582708", "User ID: 2245593582708", "Payouts: paused"} {
+	for _, want := range []string{"Payouts paused for 2245593582708", "Payouts: paused"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output missing %q: %q", want, out)
 		}
+	}
+	if strings.Contains(out, "User ID: 2245593582708") {
+		t.Errorf("message already identifies the user_id, so the User ID line must be suppressed: %q", out)
+	}
+	if strings.Count(out, "2245593582708") != 1 {
+		t.Errorf("expected user_id to appear once in styled output, got: %q", out)
 	}
 }
 

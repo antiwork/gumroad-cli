@@ -78,10 +78,16 @@ func TestResume_SendsUserIDOnly(t *testing.T) {
 	if body.UserID != "2245593582708" {
 		t.Fatalf("got user_id %q, want 2245593582708", body.UserID)
 	}
-	for _, want := range []string{"Payouts resumed for 2245593582708", "User ID: 2245593582708", "Payouts: resumed"} {
+	for _, want := range []string{"Payouts resumed for 2245593582708", "Payouts: resumed"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output missing %q: %q", want, out)
 		}
+	}
+	if strings.Contains(out, "User ID: 2245593582708") {
+		t.Errorf("message already identifies the user_id, so the User ID line must be suppressed: %q", out)
+	}
+	if strings.Count(out, "2245593582708") != 1 {
+		t.Errorf("expected user_id to appear once in styled output, got: %q", out)
 	}
 }
 

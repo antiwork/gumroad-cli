@@ -88,6 +88,12 @@ func TestUpdateEmail_FallbackHeadlineQualifiesUserID(t *testing.T) {
 	if strings.Contains(out, ": 2245593582708 → ") {
 		t.Errorf("fallback headline must not place a bare user_id where an email is expected: %q", out)
 	}
+	if strings.Contains(out, "User ID: 2245593582708") {
+		t.Errorf("fallback headline already identifies the user_id, so the User ID line must be suppressed: %q", out)
+	}
+	if strings.Count(out, "2245593582708") != 1 {
+		t.Errorf("expected user_id to appear once in fallback output, got: %q", out)
+	}
 }
 
 func TestUpdateEmail_ExpectedEmailDoesNotChangeTargetLabel(t *testing.T) {
@@ -103,14 +109,17 @@ func TestUpdateEmail_ExpectedEmailDoesNotChangeTargetLabel(t *testing.T) {
 	cmd.SetArgs([]string{"--user-id", "2245593582708", "--expected-email", "old@example.com", "--new-email", "new@example.com"})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
-	if !strings.Contains(out, "User ID: 2245593582708") {
-		t.Errorf("identifier line must keep the canonical user_id target: %q", out)
+	if strings.Contains(out, "User ID: 2245593582708") {
+		t.Errorf("fallback headline already identifies the user_id, so the User ID line must be suppressed: %q", out)
 	}
 	if strings.Contains(out, "Current:") {
 		t.Errorf("expected_email must not replace the target label: %q", out)
 	}
 	if !strings.Contains(out, "Email change pending confirmation: user_id 2245593582708 → new@example.com") {
 		t.Errorf("fallback headline must stay anchored to user_id: %q", out)
+	}
+	if strings.Count(out, "2245593582708") != 1 {
+		t.Errorf("expected user_id to appear once in fallback output, got: %q", out)
 	}
 }
 
@@ -262,6 +271,12 @@ func TestUpdateEmail_FallbackHeadlineMatchesPendingConfirmation(t *testing.T) {
 			}
 			if strings.Contains(out, tc.dontWantHeadline) {
 				t.Errorf("must not contain %q (contradicts pending_confirmation=%v): %q", tc.dontWantHeadline, tc.pending, out)
+			}
+			if strings.Contains(out, "User ID: 2245593582708") {
+				t.Errorf("fallback headline already identifies the user_id, so the User ID line must be suppressed: %q", out)
+			}
+			if strings.Count(out, "2245593582708") != 1 {
+				t.Errorf("expected user_id to appear once in fallback output, got: %q", out)
 			}
 		})
 	}

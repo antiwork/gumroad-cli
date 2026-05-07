@@ -172,10 +172,8 @@ func renderIssue(opts cmdutil.Options, userID string, resp issueResponse) error 
 	if err := output.Writeln(opts.Out(), style.Green(headline)); err != nil {
 		return err
 	}
-	if userID != "" {
-		if err := output.Writef(opts.Out(), "User ID: %s\n", userID); err != nil {
-			return err
-		}
+	if err := writeUserIDLine(opts.Out(), headline, userID); err != nil {
+		return err
 	}
 	if resp.Payout.ExternalID != "" {
 		if err := output.Writef(opts.Out(), "Payout ID: %s\n", resp.Payout.ExternalID); err != nil {

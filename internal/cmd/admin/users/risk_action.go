@@ -32,10 +32,8 @@ func renderRiskAction(opts cmdutil.Options, label, identifier string, resp riskA
 	if err := output.Writeln(opts.Out(), style.Green(message)); err != nil {
 		return err
 	}
-	if identifier != "" {
-		if err := output.Writef(opts.Out(), "%s: %s\n", label, identifier); err != nil {
-			return err
-		}
+	if err := writeIdentifierLine(opts.Out(), label, message, identifier); err != nil {
+		return err
 	}
 	if resp.Status != "" {
 		return output.Writef(opts.Out(), "Status: %s\n", resp.Status)

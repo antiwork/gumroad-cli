@@ -143,10 +143,16 @@ func TestIssue_SendsRequestAndShowsResult(t *testing.T) {
 	if body.UserID != "2245593582708" || body.ExpectedEmail != "seller@example.com" || body.PayoutProcessor != "paypal" || body.PayoutPeriodEndDate != "2020-01-01" || !body.ShouldSplitTheAmount {
 		t.Fatalf("unexpected body: %+v", body)
 	}
-	for _, want := range []string{"pay_abc", "5000 USD cents", "processing"} {
+	for _, want := range []string{"Issued payout for user_id 2245593582708", "pay_abc", "5000 USD cents", "processing"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q in output: %q", want, out)
 		}
+	}
+	if strings.Contains(out, "User ID: 2245593582708") {
+		t.Errorf("fallback headline already identifies the user_id, so the User ID line must be suppressed: %q", out)
+	}
+	if strings.Count(out, "2245593582708") != 1 {
+		t.Errorf("expected user_id to appear once in fallback output, got: %q", out)
 	}
 }
 
