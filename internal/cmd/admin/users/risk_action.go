@@ -18,11 +18,7 @@ func riskActionLabel(email, externalID string) string {
 	return "Email"
 }
 
-func renderRiskAction(opts cmdutil.Options, identifier string, resp riskActionResponse) error {
-	return renderRiskActionWithLabel(opts, "Email", identifier, resp)
-}
-
-func renderRiskActionWithLabel(opts cmdutil.Options, label, identifier string, resp riskActionResponse) error {
+func renderRiskAction(opts cmdutil.Options, label, identifier string, resp riskActionResponse) error {
 	message := resp.Message
 	if message == "" {
 		message = resp.Status

@@ -73,7 +73,7 @@ server resolves by --external-id.`,
 			if err != nil {
 				return err
 			}
-			return renderRiskActionWithLabel(opts, riskActionLabel(email, externalID), identifier, decoded)
+			return renderRiskAction(opts, riskActionLabel(email, externalID), identifier, decoded)
 		},
 	}
 
