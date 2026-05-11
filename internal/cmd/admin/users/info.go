@@ -11,11 +11,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-type infoRequest struct {
-	Email  string `json:"email,omitempty"`
-	UserID string `json:"user_id,omitempty"`
-}
-
 type infoResponse struct {
 	UserID string   `json:"user_id"`
 	User   userInfo `json:"user"`
@@ -87,7 +82,7 @@ server resolves by --user-id.`,
 			}
 
 			identifier := target.identifier()
-			return admincmd.RunPostJSONDecoded[infoResponse](opts, "Fetching user info...", "/users/info", infoRequest(target), func(resp infoResponse) error {
+			return admincmd.RunGetDecoded[infoResponse](opts, "Fetching user info...", "/users/info", target.values(), func(resp infoResponse) error {
 				return renderInfo(opts, identifier, resp.UserID, resp.User)
 			})
 		},

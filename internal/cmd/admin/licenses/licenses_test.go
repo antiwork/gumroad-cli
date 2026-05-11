@@ -10,17 +10,12 @@ import (
 )
 
 func TestLookupUsesInternalAdminEndpoint(t *testing.T) {
-	var gotMethod, gotPath, gotQuery, gotKey, gotAuth string
+	var gotMethod, gotPath, gotKey, gotAuth string
 	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
 		gotMethod = r.Method
 		gotPath = r.URL.Path
-		gotQuery = r.URL.RawQuery
 		gotAuth = r.Header.Get("Authorization")
-		var payload lookupRequest
-		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-			t.Fatalf("decode request body: %v", err)
-		}
-		gotKey = payload.LicenseKey
+		gotKey = r.URL.Query().Get("license_key")
 		testutil.JSON(t, w, map[string]any{
 			"license": map[string]any{
 				"email": "buyer@example.com", "product_name": "Course", "purchase_id": "123",
@@ -33,11 +28,8 @@ func TestLookupUsesInternalAdminEndpoint(t *testing.T) {
 	cmd.SetArgs([]string{"--key", "ABC-123"})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
-	if gotMethod != "POST" || gotPath != "/internal/admin/licenses/lookup" {
-		t.Fatalf("got %s %s, want POST /internal/admin/licenses/lookup", gotMethod, gotPath)
-	}
-	if gotQuery != "" {
-		t.Fatalf("license key should not be sent in query string, got %q", gotQuery)
+	if gotMethod != "GET" || gotPath != "/internal/admin/licenses/lookup" {
+		t.Fatalf("got %s %s, want GET /internal/admin/licenses/lookup", gotMethod, gotPath)
 	}
 	if gotKey != "ABC-123" {
 		t.Fatalf("got license_key %q, want ABC-123", gotKey)
@@ -58,14 +50,7 @@ func TestLookupUsesInternalAdminEndpoint(t *testing.T) {
 func TestLookupReadsLicenseKeyFromStdin(t *testing.T) {
 	var gotKey string
 	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.RawQuery != "" {
-			t.Fatalf("license key should not be sent in query string, got %q", r.URL.RawQuery)
-		}
-		var payload lookupRequest
-		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-			t.Fatalf("decode request body: %v", err)
-		}
-		gotKey = payload.LicenseKey
+		gotKey = r.URL.Query().Get("license_key")
 		testutil.JSON(t, w, map[string]any{
 			"purchase": map[string]any{"email": "buyer@example.com", "product_id": "prod_123"},
 			"uses":     1,

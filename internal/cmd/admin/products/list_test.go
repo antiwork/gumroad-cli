@@ -2,7 +2,6 @@ package products
 
 import (
 	"encoding/json"
-	"io"
 	"net/http"
 	"strings"
 	"testing"
@@ -101,19 +100,16 @@ func TestListRejectsNonPositivePerPage(t *testing.T) {
 
 func TestListUsesInternalAdminEndpointAndRendersHumanOutput(t *testing.T) {
 	var gotMethod, gotPath, gotAuth string
-	var body listRequest
+	var gotEmail, gotPage, gotPerPage string
 
 	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
 		gotMethod = r.Method
 		gotPath = r.URL.Path
 		gotAuth = r.Header.Get("Authorization")
-		raw, err := io.ReadAll(r.Body)
-		if err != nil {
-			t.Fatalf("read body: %v", err)
-		}
-		if err := json.Unmarshal(raw, &body); err != nil {
-			t.Fatalf("decode body: %v", err)
-		}
+		query := r.URL.Query()
+		gotEmail = query.Get("email")
+		gotPage = query.Get("page")
+		gotPerPage = query.Get("per_page")
 		testutil.JSON(t, w, sampleListPayload())
 	})
 
@@ -121,14 +117,14 @@ func TestListUsesInternalAdminEndpointAndRendersHumanOutput(t *testing.T) {
 	cmd.SetArgs([]string{"--email", "seller@example.com", "--page", "1", "--per-page", "10"})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
-	if gotMethod != "POST" || gotPath != "/internal/admin/products/list" {
-		t.Fatalf("got %s %s, want POST /internal/admin/products/list", gotMethod, gotPath)
+	if gotMethod != "GET" || gotPath != "/internal/admin/products" {
+		t.Fatalf("got %s %s, want GET /internal/admin/products", gotMethod, gotPath)
 	}
 	if gotAuth != "Bearer admin-token" {
 		t.Fatalf("got auth %q, want Bearer admin-token", gotAuth)
 	}
-	if body.Email != "seller@example.com" || body.Page != 1 || body.PerPage != 10 {
-		t.Fatalf("got body %+v, want email=seller@example.com page=1 per_page=10", body)
+	if gotEmail != "seller@example.com" || gotPage != "1" || gotPerPage != "10" {
+		t.Fatalf("got query email=%q page=%q per_page=%q, want email=seller@example.com page=1 per_page=10", gotEmail, gotPage, gotPerPage)
 	}
 	for _, want := range []string{
 		"Products for seller@example.com",
@@ -144,16 +140,12 @@ func TestListUsesInternalAdminEndpointAndRendersHumanOutput(t *testing.T) {
 }
 
 func TestListOmitsPagingWhenFlagsUnset(t *testing.T) {
-	var body listRequest
+	var gotPage, gotPerPage string
 
 	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
-		raw, err := io.ReadAll(r.Body)
-		if err != nil {
-			t.Fatalf("read body: %v", err)
-		}
-		if err := json.Unmarshal(raw, &body); err != nil {
-			t.Fatalf("decode body: %v", err)
-		}
+		query := r.URL.Query()
+		gotPage = query.Get("page")
+		gotPerPage = query.Get("per_page")
 		testutil.JSON(t, w, sampleListPayload())
 	})
 
@@ -161,8 +153,8 @@ func TestListOmitsPagingWhenFlagsUnset(t *testing.T) {
 	cmd.SetArgs([]string{"--email", "seller@example.com"})
 	testutil.MustExecute(t, cmd)
 
-	if body.Page != 0 || body.PerPage != 0 {
-		t.Fatalf("page/per_page must default to API when flags unset, got %+v", body)
+	if gotPage != "" || gotPerPage != "" {
+		t.Fatalf("page/per_page must default to API when flags unset, got page=%q per_page=%q", gotPage, gotPerPage)
 	}
 }
 
@@ -234,15 +226,11 @@ func TestListMissingEmailFromAPISurfacesMessage(t *testing.T) {
 }
 
 func TestListAcceptsExternalIDInsteadOfEmail(t *testing.T) {
-	var body listRequest
+	var gotEmail, gotExternalID string
 	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
-		raw, err := io.ReadAll(r.Body)
-		if err != nil {
-			t.Fatalf("read body: %v", err)
-		}
-		if err := json.Unmarshal(raw, &body); err != nil {
-			t.Fatalf("decode body: %v", err)
-		}
+		query := r.URL.Query()
+		gotEmail = query.Get("email")
+		gotExternalID = query.Get("external_id")
 		testutil.JSON(t, w, sampleListPayload())
 	})
 
@@ -250,11 +238,11 @@ func TestListAcceptsExternalIDInsteadOfEmail(t *testing.T) {
 	cmd.SetArgs([]string{"--external-id", "2245593582708"})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
-	if body.Email != "" {
-		t.Errorf("body.email must be empty when only --external-id is set, got %q", body.Email)
+	if gotEmail != "" {
+		t.Errorf("query email must be empty when only --external-id is set, got %q", gotEmail)
 	}
-	if body.ExternalID != "2245593582708" {
-		t.Errorf("body.external_id = %q, want 2245593582708", body.ExternalID)
+	if gotExternalID != "2245593582708" {
+		t.Errorf("query external_id = %q, want 2245593582708", gotExternalID)
 	}
 	if !strings.Contains(out, "Products for external_id 2245593582708") {
 		t.Errorf("expected header to mention external_id subject: %q", out)
@@ -262,15 +250,11 @@ func TestListAcceptsExternalIDInsteadOfEmail(t *testing.T) {
 }
 
 func TestListSendsBothWhenEmailAndExternalIDProvided(t *testing.T) {
-	var body listRequest
+	var gotEmail, gotExternalID string
 	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
-		raw, err := io.ReadAll(r.Body)
-		if err != nil {
-			t.Fatalf("read body: %v", err)
-		}
-		if err := json.Unmarshal(raw, &body); err != nil {
-			t.Fatalf("decode body: %v", err)
-		}
+		query := r.URL.Query()
+		gotEmail = query.Get("email")
+		gotExternalID = query.Get("external_id")
 		testutil.JSON(t, w, sampleListPayload())
 	})
 
@@ -278,8 +262,8 @@ func TestListSendsBothWhenEmailAndExternalIDProvided(t *testing.T) {
 	cmd.SetArgs([]string{"--email", "seller@example.com", "--external-id", "u_1"})
 	testutil.MustExecute(t, cmd)
 
-	if body.Email != "seller@example.com" || body.ExternalID != "u_1" {
-		t.Fatalf("expected both email and external_id forwarded so the server can resolve, got %+v", body)
+	if gotEmail != "seller@example.com" || gotExternalID != "u_1" {
+		t.Fatalf("expected both email and external_id forwarded so the server can resolve, got email=%q external_id=%q", gotEmail, gotExternalID)
 	}
 }
 

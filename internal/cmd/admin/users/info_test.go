@@ -2,7 +2,6 @@ package users
 
 import (
 	"encoding/json"
-	"io"
 	"net/http"
 	"strings"
 	"testing"
@@ -65,22 +64,11 @@ func TestInfoRequiresEmailOrUserID(t *testing.T) {
 }
 
 func TestInfoResolvesByUserID(t *testing.T) {
-	var body infoRequest
+	var gotEmail, gotUserID string
 
 	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
-		raw, err := io.ReadAll(r.Body)
-		if err != nil {
-			t.Fatalf("read body: %v", err)
-		}
-		if err := json.Unmarshal(raw, &body); err != nil {
-			t.Fatalf("decode body: %v", err)
-		}
-		if !strings.Contains(string(raw), `"user_id"`) {
-			t.Fatalf("expected user_id in request body, got %q", raw)
-		}
-		if strings.Contains(string(raw), `"email"`) {
-			t.Fatalf("email field must be omitted when only --user-id is supplied, got %q", raw)
-		}
+		gotEmail = r.URL.Query().Get("email")
+		gotUserID = r.URL.Query().Get("user_id")
 		testutil.JSON(t, w, sampleInfoPayload())
 	})
 
@@ -88,11 +76,11 @@ func TestInfoResolvesByUserID(t *testing.T) {
 	cmd.SetArgs([]string{"--user-id", "2245593582708"})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
-	if body.UserID != "2245593582708" {
-		t.Fatalf("got user_id %q, want 2245593582708", body.UserID)
+	if gotUserID != "2245593582708" {
+		t.Fatalf("got user_id %q, want 2245593582708", gotUserID)
 	}
-	if body.Email != "" {
-		t.Errorf("expected email to be empty, got %q", body.Email)
+	if gotEmail != "" {
+		t.Errorf("expected email to be empty, got %q", gotEmail)
 	}
 	if !strings.Contains(out, "Seller One") {
 		t.Errorf("expected resolved user info in output: %q", out)
@@ -100,16 +88,11 @@ func TestInfoResolvesByUserID(t *testing.T) {
 }
 
 func TestInfoSendsBothWhenEmailAndUserIDSupplied(t *testing.T) {
-	var body infoRequest
+	var gotEmail, gotUserID string
 
 	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
-		raw, err := io.ReadAll(r.Body)
-		if err != nil {
-			t.Fatalf("read body: %v", err)
-		}
-		if err := json.Unmarshal(raw, &body); err != nil {
-			t.Fatalf("decode body: %v", err)
-		}
+		gotEmail = r.URL.Query().Get("email")
+		gotUserID = r.URL.Query().Get("user_id")
 		testutil.JSON(t, w, sampleInfoPayload())
 	})
 
@@ -117,30 +100,22 @@ func TestInfoSendsBothWhenEmailAndUserIDSupplied(t *testing.T) {
 	cmd.SetArgs([]string{"--email", "seller@example.com", "--user-id", "2245593582708"})
 	testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
-	if body.Email != "seller@example.com" {
-		t.Errorf("got email %q, want seller@example.com (server prefers user_id but CLI forwards both)", body.Email)
+	if gotEmail != "seller@example.com" {
+		t.Errorf("got email %q, want seller@example.com (server prefers user_id but CLI forwards both)", gotEmail)
 	}
-	if body.UserID != "2245593582708" {
-		t.Errorf("got user_id %q, want 2245593582708", body.UserID)
+	if gotUserID != "2245593582708" {
+		t.Errorf("got user_id %q, want 2245593582708", gotUserID)
 	}
 }
 
 func TestInfoUsesInternalAdminEndpointAndRendersHumanOutput(t *testing.T) {
-	var gotMethod, gotPath, gotQuery, gotAuth string
-	var body infoRequest
+	var gotMethod, gotPath, gotAuth, gotEmail string
 
 	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
 		gotMethod = r.Method
 		gotPath = r.URL.Path
-		gotQuery = r.URL.RawQuery
 		gotAuth = r.Header.Get("Authorization")
-		raw, err := io.ReadAll(r.Body)
-		if err != nil {
-			t.Fatalf("read body: %v", err)
-		}
-		if err := json.Unmarshal(raw, &body); err != nil {
-			t.Fatalf("decode body: %v", err)
-		}
+		gotEmail = r.URL.Query().Get("email")
 		testutil.JSON(t, w, sampleInfoPayload())
 	})
 
@@ -148,17 +123,14 @@ func TestInfoUsesInternalAdminEndpointAndRendersHumanOutput(t *testing.T) {
 	cmd.SetArgs([]string{"--email", "seller@example.com"})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
-	if gotMethod != "POST" || gotPath != "/internal/admin/users/info" {
-		t.Fatalf("got %s %s, want POST /internal/admin/users/info", gotMethod, gotPath)
-	}
-	if gotQuery != "" {
-		t.Fatalf("email must not appear in query string, got %q", gotQuery)
+	if gotMethod != "GET" || gotPath != "/internal/admin/users/info" {
+		t.Fatalf("got %s %s, want GET /internal/admin/users/info", gotMethod, gotPath)
 	}
 	if gotAuth != "Bearer admin-token" {
 		t.Fatalf("got auth %q, want Bearer admin-token", gotAuth)
 	}
-	if body.Email != "seller@example.com" {
-		t.Fatalf("got email %q, want seller@example.com", body.Email)
+	if gotEmail != "seller@example.com" {
+		t.Fatalf("got email %q, want seller@example.com", gotEmail)
 	}
 	for _, want := range []string{
 		"Seller One",

@@ -14,11 +14,6 @@ type suspensionResponse struct {
 	AppealURL string `json:"appeal_url"`
 }
 
-type suspensionRequest struct {
-	Email  string `json:"email,omitempty"`
-	UserID string `json:"user_id,omitempty"`
-}
-
 func newSuspensionCmd() *cobra.Command {
 	var lookup userLookupFlags
 
@@ -40,7 +35,7 @@ server resolves by --user-id.`,
 			}
 
 			identifier := target.identifier()
-			return admincmd.RunPostJSONDecoded[suspensionResponse](opts, "Fetching suspension info...", "/users/suspension", suspensionRequest(target), func(resp suspensionResponse) error {
+			return admincmd.RunGetDecoded[suspensionResponse](opts, "Fetching suspension info...", "/users/suspension", target.values(), func(resp suspensionResponse) error {
 				return renderSuspension(opts, identifier, resp)
 			})
 		},

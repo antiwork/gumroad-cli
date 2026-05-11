@@ -2,7 +2,6 @@ package purchases
 
 import (
 	"encoding/json"
-	"io"
 	"net/http"
 	"strings"
 	"testing"
@@ -23,18 +22,15 @@ func TestSearch_RequiresEmail(t *testing.T) {
 	}
 }
 
-func TestSearch_PostsEmailInBody(t *testing.T) {
-	var gotMethod, gotPath, gotAuth, gotQuery string
-	var body searchRequest
+func TestSearch_SendsEmailInQuery(t *testing.T) {
+	var gotMethod, gotPath, gotAuth string
+	var gotEmail string
 
 	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
 		gotMethod = r.Method
 		gotPath = r.URL.Path
 		gotAuth = r.Header.Get("Authorization")
-		gotQuery = r.URL.RawQuery
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			t.Fatalf("decode body: %v", err)
-		}
+		gotEmail = r.URL.Query().Get("email")
 		testutil.JSON(t, w, map[string]any{
 			"purchases": []map[string]any{
 				{
@@ -56,17 +52,14 @@ func TestSearch_PostsEmailInBody(t *testing.T) {
 	cmd.SetArgs([]string{"--email", "buyer@example.com"})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
-	if gotMethod != "POST" || gotPath != "/internal/admin/purchases/search" {
-		t.Fatalf("got %s %s, want POST /internal/admin/purchases/search", gotMethod, gotPath)
+	if gotMethod != "GET" || gotPath != "/internal/admin/purchases/search" {
+		t.Fatalf("got %s %s, want GET /internal/admin/purchases/search", gotMethod, gotPath)
 	}
 	if gotAuth != "Bearer admin-token" {
 		t.Fatalf("got auth %q, want Bearer admin-token", gotAuth)
 	}
-	if gotQuery != "" {
-		t.Fatalf("email must not appear in query string, got %q", gotQuery)
-	}
-	if body.Email != "buyer@example.com" {
-		t.Errorf("got email %q, want buyer@example.com", body.Email)
+	if gotEmail != "buyer@example.com" {
+		t.Errorf("got email %q, want buyer@example.com", gotEmail)
 	}
 	for _, want := range []string{"1 purchase(s) for buyer@example.com", "Course", "Buyer: buyer@example.com"} {
 		if !strings.Contains(out, want) {
@@ -76,20 +69,10 @@ func TestSearch_PostsEmailInBody(t *testing.T) {
 }
 
 func TestSearch_OmitsLimitWhenNotSet(t *testing.T) {
-	var body searchRequest
-	var bodyKeys map[string]json.RawMessage
+	var gotLimit string
 
 	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
-		raw, err := io.ReadAll(r.Body)
-		if err != nil {
-			t.Fatalf("read body: %v", err)
-		}
-		if err := json.Unmarshal(raw, &body); err != nil {
-			t.Fatalf("decode body: %v", err)
-		}
-		if err := json.Unmarshal(raw, &bodyKeys); err != nil {
-			t.Fatalf("decode body keys: %v", err)
-		}
+		gotLimit = r.URL.Query().Get("limit")
 		testutil.JSON(t, w, map[string]any{
 			"purchases": []map[string]any{},
 			"count":     0,
@@ -102,18 +85,16 @@ func TestSearch_OmitsLimitWhenNotSet(t *testing.T) {
 	cmd.SetArgs([]string{"--email", "buyer@example.com"})
 	testutil.MustExecute(t, cmd)
 
-	if _, present := bodyKeys["limit"]; present {
-		t.Errorf("limit must be omitted when not set, got body keys: %v", bodyKeys)
+	if gotLimit != "" {
+		t.Errorf("limit must be omitted when not set, got %q", gotLimit)
 	}
 }
 
 func TestSearch_ForwardsLimit(t *testing.T) {
-	var body searchRequest
+	var gotLimit string
 
 	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			t.Fatalf("decode body: %v", err)
-		}
+		gotLimit = r.URL.Query().Get("limit")
 		testutil.JSON(t, w, map[string]any{
 			"purchases": []map[string]any{},
 			"count":     0,
@@ -126,14 +107,14 @@ func TestSearch_ForwardsLimit(t *testing.T) {
 	cmd.SetArgs([]string{"--email", "buyer@example.com", "--limit", "5"})
 	testutil.MustExecute(t, cmd)
 
-	if body.Limit != 5 {
-		t.Errorf("got limit=%d, want 5", body.Limit)
+	if gotLimit != "5" {
+		t.Errorf("got limit=%q, want 5", gotLimit)
 	}
 }
 
 func TestSearch_RejectsZeroLimit(t *testing.T) {
 	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
-		t.Error("must not POST when --limit is invalid")
+		t.Error("must not request when --limit is invalid")
 	})
 
 	cmd := testutil.Command(newSearchCmd())

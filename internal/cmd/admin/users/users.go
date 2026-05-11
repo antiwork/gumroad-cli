@@ -2,6 +2,7 @@ package users
 
 import (
 	"io"
+	"net/url"
 	"strings"
 
 	"github.com/antiwork/gumroad-cli/internal/cmdutil"
@@ -101,6 +102,17 @@ func resolveUserLookupTarget(cmd *cobra.Command, flags userLookupFlags) (userLoo
 
 func (t userLookupTarget) identifier() string {
 	return userIdentifier(t.Email, t.UserID)
+}
+
+func (t userLookupTarget) values() url.Values {
+	params := url.Values{}
+	if t.Email != "" {
+		params.Set("email", t.Email)
+	}
+	if t.UserID != "" {
+		params.Set("user_id", t.UserID)
+	}
+	return params
 }
 
 type userMutationFlags struct {

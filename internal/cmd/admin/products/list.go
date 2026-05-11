@@ -3,6 +3,7 @@ package products
 import (
 	"fmt"
 	"io"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -11,13 +12,6 @@ import (
 	"github.com/antiwork/gumroad-cli/internal/output"
 	"github.com/spf13/cobra"
 )
-
-type listRequest struct {
-	Email      string `json:"email,omitempty"`
-	ExternalID string `json:"external_id,omitempty"`
-	Page       int    `json:"page,omitempty"`
-	PerPage    int    `json:"per_page,omitempty"`
-}
 
 type listResponse struct {
 	Products   []product         `json:"products"`
@@ -69,15 +63,21 @@ since those are the cases where the email path can't resolve them.`,
 				return err
 			}
 
-			req := listRequest{Email: email, ExternalID: externalID}
+			params := url.Values{}
+			if email != "" {
+				params.Set("email", email)
+			}
+			if externalID != "" {
+				params.Set("external_id", externalID)
+			}
 			if c.Flags().Changed("page") {
-				req.Page = page
+				params.Set("page", strconv.Itoa(page))
 			}
 			if c.Flags().Changed("per-page") {
-				req.PerPage = perPage
+				params.Set("per_page", strconv.Itoa(perPage))
 			}
 
-			return admincmd.RunPostJSONDecoded[listResponse](opts, "Fetching products...", "/products/list", req, func(resp listResponse) error {
+			return admincmd.RunGetDecoded[listResponse](opts, "Fetching products...", "/products", params, func(resp listResponse) error {
 				return renderList(opts, sellerSubject(email, externalID), resp)
 			})
 		},

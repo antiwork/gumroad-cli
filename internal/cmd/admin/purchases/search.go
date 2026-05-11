@@ -2,6 +2,8 @@ package purchases
 
 import (
 	"fmt"
+	"net/url"
+	"strconv"
 
 	"github.com/antiwork/gumroad-cli/internal/admincmd"
 	"github.com/antiwork/gumroad-cli/internal/api"
@@ -9,11 +11,6 @@ import (
 	"github.com/antiwork/gumroad-cli/internal/output"
 	"github.com/spf13/cobra"
 )
-
-type searchRequest struct {
-	Email string `json:"email"`
-	Limit int    `json:"limit,omitempty"`
-}
 
 type searchResponse struct {
 	Purchases []purchase  `json:"purchases"`
@@ -45,15 +42,15 @@ exposes only --email and --limit for now.`,
 				return cmdutil.MissingFlagError(c, "--email")
 			}
 
-			req := searchRequest{Email: email}
+			params := url.Values{"email": []string{email}}
 			if c.Flags().Changed("limit") {
 				if limit <= 0 {
 					return cmdutil.UsageErrorf(c, "--limit must be greater than 0")
 				}
-				req.Limit = limit
+				params.Set("limit", strconv.Itoa(limit))
 			}
 
-			return admincmd.RunPostJSONDecoded[searchResponse](opts, "Searching purchases...", "/purchases/search", req, func(resp searchResponse) error {
+			return admincmd.RunGetDecoded[searchResponse](opts, "Searching purchases...", "/purchases/search", params, func(resp searchResponse) error {
 				return renderSearch(opts, email, resp)
 			})
 		},

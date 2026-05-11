@@ -2,7 +2,6 @@ package users
 
 import (
 	"encoding/json"
-	"io"
 	"net/http"
 	"strings"
 	"testing"
@@ -11,17 +10,12 @@ import (
 )
 
 func TestSuspensionUsesInternalAdminEndpoint(t *testing.T) {
-	var gotMethod, gotPath, gotQuery, gotEmail, gotAuth string
+	var gotMethod, gotPath, gotEmail, gotAuth string
 	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
 		gotMethod = r.Method
 		gotPath = r.URL.Path
-		gotQuery = r.URL.RawQuery
 		gotAuth = r.Header.Get("Authorization")
-		var payload suspensionRequest
-		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-			t.Fatalf("decode request body: %v", err)
-		}
-		gotEmail = payload.Email
+		gotEmail = r.URL.Query().Get("email")
 		testutil.JSON(t, w, map[string]any{
 			"status":     "Suspended",
 			"updated_at": "2026-04-24T12:00:00Z",
@@ -33,11 +27,8 @@ func TestSuspensionUsesInternalAdminEndpoint(t *testing.T) {
 	cmd.SetArgs([]string{"--email", "user@example.com"})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
-	if gotMethod != "POST" || gotPath != "/internal/admin/users/suspension" {
-		t.Fatalf("got %s %s, want POST /internal/admin/users/suspension", gotMethod, gotPath)
-	}
-	if gotQuery != "" {
-		t.Fatalf("email should not be sent in query string, got %q", gotQuery)
+	if gotMethod != "GET" || gotPath != "/internal/admin/users/suspension" {
+		t.Fatalf("got %s %s, want GET /internal/admin/users/suspension", gotMethod, gotPath)
 	}
 	if gotEmail != "user@example.com" {
 		t.Fatalf("got email %q, want user@example.com", gotEmail)
@@ -66,18 +57,11 @@ func TestSuspensionRequiresEmailOrUserID(t *testing.T) {
 }
 
 func TestSuspensionResolvesByUserID(t *testing.T) {
-	var body suspensionRequest
-	var rawBody string
+	var gotEmail, gotUserID string
 
 	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
-		raw, err := readAllBody(r)
-		if err != nil {
-			t.Fatalf("read body: %v", err)
-		}
-		rawBody = string(raw)
-		if err := json.Unmarshal(raw, &body); err != nil {
-			t.Fatalf("decode body: %v", err)
-		}
+		gotEmail = r.URL.Query().Get("email")
+		gotUserID = r.URL.Query().Get("user_id")
 		testutil.JSON(t, w, map[string]any{
 			"user_id":    "2245593582708",
 			"status":     "Suspended",
@@ -89,11 +73,8 @@ func TestSuspensionResolvesByUserID(t *testing.T) {
 	cmd.SetArgs([]string{"--user-id", "2245593582708"})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
-	if strings.Contains(rawBody, `"email"`) {
-		t.Errorf("email field must be omitted when only --user-id is supplied, got %q", rawBody)
-	}
-	if body.UserID != "2245593582708" || body.Email != "" {
-		t.Errorf("got email=%q user_id=%q, want only user_id", body.Email, body.UserID)
+	if gotEmail != "" || gotUserID != "2245593582708" {
+		t.Errorf("got email=%q user_id=%q, want only user_id", gotEmail, gotUserID)
 	}
 	if !strings.Contains(out, "2245593582708") {
 		t.Errorf("expected user_id in headline output: %q", out)
@@ -104,12 +85,11 @@ func TestSuspensionResolvesByUserID(t *testing.T) {
 }
 
 func TestSuspensionForwardsBothEmailAndUserID(t *testing.T) {
-	var body suspensionRequest
+	var gotEmail, gotUserID string
 
 	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			t.Fatalf("decode body: %v", err)
-		}
+		gotEmail = r.URL.Query().Get("email")
+		gotUserID = r.URL.Query().Get("user_id")
 		testutil.JSON(t, w, map[string]any{"status": "Compliant"})
 	})
 
@@ -117,14 +97,9 @@ func TestSuspensionForwardsBothEmailAndUserID(t *testing.T) {
 	cmd.SetArgs([]string{"--email", "user@example.com", "--user-id", "2245593582708"})
 	testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
-	if body.Email != "user@example.com" || body.UserID != "2245593582708" {
-		t.Errorf("got email=%q user_id=%q, want both forwarded", body.Email, body.UserID)
+	if gotEmail != "user@example.com" || gotUserID != "2245593582708" {
+		t.Errorf("got email=%q user_id=%q, want both forwarded", gotEmail, gotUserID)
 	}
-}
-
-func readAllBody(r *http.Request) ([]byte, error) {
-	defer r.Body.Close()
-	return io.ReadAll(r.Body)
 }
 
 func TestSuspensionJSONPreservesResponse(t *testing.T) {
