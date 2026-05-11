@@ -16,15 +16,21 @@ import (
 )
 
 type scheduledPayout struct {
-	ExternalID  string                 `json:"external_id"`
-	User        scheduledPayoutUser    `json:"user"`
-	AmountCents api.JSONInt            `json:"payout_amount_cents"`
-	Status      string                 `json:"status"`
-	Action      string                 `json:"action"`
-	ScheduledAt string                 `json:"scheduled_at"`
-	ExecutedAt  string                 `json:"executed_at"`
-	CreatedAt   string                 `json:"created_at"`
-	CreatedBy   scheduledPayoutCreator `json:"created_by"`
+	ExternalID             string                    `json:"external_id"`
+	User                   scheduledPayoutUser       `json:"user"`
+	AmountCents            api.JSONInt               `json:"payout_amount_cents"`
+	Status                 string                    `json:"status"`
+	Action                 string                    `json:"action"`
+	ScheduledAt            string                    `json:"scheduled_at"`
+	ExecutedAt             string                    `json:"executed_at"`
+	CreatedAt              string                    `json:"created_at"`
+	CreatedBy              scheduledPayoutCreator    `json:"created_by"`
+	ProductCount           api.JSONInt               `json:"product_count"`
+	IncomingAffiliateCount api.JSONInt               `json:"incoming_affiliate_count"`
+	RiskState              scheduledPayoutRiskState  `json:"risk_state"`
+	TopCategories          []scheduledPayoutCategory `json:"top_categories"`
+	UnpaidBalanceCents     api.JSONInt               `json:"unpaid_balance_cents"`
+	UnpaidBalanceFormatted string                    `json:"unpaid_balance_formatted"`
 }
 
 type scheduledPayoutUser struct {
@@ -35,6 +41,22 @@ type scheduledPayoutUser struct {
 
 type scheduledPayoutCreator struct {
 	Name string `json:"name"`
+}
+
+type scheduledPayoutRiskState struct {
+	Status                 string `json:"status"`
+	UserRiskState          string `json:"user_risk_state"`
+	Suspended              bool   `json:"suspended"`
+	FlaggedForFraud        bool   `json:"flagged_for_fraud"`
+	FlaggedForTOSViolation bool   `json:"flagged_for_tos_violation"`
+	OnProbation            bool   `json:"on_probation"`
+	Compliant              bool   `json:"compliant"`
+	LastStatusChangedAt    string `json:"last_status_changed_at"`
+}
+
+type scheduledPayoutCategory struct {
+	Slug         string      `json:"slug"`
+	ProductCount api.JSONInt `json:"product_count"`
 }
 
 type scheduledListResponse struct {
@@ -135,6 +157,10 @@ func renderScheduledList(opts cmdutil.Options, statuses []string, resp scheduled
 		for _, p := range resp.ScheduledPayouts {
 			rows = append(rows, []string{
 				p.ExternalID, p.User.Email, formatScheduledAmount(p), p.Status, p.Action, p.ScheduledAt, p.CreatedAt,
+				p.RiskState.Status,
+				strconv.Itoa(int(p.ProductCount)),
+				strconv.Itoa(int(p.IncomingAffiliateCount)),
+				p.UnpaidBalanceFormatted,
 			})
 		}
 		return output.PrintPlain(opts.Out(), rows)
@@ -166,9 +192,19 @@ func renderScheduledList(opts cmdutil.Options, statuses []string, resp scheduled
 			return err
 		}
 
-		tbl := output.NewStyledTable(style, "ID", "EMAIL", "AMOUNT", "STATUS", "ACTION", "SCHEDULED")
+		tbl := output.NewStyledTable(style, "ID", "EMAIL", "AMOUNT", "STATUS", "SCHEDULED", "RISK", "PRODS", "AFFS", "UNPAID")
 		for _, p := range resp.ScheduledPayouts {
-			tbl.AddRow(p.ExternalID, p.User.Email, formatScheduledAmount(p), p.Status, p.Action, p.ScheduledAt)
+			tbl.AddRow(
+				p.ExternalID,
+				p.User.Email,
+				formatScheduledAmount(p),
+				p.Status,
+				p.ScheduledAt,
+				p.RiskState.Status,
+				strconv.Itoa(int(p.ProductCount)),
+				strconv.Itoa(int(p.IncomingAffiliateCount)),
+				p.UnpaidBalanceFormatted,
+			)
 		}
 		return tbl.Render(w)
 	})

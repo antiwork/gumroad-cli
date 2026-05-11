@@ -237,7 +237,15 @@ func TestScheduledList_PlainOutput(t *testing.T) {
 	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
 		testutil.JSON(t, w, map[string]any{
 			"scheduled_payouts": []map[string]any{
-				{"external_id": "pay_1", "user": map[string]any{"email": "seller@example.com"}, "payout_amount_cents": 1000, "status": "flagged", "action": "payout", "scheduled_at": "2026-05-01", "created_at": "2026-04-30"},
+				{
+					"external_id": "pay_1", "user": map[string]any{"email": "seller@example.com"},
+					"payout_amount_cents": 1000, "status": "flagged", "action": "payout",
+					"scheduled_at": "2026-05-01", "created_at": "2026-04-30",
+					"risk_state":               map[string]any{"status": "Flagged"},
+					"product_count":            7,
+					"incoming_affiliate_count": 2,
+					"unpaid_balance_formatted": "$12.50",
+				},
 			},
 		})
 	})
@@ -246,9 +254,37 @@ func TestScheduledList_PlainOutput(t *testing.T) {
 	cmd.SetArgs([]string{})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
-	want := "pay_1\tseller@example.com\t1000 cents\tflagged\tpayout\t2026-05-01\t2026-04-30"
+	want := "pay_1\tseller@example.com\t1000 cents\tflagged\tpayout\t2026-05-01\t2026-04-30\tFlagged\t7\t2\t$12.50"
 	if strings.TrimSpace(out) != want {
 		t.Fatalf("unexpected plain output: %q", out)
+	}
+}
+
+func TestScheduledList_ShowsEnrichmentInTable(t *testing.T) {
+	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{
+			"scheduled_payouts": []map[string]any{
+				{
+					"external_id": "pay_1", "user": map[string]any{"email": "seller@example.com"},
+					"payout_amount_cents": 1000, "status": "held", "action": "payout",
+					"scheduled_at":             "2026-05-01",
+					"risk_state":               map[string]any{"status": "Suspended"},
+					"product_count":            42,
+					"incoming_affiliate_count": 3,
+					"unpaid_balance_formatted": "$987.65",
+				},
+			},
+		})
+	})
+
+	cmd := testutil.Command(newScheduledListCmd(), testutil.Quiet(false))
+	cmd.SetArgs([]string{})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	for _, want := range []string{"RISK", "PRODS", "AFFS", "UNPAID", "Suspended", "42", "$987.65"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("table missing %q: %q", want, out)
+		}
 	}
 }
 
