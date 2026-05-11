@@ -28,7 +28,7 @@ func newScheduledCancelCmd() *cobra.Command {
 			opts := cmdutil.OptionsFrom(c)
 			id := args[0]
 
-			path := cmdutil.JoinPath("payouts", id, "scheduled_cancel")
+			path := cmdutil.JoinPath("scheduled_payouts", id, "cancel")
 
 			ok, err := cmdutil.ConfirmAction(opts, "Cancel scheduled payout "+id+"?")
 			if err != nil {

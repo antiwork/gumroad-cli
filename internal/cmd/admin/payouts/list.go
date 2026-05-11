@@ -3,6 +3,8 @@ package payouts
 import (
 	"fmt"
 	"io"
+	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/antiwork/gumroad-cli/internal/admincmd"
@@ -13,11 +15,17 @@ import (
 )
 
 type payoutsResponse struct {
-	UserID               string   `json:"user_id"`
-	LastPayouts          []payout `json:"last_payouts"`
-	NextPayoutDate       string   `json:"next_payout_date"`
-	BalanceForNextPayout string   `json:"balance_for_next_payout"`
-	PayoutNote           string   `json:"payout_note"`
+	UserID               string            `json:"user_id"`
+	RecentPayouts        []payout          `json:"recent_payouts"`
+	Pagination           payoutsPagination `json:"pagination"`
+	NextPayoutDate       string            `json:"next_payout_date"`
+	BalanceForNextPayout string            `json:"balance_for_next_payout"`
+	PayoutNote           string            `json:"payout_note"`
+}
+
+type payoutsPagination struct {
+	Next  string      `json:"next"`
+	Limit api.JSONInt `json:"limit"`
 }
 
 type payout struct {
@@ -31,13 +39,12 @@ type payout struct {
 	PaypalEmail       string      `json:"paypal_email"`
 }
 
-type listRequest struct {
-	Email  string `json:"email,omitempty"`
-	UserID string `json:"user_id,omitempty"`
-}
-
 func newListCmd() *cobra.Command {
-	var lookup lookupFlags
+	var (
+		lookup lookupFlags
+		limit  int
+		cursor string
+	)
 
 	cmd := &cobra.Command{
 		Use:   "list",
@@ -50,13 +57,32 @@ func newListCmd() *cobra.Command {
 				return err
 			}
 
-			return admincmd.RunPostJSONDecoded[payoutsResponse](opts, "Fetching payouts...", "/payouts/list", listRequest(target), func(resp payoutsResponse) error {
+			params := url.Values{}
+			if target.Email != "" {
+				params.Set("email", target.Email)
+			}
+			if target.UserID != "" {
+				params.Set("user_id", target.UserID)
+			}
+			if c.Flags().Changed("limit") {
+				if err := cmdutil.RequirePositiveIntFlag(c, "limit", limit); err != nil {
+					return err
+				}
+				params.Set("limit", strconv.Itoa(limit))
+			}
+			if cursor != "" {
+				params.Set("cursor", cursor)
+			}
+
+			return admincmd.RunGetDecoded[payoutsResponse](opts, "Fetching payouts...", "/payouts", params, func(resp payoutsResponse) error {
 				return renderPayouts(opts, target.identifier(), resp)
 			})
 		},
 	}
 
 	addLookupFlags(cmd, &lookup)
+	cmd.Flags().IntVar(&limit, "limit", 0, "Maximum results per page (default 20)")
+	cmd.Flags().StringVar(&cursor, "cursor", "", "Pagination cursor (from a previous response)")
 
 	return cmd
 }
@@ -91,23 +117,29 @@ func renderPayouts(opts cmdutil.Options, identifier string, resp payoutsResponse
 				return err
 			}
 		}
-		if len(resp.LastPayouts) == 0 {
+		if len(resp.RecentPayouts) == 0 {
 			return output.Writeln(w, "No recent payouts found.")
 		}
 		if err := output.Writeln(w, ""); err != nil {
 			return err
 		}
-		return writePayoutsTable(w, style, resp.LastPayouts)
+		if err := writePayoutsTable(w, style, resp.RecentPayouts); err != nil {
+			return err
+		}
+		if resp.Pagination.Next != "" {
+			return output.Writef(w, "\nMore results: --cursor %s\n", resp.Pagination.Next)
+		}
+		return nil
 	})
 }
 
 func writePayoutsPlain(w io.Writer, identifier string, resp payoutsResponse) error {
-	if len(resp.LastPayouts) == 0 {
+	if len(resp.RecentPayouts) == 0 {
 		return output.PrintPlain(w, [][]string{{identifier, "", "", "", "", "", "", resp.NextPayoutDate, resp.BalanceForNextPayout, resp.PayoutNote}})
 	}
 
-	rows := make([][]string, 0, len(resp.LastPayouts))
-	for _, p := range resp.LastPayouts {
+	rows := make([][]string, 0, len(resp.RecentPayouts))
+	for _, p := range resp.RecentPayouts {
 		rows = append(rows, []string{
 			identifier,
 			p.ExternalID,

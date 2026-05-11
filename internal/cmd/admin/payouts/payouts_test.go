@@ -10,26 +10,22 @@ import (
 )
 
 func TestListUsesInternalAdminEndpoint(t *testing.T) {
-	var gotMethod, gotPath, gotQuery, gotEmail, gotAuth string
+	var gotMethod, gotPath, gotEmail, gotAuth string
 	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
 		gotMethod = r.Method
 		gotPath = r.URL.Path
-		gotQuery = r.URL.RawQuery
+		gotEmail = r.URL.Query().Get("email")
 		gotAuth = r.Header.Get("Authorization")
-		var payload listRequest
-		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-			t.Fatalf("decode request body: %v", err)
-		}
-		gotEmail = payload.Email
 		testutil.JSON(t, w, map[string]any{
 			"user_id": "2245593582708",
-			"last_payouts": []map[string]any{
+			"recent_payouts": []map[string]any{
 				{
 					"external_id": "pay_123", "amount_cents": 5000, "currency": "usd",
 					"state": "completed", "created_at": "2026-04-24T12:00:00Z",
 					"processor": "stripe", "bank_account_visual": "****1234",
 				},
 			},
+			"pagination":              map[string]any{"next": nil, "limit": 20},
 			"next_payout_date":        "2026-04-30",
 			"balance_for_next_payout": "$25.00",
 			"payout_note":             "Manual review",
@@ -40,11 +36,8 @@ func TestListUsesInternalAdminEndpoint(t *testing.T) {
 	cmd.SetArgs([]string{"--email", "seller@example.com"})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
-	if gotMethod != "POST" || gotPath != "/internal/admin/payouts/list" {
-		t.Fatalf("got %s %s, want POST /internal/admin/payouts/list", gotMethod, gotPath)
-	}
-	if gotQuery != "" {
-		t.Fatalf("email should not be sent in query string, got %q", gotQuery)
+	if gotMethod != "GET" || gotPath != "/internal/admin/payouts" {
+		t.Fatalf("got %s %s, want GET /internal/admin/payouts", gotMethod, gotPath)
 	}
 	if gotEmail != "seller@example.com" {
 		t.Fatalf("got email %q, want seller@example.com", gotEmail)
@@ -56,6 +49,54 @@ func TestListUsesInternalAdminEndpoint(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Fatalf("output missing %q: %q", want, out)
 		}
+	}
+}
+
+func TestListPassesLimitAndCursor(t *testing.T) {
+	var gotQuery string
+	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.RawQuery
+		testutil.JSON(t, w, map[string]any{"recent_payouts": []any{}})
+	})
+
+	cmd := testutil.Command(newListCmd())
+	cmd.SetArgs([]string{"--user-id", "abc", "--limit", "5", "--cursor", "cur-1"})
+	testutil.MustExecute(t, cmd)
+
+	for _, want := range []string{"user_id=abc", "limit=5", "cursor=cur-1"} {
+		if !strings.Contains(gotQuery, want) {
+			t.Fatalf("query missing %q: %q", want, gotQuery)
+		}
+	}
+}
+
+func TestListShowsNextCursorFooter(t *testing.T) {
+	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{
+			"user_id": "abc",
+			"recent_payouts": []map[string]any{
+				{"external_id": "pay_1", "amount_cents": 100, "state": "completed", "processor": "stripe"},
+			},
+			"pagination": map[string]any{"next": "cur-next", "limit": 2},
+		})
+	})
+
+	cmd := testutil.Command(newListCmd())
+	cmd.SetArgs([]string{"--user-id", "abc"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	if !strings.Contains(out, "More results: --cursor cur-next") {
+		t.Fatalf("expected next-cursor footer, got: %q", out)
+	}
+}
+
+func TestListRejectsZeroLimit(t *testing.T) {
+	cmd := newListCmd()
+	cmd.SetArgs([]string{"--user-id", "abc", "--limit", "0"})
+
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "--limit must be greater than 0") {
+		t.Fatalf("expected limit validation error, got %v", err)
 	}
 }
 
@@ -94,7 +135,7 @@ func TestListRequiresEmailOrUserID(t *testing.T) {
 func TestListJSONPreservesResponse(t *testing.T) {
 	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
 		testutil.JSON(t, w, map[string]any{
-			"last_payouts": []map[string]any{{"external_id": "pay_123"}},
+			"recent_payouts": []map[string]any{{"external_id": "pay_123"}},
 		})
 	})
 
@@ -103,12 +144,12 @@ func TestListJSONPreservesResponse(t *testing.T) {
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
 	var resp struct {
-		LastPayouts []map[string]any `json:"last_payouts"`
+		RecentPayouts []map[string]any `json:"recent_payouts"`
 	}
 	if err := json.Unmarshal([]byte(out), &resp); err != nil {
 		t.Fatalf("not valid JSON: %v\n%s", err, out)
 	}
-	if len(resp.LastPayouts) != 1 || resp.LastPayouts[0]["external_id"] != "pay_123" {
+	if len(resp.RecentPayouts) != 1 || resp.RecentPayouts[0]["external_id"] != "pay_123" {
 		t.Fatalf("unexpected JSON payload: %s", out)
 	}
 }
@@ -116,7 +157,7 @@ func TestListJSONPreservesResponse(t *testing.T) {
 func TestListPlainOutputWithPaypalDestination(t *testing.T) {
 	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
 		testutil.JSON(t, w, map[string]any{
-			"last_payouts": []map[string]any{
+			"recent_payouts": []map[string]any{
 				{
 					"external_id": "pay_123", "amount_cents": 5000,
 					"state": "completed", "created_at": "2026-04-24T12:00:00Z",

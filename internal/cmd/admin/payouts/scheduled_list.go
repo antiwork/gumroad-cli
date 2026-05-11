@@ -3,7 +3,9 @@ package payouts
 import (
 	"fmt"
 	"io"
+	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/antiwork/gumroad-cli/internal/admincmd"
@@ -12,11 +14,6 @@ import (
 	"github.com/antiwork/gumroad-cli/internal/output"
 	"github.com/spf13/cobra"
 )
-
-type scheduledListRequest struct {
-	Status string `json:"status,omitempty"`
-	Limit  int    `json:"limit,omitempty"`
-}
 
 type scheduledPayout struct {
 	ExternalID  string                 `json:"external_id"`
@@ -47,47 +44,80 @@ type scheduledListResponse struct {
 
 func newScheduledListCmd() *cobra.Command {
 	var (
-		status string
-		limit  int
+		statuses []string
+		limit    int
+		lookup   lookupFlags
 	)
 
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List ScheduledPayout rows",
 		Long: `List ScheduledPayout rows. Filter by --status (pending, executed,
-cancelled, flagged, held). Default limit is 20, capped server-side at 50.`,
+cancelled, flagged, held); repeat --status to match any of several values.
+Filter to a single user with --email, --user-id, or --external-id. Default
+limit is 20, capped server-side at 50.`,
 		Example: `  gumroad admin payouts scheduled list
   gumroad admin payouts scheduled list --status flagged
+  gumroad admin payouts scheduled list --status held --status flagged
+  gumroad admin payouts scheduled list --user-id 2245593582708
   gumroad admin payouts scheduled list --status pending --limit 50 --json`,
 		Args: cmdutil.ExactArgs(0),
 		RunE: func(c *cobra.Command, args []string) error {
 			opts := cmdutil.OptionsFrom(c)
 
-			req := scheduledListRequest{}
-			if c.Flags().Changed("status") {
-				normalized := strings.ToLower(strings.TrimSpace(status))
-				if _, ok := validScheduledStatuses[normalized]; !ok {
-					return cmdutil.UsageErrorf(c, "--status must be one of: %s", validStatusesList())
-				}
-				req.Status = normalized
+			params := url.Values{}
+			normalizedStatuses, err := normalizeStatuses(c, statuses)
+			if err != nil {
+				return err
+			}
+			for _, s := range normalizedStatuses {
+				params.Add("status[]", s)
 			}
 			if c.Flags().Changed("limit") {
 				if err := cmdutil.RequirePositiveIntFlag(c, "limit", limit); err != nil {
 					return err
 				}
-				req.Limit = limit
+				params.Set("limit", strconv.Itoa(limit))
+			}
+			if c.Flags().Changed("email") || c.Flags().Changed("user-id") || c.Flags().Changed("external-id") {
+				target, err := resolveLookupTarget(c, lookup)
+				if err != nil {
+					return err
+				}
+				if target.Email != "" {
+					params.Set("email", target.Email)
+				}
+				if target.UserID != "" {
+					params.Set("user_id", target.UserID)
+				}
 			}
 
-			return admincmd.RunPostJSONDecoded[scheduledListResponse](opts, "Fetching scheduled payouts...", "/payouts/scheduled_list", req, func(resp scheduledListResponse) error {
-				return renderScheduledList(opts, req.Status, resp)
+			return admincmd.RunGetDecoded[scheduledListResponse](opts, "Fetching scheduled payouts...", "/scheduled_payouts", params, func(resp scheduledListResponse) error {
+				return renderScheduledList(opts, normalizedStatuses, resp)
 			})
 		},
 	}
 
-	cmd.Flags().StringVar(&status, "status", "", "Filter by status: pending, executed, cancelled, flagged, held")
+	cmd.Flags().StringSliceVar(&statuses, "status", nil, "Filter by status: pending, executed, cancelled, flagged, held (repeatable)")
 	cmd.Flags().IntVar(&limit, "limit", 0, "Maximum results to return (default 20, capped at 50)")
+	addLookupFlags(cmd, &lookup)
 
 	return cmd
+}
+
+func normalizeStatuses(cmd *cobra.Command, statuses []string) ([]string, error) {
+	out := make([]string, 0, len(statuses))
+	for _, s := range statuses {
+		normalized := strings.ToLower(strings.TrimSpace(s))
+		if normalized == "" {
+			continue
+		}
+		if _, ok := validScheduledStatuses[normalized]; !ok {
+			return nil, cmdutil.UsageErrorf(cmd, "--status must be one of: %s", validStatusesList())
+		}
+		out = append(out, normalized)
+	}
+	return out, nil
 }
 
 func validStatusesList() string {
@@ -99,7 +129,7 @@ func validStatusesList() string {
 	return strings.Join(keys, ", ")
 }
 
-func renderScheduledList(opts cmdutil.Options, status string, resp scheduledListResponse) error {
+func renderScheduledList(opts cmdutil.Options, statuses []string, resp scheduledListResponse) error {
 	if opts.PlainOutput {
 		rows := make([][]string, 0, len(resp.ScheduledPayouts))
 		for _, p := range resp.ScheduledPayouts {
@@ -114,18 +144,20 @@ func renderScheduledList(opts cmdutil.Options, status string, resp scheduledList
 		return nil
 	}
 
+	statusLabel := strings.Join(statuses, ", ")
+
 	style := opts.Style()
 	return output.WithPager(opts.Out(), opts.Err(), func(w io.Writer) error {
 		if len(resp.ScheduledPayouts) == 0 {
-			if status != "" {
-				return output.Writef(w, "No scheduled payouts found for status %q.\n", status)
+			if statusLabel != "" {
+				return output.Writef(w, "No scheduled payouts found for status %q.\n", statusLabel)
 			}
 			return output.Writeln(w, "No scheduled payouts found.")
 		}
 
 		headline := fmt.Sprintf("%d scheduled payout(s)", len(resp.ScheduledPayouts))
-		if status != "" {
-			headline = fmt.Sprintf("%d scheduled payout(s) with status %s", len(resp.ScheduledPayouts), status)
+		if statusLabel != "" {
+			headline = fmt.Sprintf("%d scheduled payout(s) with status %s", len(resp.ScheduledPayouts), statusLabel)
 		}
 		if err := output.Writeln(w, style.Bold(headline)); err != nil {
 			return err

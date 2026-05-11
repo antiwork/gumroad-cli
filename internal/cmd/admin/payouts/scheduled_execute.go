@@ -33,7 +33,7 @@ This moves money. --yes is required.`,
 			opts := cmdutil.OptionsFrom(c)
 			id := args[0]
 
-			path := cmdutil.JoinPath("payouts", id, "scheduled_execute")
+			path := cmdutil.JoinPath("scheduled_payouts", id, "execute")
 
 			ok, err := cmdutil.ConfirmAction(opts, "Execute scheduled payout "+id+"? This moves money.")
 			if err != nil {

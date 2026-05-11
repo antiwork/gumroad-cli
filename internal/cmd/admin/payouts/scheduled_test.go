@@ -2,7 +2,6 @@ package payouts
 
 import (
 	"encoding/json"
-	"io"
 	"net/http"
 	"strings"
 	"testing"
@@ -11,23 +10,12 @@ import (
 )
 
 func TestScheduledList_Default(t *testing.T) {
-	var gotMethod, gotPath string
-	var body scheduledListRequest
-	var bodyKeys map[string]json.RawMessage
+	var gotMethod, gotPath, gotQuery string
 
 	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
 		gotMethod = r.Method
 		gotPath = r.URL.Path
-		raw, err := io.ReadAll(r.Body)
-		if err != nil {
-			t.Fatalf("read body: %v", err)
-		}
-		if err := json.Unmarshal(raw, &body); err != nil {
-			t.Fatalf("decode body: %v", err)
-		}
-		if err := json.Unmarshal(raw, &bodyKeys); err != nil {
-			t.Fatalf("decode keys: %v", err)
-		}
+		gotQuery = r.URL.RawQuery
 		testutil.JSON(t, w, map[string]any{
 			"scheduled_payouts": []map[string]any{
 				{"external_id": "pay_1", "user": map[string]any{"email": "seller@example.com"}, "payout_amount_cents": 1000, "status": "flagged", "action": "payout", "scheduled_at": "2026-05-01"},
@@ -40,14 +28,11 @@ func TestScheduledList_Default(t *testing.T) {
 	cmd.SetArgs([]string{})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
-	if gotMethod != "POST" || gotPath != "/internal/admin/payouts/scheduled_list" {
-		t.Fatalf("got %s %s, want POST /internal/admin/payouts/scheduled_list", gotMethod, gotPath)
+	if gotMethod != "GET" || gotPath != "/internal/admin/scheduled_payouts" {
+		t.Fatalf("got %s %s, want GET /internal/admin/scheduled_payouts", gotMethod, gotPath)
 	}
-	if _, hasStatus := bodyKeys["status"]; hasStatus {
-		t.Errorf("status must be omitted when not provided, got: %v", bodyKeys)
-	}
-	if _, hasLimit := bodyKeys["limit"]; hasLimit {
-		t.Errorf("limit must be omitted when not provided, got: %v", bodyKeys)
+	if gotQuery != "" {
+		t.Fatalf("query should be empty when no filters set, got %q", gotQuery)
 	}
 	for _, want := range []string{"pay_1", "flagged", "1000 cents"} {
 		if !strings.Contains(out, want) {
@@ -57,10 +42,9 @@ func TestScheduledList_Default(t *testing.T) {
 }
 
 func TestScheduledList_PassesStatusAndLimit(t *testing.T) {
-	var body scheduledListRequest
+	var gotQuery string
 	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
-		raw, _ := io.ReadAll(r.Body)
-		_ = json.Unmarshal(raw, &body)
+		gotQuery = r.URL.RawQuery
 		testutil.JSON(t, w, map[string]any{"scheduled_payouts": []any{}, "limit": 50})
 	})
 
@@ -68,8 +52,45 @@ func TestScheduledList_PassesStatusAndLimit(t *testing.T) {
 	cmd.SetArgs([]string{"--status", "FLAGGED", "--limit", "50"})
 	testutil.MustExecute(t, cmd)
 
-	if body.Status != "flagged" || body.Limit != 50 {
-		t.Fatalf("got body=%+v, want status=flagged limit=50", body)
+	if !strings.Contains(gotQuery, "status%5B%5D=flagged") {
+		t.Fatalf("status not sent as status[]=flagged: %q", gotQuery)
+	}
+	if !strings.Contains(gotQuery, "limit=50") {
+		t.Fatalf("limit not sent: %q", gotQuery)
+	}
+}
+
+func TestScheduledList_PassesMultipleStatuses(t *testing.T) {
+	var gotQuery string
+	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.RawQuery
+		testutil.JSON(t, w, map[string]any{"scheduled_payouts": []any{}, "limit": 20})
+	})
+
+	cmd := testutil.Command(newScheduledListCmd())
+	cmd.SetArgs([]string{"--status", "held", "--status", "flagged"})
+	testutil.MustExecute(t, cmd)
+
+	for _, want := range []string{"status%5B%5D=held", "status%5B%5D=flagged"} {
+		if !strings.Contains(gotQuery, want) {
+			t.Fatalf("query missing %q: %q", want, gotQuery)
+		}
+	}
+}
+
+func TestScheduledList_PassesUserFilters(t *testing.T) {
+	var gotQuery string
+	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.RawQuery
+		testutil.JSON(t, w, map[string]any{"scheduled_payouts": []any{}})
+	})
+
+	cmd := testutil.Command(newScheduledListCmd())
+	cmd.SetArgs([]string{"--user-id", "2245593582708"})
+	testutil.MustExecute(t, cmd)
+
+	if !strings.Contains(gotQuery, "user_id=2245593582708") {
+		t.Fatalf("user_id not sent: %q", gotQuery)
 	}
 }
 
@@ -138,7 +159,7 @@ func TestScheduledExecute_HappyPath(t *testing.T) {
 	cmd.SetArgs([]string{"pay_abc"})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
-	if gotMethod != "POST" || gotPath != "/internal/admin/payouts/pay_abc/scheduled_execute" {
+	if gotMethod != "POST" || gotPath != "/internal/admin/scheduled_payouts/pay_abc/execute" {
 		t.Fatalf("got %s %s", gotMethod, gotPath)
 	}
 	for _, want := range []string{"Scheduled payout pay_abc executed", "Result: executed", "Status: executed"} {
@@ -184,7 +205,7 @@ func TestScheduledCancel_HappyPath(t *testing.T) {
 	cmd.SetArgs([]string{"pay_abc"})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
-	if gotPath != "/internal/admin/payouts/pay_abc/scheduled_cancel" {
+	if gotPath != "/internal/admin/scheduled_payouts/pay_abc/cancel" {
 		t.Fatalf("got path %q", gotPath)
 	}
 	for _, want := range []string{"Cancelled", "Status: cancelled"} {
@@ -275,7 +296,7 @@ func TestScheduledExecute_DryRun(t *testing.T) {
 	cmd.SetArgs([]string{"pay_abc"})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
-	if !strings.Contains(out, "POST") || !strings.Contains(out, "/internal/admin/payouts/pay_abc/scheduled_execute") {
+	if !strings.Contains(out, "POST") || !strings.Contains(out, "/internal/admin/scheduled_payouts/pay_abc/execute") {
 		t.Errorf("dry-run output unexpected: %q", out)
 	}
 }
@@ -320,7 +341,7 @@ func TestScheduledCancel_DryRun(t *testing.T) {
 	cmd.SetArgs([]string{"pay_abc"})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
-	if !strings.Contains(out, "POST") || !strings.Contains(out, "/internal/admin/payouts/pay_abc/scheduled_cancel") {
+	if !strings.Contains(out, "POST") || !strings.Contains(out, "/internal/admin/scheduled_payouts/pay_abc/cancel") {
 		t.Errorf("dry-run output unexpected: %q", out)
 	}
 }
