@@ -2,6 +2,7 @@ package licenses
 
 import (
 	"fmt"
+	"net/url"
 	"strings"
 
 	"github.com/antiwork/gumroad-cli/internal/admincmd"
@@ -43,10 +44,6 @@ type purchase struct {
 	Uses         api.JSONInt `json:"uses"`
 }
 
-type lookupRequest struct {
-	LicenseKey string `json:"license_key"`
-}
-
 func newLookupCmd() *cobra.Command {
 	var key string
 
@@ -61,7 +58,8 @@ func newLookupCmd() *cobra.Command {
 				return err
 			}
 
-			return admincmd.RunPostJSONDecoded[licenseResponse](opts, "Fetching license...", "/licenses/lookup", lookupRequest{LicenseKey: resolvedKey}, func(resp licenseResponse) error {
+			params := url.Values{"license_key": []string{resolvedKey}}
+			return admincmd.RunGetDecoded[licenseResponse](opts, "Fetching license...", "/licenses/lookup", params, func(resp licenseResponse) error {
 				return renderLicense(opts, resp)
 			})
 		},
