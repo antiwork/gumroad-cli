@@ -36,6 +36,7 @@ func TestSearch_SendsEmailInQuery(t *testing.T) {
 				{
 					"id":                    "1",
 					"email":                 "buyer@example.com",
+					"seller":                map[string]any{"email": "seller@example.com"},
 					"product_name":          "Course",
 					"formatted_total_price": "$12",
 					"purchase_state":        "successful",
@@ -61,7 +62,7 @@ func TestSearch_SendsEmailInQuery(t *testing.T) {
 	if gotEmail != "buyer@example.com" {
 		t.Errorf("got email %q, want buyer@example.com", gotEmail)
 	}
-	for _, want := range []string{"1 purchase(s) for buyer@example.com", "Course", "Buyer: buyer@example.com"} {
+	for _, want := range []string{"1 purchase(s) for buyer@example.com", "BUYER", "SELLER", "FLAGS", "Course", "buyer@example.com", "seller@example.com"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("expected %q in output: %q", want, out)
 		}
@@ -172,6 +173,41 @@ func TestSearch_HasMoreShowsTruncated(t *testing.T) {
 	}
 }
 
+func TestSearch_ShowsFraudFlags(t *testing.T) {
+	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{
+			"purchases": []map[string]any{
+				{
+					"id":              "1",
+					"email":           "buyer@example.com",
+					"seller":          map[string]any{"email": "seller@example.com"},
+					"product_name":    "Course",
+					"chargeback_date": "2026-04-25T12:00:00Z",
+					"country_mismatches": map[string]any{
+						"billing_vs_ip":   true,
+						"billing_vs_card": false,
+						"ip_vs_card":      false,
+					},
+					"early_fraud_warning": map[string]any{"id": "1", "fraud_type": "made_with_stolen_card"},
+				},
+			},
+			"count":    1,
+			"limit":    25,
+			"has_more": false,
+		})
+	})
+
+	cmd := testutil.Command(newSearchCmd(), testutil.Quiet(false))
+	cmd.SetArgs([]string{"--email", "buyer@example.com"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	for _, want := range []string{"seller@example.com", "CB,EFW,COUNTRY"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("expected %q in output: %q", want, out)
+		}
+	}
+}
+
 func TestSearch_PlainOutput(t *testing.T) {
 	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
 		testutil.JSON(t, w, map[string]any{
@@ -179,6 +215,7 @@ func TestSearch_PlainOutput(t *testing.T) {
 				{
 					"id":                    "1",
 					"email":                 "buyer@example.com",
+					"seller":                map[string]any{"email": "seller@example.com"},
 					"product_name":          "Course",
 					"formatted_total_price": "$12",
 					"purchase_state":        "successful",
@@ -187,9 +224,11 @@ func TestSearch_PlainOutput(t *testing.T) {
 				{
 					"id":                    "2",
 					"email":                 "buyer@example.com",
+					"seller_email":          "legacy-seller@example.com",
 					"link_name":             "Bundle",
 					"formatted_total_price": "$20",
 					"purchase_state":        "refunded",
+					"chargeback_date":       "2026-04-23T13:00:00Z",
 					"created_at":            "2026-04-23T12:00:00Z",
 				},
 			},
@@ -204,8 +243,8 @@ func TestSearch_PlainOutput(t *testing.T) {
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
 	wants := []string{
-		"1\tbuyer@example.com\tCourse\t$12\tsuccessful\t2026-04-24T12:00:00Z",
-		"2\tbuyer@example.com\tBundle\t$20\trefunded\t2026-04-23T12:00:00Z",
+		"1\tbuyer@example.com\tseller@example.com\tCourse\t$12\tsuccessful\t\t2026-04-24T12:00:00Z",
+		"2\tbuyer@example.com\tlegacy-seller@example.com\tBundle\t$20\trefunded\tCB\t2026-04-23T12:00:00Z",
 	}
 	for _, want := range wants {
 		if !strings.Contains(out, want) {
@@ -238,7 +277,7 @@ func TestSearch_PlainOutputAmountAndStatusFallbacksMatchStyled(t *testing.T) {
 	cmd.SetArgs([]string{"--email", "buyer@example.com"})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
-	want := "9\tbuyer@example.com\tCourse\t1200 cents\tsuccessful, partially_refunded\t2026-04-24T12:00:00Z"
+	want := "9\tbuyer@example.com\t\tCourse\t1200 cents\tsuccessful, partially_refunded\t\t2026-04-24T12:00:00Z"
 	if !strings.Contains(out, want) {
 		t.Fatalf("plain row must derive amount from price_cents and combine purchase_state with refund_status (matching styled mode), got: %q", out)
 	}
