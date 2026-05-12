@@ -261,26 +261,8 @@ func writePurchase(w io.Writer, style output.Styler, p purchase, renderOpts purc
 	if err := writeRiskBlock(w, p); err != nil {
 		return err
 	}
-	if p.AffiliateCredit != nil {
-		if err := output.Writef(w, "Affiliate credit: %d cents", p.AffiliateCredit.AmountCents); err != nil {
-			return err
-		}
-		details := []string{}
-		if p.AffiliateCredit.FeeCents != 0 {
-			details = append(details, fmt.Sprintf("fee %d cents", p.AffiliateCredit.FeeCents))
-		}
-		if p.AffiliateCredit.BasisPoints != 0 {
-			details = append(details, fmt.Sprintf("%d bps", p.AffiliateCredit.BasisPoints))
-		}
-		if p.AffiliateCredit.AffiliateUserID != "" {
-			details = append(details, "affiliate "+p.AffiliateCredit.AffiliateUserID)
-		}
-		if len(details) > 0 {
-			if err := output.Writef(w, " (%s)", strings.Join(details, ", ")); err != nil {
-				return err
-			}
-		}
-		if err := output.Writeln(w, ""); err != nil {
+	if credit := affiliateCreditSummary(p.AffiliateCredit); credit != "" {
+		if err := output.Writef(w, "Affiliate credit: %s\n", credit); err != nil {
 			return err
 		}
 	}
@@ -334,13 +316,13 @@ func writeRiskBlock(w io.Writer, p purchase) error {
 			return err
 		}
 	}
-	if p.Dispute != nil {
-		if err := output.Writef(w, "  Dispute: %s\n", disputeSummary(p.Dispute)); err != nil {
+	if dispute := disputeSummary(p.Dispute); dispute != "" {
+		if err := output.Writef(w, "  Dispute: %s\n", dispute); err != nil {
 			return err
 		}
 	}
-	if p.EarlyFraudWarning != nil {
-		if err := output.Writef(w, "  Early fraud warning: %s\n", earlyFraudWarningSummary(p.EarlyFraudWarning)); err != nil {
+	if efw := earlyFraudWarningSummary(p.EarlyFraudWarning); efw != "" {
+		if err := output.Writef(w, "  Early fraud warning: %s\n", efw); err != nil {
 			return err
 		}
 	}
@@ -370,8 +352,8 @@ func hasRiskDetails(p purchase) bool {
 	return p.CountryMismatches.hasAny() ||
 		cardSummary(p) != "" ||
 		p.ChargebackDate != "" ||
-		p.Dispute != nil ||
-		p.EarlyFraudWarning != nil ||
+		disputeSummary(p.Dispute) != "" ||
+		earlyFraudWarningSummary(p.EarlyFraudWarning) != "" ||
 		p.IPAddress != "" ||
 		p.ChargeProcessor != "" ||
 		p.PaypalOrderID != ""
@@ -405,13 +387,17 @@ func cardSummary(p purchase) string {
 	if p.CardCountry != "" {
 		parts = append(parts, "country "+p.CardCountry)
 	}
-	if p.Card.ExpiryMonth != 0 || p.Card.ExpiryYear != 0 {
+	if p.Card.ExpiryMonth != 0 && p.Card.ExpiryYear != 0 {
 		parts = append(parts, fmt.Sprintf("exp %02d/%d", p.Card.ExpiryMonth, p.Card.ExpiryYear))
 	}
 	return strings.Join(parts, ", ")
 }
 
 func disputeSummary(dispute *purchaseDispute) string {
+	if dispute == nil {
+		return ""
+	}
+
 	parts := []string{}
 	if dispute.State != "" {
 		parts = append(parts, dispute.State)
@@ -443,6 +429,10 @@ func disputeSummary(dispute *purchaseDispute) string {
 }
 
 func earlyFraudWarningSummary(efw *earlyFraudWarning) string {
+	if efw == nil {
+		return ""
+	}
+
 	parts := []string{}
 	if efw.FraudType != "" {
 		parts = append(parts, efw.FraudType)
@@ -454,7 +444,13 @@ func earlyFraudWarningSummary(efw *earlyFraudWarning) string {
 		parts = append(parts, "actionable")
 	}
 	if efw.Resolution != "" {
-		parts = append(parts, "resolution "+efw.Resolution)
+		resolution := "resolution " + efw.Resolution
+		if efw.ResolutionMessage != "" {
+			resolution += ": " + efw.ResolutionMessage
+		}
+		parts = append(parts, resolution)
+	} else if efw.ResolutionMessage != "" {
+		parts = append(parts, "resolution message "+efw.ResolutionMessage)
 	}
 	if efw.ProcessorID != "" {
 		parts = append(parts, efw.ProcessorID)
@@ -466,6 +462,32 @@ func earlyFraudWarningSummary(efw *earlyFraudWarning) string {
 		parts = append(parts, "processor created "+efw.ProcessorCreatedAt)
 	}
 	return strings.Join(parts, ", ")
+}
+
+func affiliateCreditSummary(credit *purchaseAffiliateCredit) string {
+	if credit == nil {
+		return ""
+	}
+
+	details := []string{}
+	if credit.FeeCents != 0 {
+		details = append(details, fmt.Sprintf("fee %d cents", credit.FeeCents))
+	}
+	if credit.BasisPoints != 0 {
+		details = append(details, fmt.Sprintf("%d bps", credit.BasisPoints))
+	}
+	if credit.AffiliateUserID != "" {
+		details = append(details, "affiliate "+credit.AffiliateUserID)
+	}
+	if credit.AmountCents == 0 && len(details) == 0 {
+		return ""
+	}
+
+	summary := fmt.Sprintf("%d cents", credit.AmountCents)
+	if len(details) > 0 {
+		summary += " (" + strings.Join(details, ", ") + ")"
+	}
+	return summary
 }
 
 func writeClusters(w io.Writer, clusters *purchaseClusters) error {

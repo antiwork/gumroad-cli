@@ -87,6 +87,7 @@ func TestViewSendsWithClustersAndRendersFraudContext(t *testing.T) {
 					"charge_risk_level":    "highest",
 					"actionable":           true,
 					"resolution":           "unknown",
+					"resolution_message":   "Issuer reported a stolen card",
 					"processor_created_at": "2026-04-24T12:00:00Z",
 				},
 				"affiliate_credit": map[string]any{
@@ -118,7 +119,7 @@ func TestViewSendsWithClustersAndRendersFraudContext(t *testing.T) {
 		"Card: **** **** **** 4242, visa, BIN 424242, country FR, exp 11/2030",
 		"Chargeback: 2026-04-25T12:00:00Z",
 		"Dispute: formalized, fraudulent, dp_123, formalized 2026-04-26T12:00:00Z",
-		"Early fraud warning: made_with_stolen_card, risk highest, actionable, resolution unknown, issfr_123",
+		"Early fraud warning: made_with_stolen_card, risk highest, actionable, resolution unknown: Issuer reported a stolen card, issfr_123",
 		"IP: 203.0.113.42 (United States)",
 		"Processor: stripe",
 		"PayPal order: PAY-123",
@@ -131,6 +132,34 @@ func TestViewSendsWithClustersAndRendersFraudContext(t *testing.T) {
 	}
 	if strings.Contains(out, "legacy-seller@example.com") {
 		t.Fatalf("output must prefer seller.email over legacy seller_email: %q", out)
+	}
+}
+
+func TestViewOmitsSparseFraudContext(t *testing.T) {
+	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{
+			"purchase": map[string]any{
+				"id":                  "123",
+				"card":                map[string]any{"visual": "**** **** **** 4242", "expiry_year": 2030},
+				"dispute":             map[string]any{},
+				"early_fraud_warning": map[string]any{},
+				"affiliate_credit":    map[string]any{},
+				"country_mismatches":  map[string]any{"billing_vs_ip": false, "billing_vs_card": false, "ip_vs_card": false},
+			},
+		})
+	})
+
+	cmd := testutil.Command(newViewCmd())
+	cmd.SetArgs([]string{"123"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	if !strings.Contains(out, "Card: **** **** **** 4242") {
+		t.Fatalf("expected card visual in output: %q", out)
+	}
+	for _, unwanted := range []string{"exp ", "Dispute: \n", "Early fraud warning: \n", "Affiliate credit: 0 cents"} {
+		if strings.Contains(out, unwanted) {
+			t.Fatalf("output must omit sparse fraud detail %q: %q", unwanted, out)
+		}
 	}
 }
 
