@@ -255,6 +255,32 @@ func TestNewCommentsCmdWiresSubcommands(t *testing.T) {
 	}
 }
 
+func TestCommentAuthorUnmarshalVariants(t *testing.T) {
+	var stringAuthor commentAuthor
+	if err := json.Unmarshal([]byte(`"Admin User"`), &stringAuthor); err != nil {
+		t.Fatalf("decode string author: %v", err)
+	}
+	if stringAuthor.Name != "Admin User" || stringAuthor.Email != "" || stringAuthor.ID != "" {
+		t.Fatalf("unexpected string author: %#v", stringAuthor)
+	}
+
+	var objectAuthor commentAuthor
+	if err := json.Unmarshal([]byte(`{"id":"u_123","name":"Admin User","email":"admin@example.com"}`), &objectAuthor); err != nil {
+		t.Fatalf("decode object author: %v", err)
+	}
+	if objectAuthor.ID != "u_123" || objectAuthor.Name != "Admin User" || objectAuthor.Email != "admin@example.com" {
+		t.Fatalf("unexpected object author: %#v", objectAuthor)
+	}
+
+	var nullAuthor commentAuthor
+	if err := json.Unmarshal([]byte(`null`), &nullAuthor); err != nil {
+		t.Fatalf("decode null author: %v", err)
+	}
+	if nullAuthor != (commentAuthor{}) {
+		t.Fatalf("unexpected null author: %#v", nullAuthor)
+	}
+}
+
 func commentFixture() map[string]any {
 	return map[string]any{
 		"id":           "c_123",
