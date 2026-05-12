@@ -75,7 +75,7 @@ func TestUserPurchasesUsesInternalAdminEndpoint(t *testing.T) {
 		"Investigation guide",
 		"$12.34",
 		"successful, refunded",
-		"CB,EFW,CM",
+		"CB,EFW,COUNTRY",
 		"2026-05-01T12:00:00Z",
 		"More results: --cursor cur-next",
 	} {
@@ -220,7 +220,7 @@ func TestUserPurchasesPlainOutput(t *testing.T) {
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
 	want := strings.Join([]string{
-		"purchase_123\tseller@example.com\tInvestigation guide\t$12.34\tsuccessful, refunded\tCB,EFW,CM\t2026-05-01T12:00:00Z",
+		"purchase_123\tseller@example.com\tInvestigation guide\t$12.34\tsuccessful, refunded\tCB,EFW,COUNTRY\t2026-05-01T12:00:00Z",
 		"purchase_456\tlegacy-seller@example.com\tSecond product\t900 cents\tfailed\t\t2026-04-30T12:00:00Z",
 	}, "\n")
 	if strings.TrimSpace(out) != want {
