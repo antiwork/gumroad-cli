@@ -77,11 +77,11 @@ fingerprint. By default the server evaluates all available signals; repeat
 				return err
 			}
 
-			params := target.values()
+			params := target.Values()
 			applyRelatedParams(params, normalizedSignals, limit, c.Flags().Changed("limit"))
 
 			return admincmd.RunGetDecoded[relatedResponse](opts, "Fetching related users...", "/users/related", params, func(resp relatedResponse) error {
-				return renderRelated(opts, target.identifier(), resp)
+				return renderRelated(opts, target.Identifier(), resp)
 			})
 		},
 	}

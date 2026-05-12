@@ -57,14 +57,14 @@ Status filters are sent as purchase_state values. Use --chargedback,
 				return err
 			}
 
-			params := target.values()
+			params := target.Values()
 			if err := applyUserPurchaseFilters(c, params, statuses, startAt, endAt, stripeFingerprint, ipAddress, chargedback, hasEarlyFraudWarning, hasAffiliate); err != nil {
 				return err
 			}
 			cursor.Apply(params, page)
 
 			return admincmd.RunGetDecoded[userPurchasesResponse](opts, "Fetching user purchases...", "/users/purchases", params, func(resp userPurchasesResponse) error {
-				return renderUserPurchases(opts, target.identifier(), resp)
+				return renderUserPurchases(opts, target.Identifier(), resp)
 			})
 		},
 	}
