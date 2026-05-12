@@ -26,6 +26,21 @@ func TestAddFlagsRegistersCursorAndLimit(t *testing.T) {
 	}
 }
 
+func TestAddFlagsAcceptsCustomLimitUsage(t *testing.T) {
+	var flags Flags
+	cmd := &cobra.Command{Use: "test"}
+
+	AddFlags(cmd, &flags, Options{LimitUsage: "Maximum results to return (default 20, capped at 50)"})
+
+	limitFlag := cmd.Flags().Lookup("limit")
+	if limitFlag == nil {
+		t.Fatal("expected limit flag to be registered")
+	}
+	if got := limitFlag.Usage; got != "Maximum results to return (default 20, capped at 50)" {
+		t.Fatalf("limit usage = %q", got)
+	}
+}
+
 func TestApplySetsNonZeroValues(t *testing.T) {
 	params := url.Values{}
 

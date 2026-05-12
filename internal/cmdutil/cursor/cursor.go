@@ -20,9 +20,18 @@ type Pagination struct {
 	Limit api.JSONInt `json:"limit"`
 }
 
-func AddFlags(cmd *cobra.Command, flags *Flags) {
+type Options struct {
+	LimitUsage string
+}
+
+func AddFlags(cmd *cobra.Command, flags *Flags, opts ...Options) {
+	limitUsage := "Maximum results per page (default 20)"
+	if len(opts) > 0 && opts[0].LimitUsage != "" {
+		limitUsage = opts[0].LimitUsage
+	}
+
 	cmd.Flags().StringVar(&flags.Cursor, "cursor", "", "Pagination cursor (from a previous response)")
-	cmd.Flags().IntVar(&flags.Limit, "limit", 0, "Maximum results per page (default 20)")
+	cmd.Flags().IntVar(&flags.Limit, "limit", 0, limitUsage)
 }
 
 func Apply(params url.Values, flags Flags) {

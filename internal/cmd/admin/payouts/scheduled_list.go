@@ -121,7 +121,7 @@ limit is 20, capped server-side at 50.`,
 	}
 
 	cmd.Flags().StringSliceVar(&statuses, "status", nil, "Filter by status: pending, executed, cancelled, flagged, held (repeatable)")
-	cursor.AddFlags(cmd, &page)
+	cursor.AddFlags(cmd, &page, cursor.Options{LimitUsage: "Maximum results to return (default 20, capped at 50)"})
 	addLookupFlags(cmd, &lookup)
 
 	return cmd
