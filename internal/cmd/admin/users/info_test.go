@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/antiwork/gumroad-cli/internal/output"
 	"github.com/antiwork/gumroad-cli/internal/testutil"
 )
 
@@ -152,6 +153,128 @@ func TestInfoUsesInternalAdminEndpointAndRendersHumanOutput(t *testing.T) {
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output missing %q: %q", want, out)
+		}
+	}
+}
+
+func TestInfoRendersSignInAndSocialContext(t *testing.T) {
+	output.SetColorEnabledForTesting(true)
+	t.Cleanup(output.ResetColorEnabledForTesting)
+
+	payload := sampleInfoPayload()
+	user := payload["user"].(map[string]any)
+	user["locale"] = "fr"
+	user["timezone"] = "Eastern Time (US & Canada)"
+	user["sign_in"] = map[string]any{
+		"account_created_ip": "1.2.3.4",
+		"current_ip":         "5.6.7.8",
+		"current_at":         "2026-05-10T09:30:00Z",
+		"last_ip":            "9.10.11.12",
+		"last_at":            "2026-05-08T18:45:00Z",
+		"count":              42,
+	}
+	user["social"] = map[string]any{
+		"twitter_user_id": "1",
+		"twitter_handle":  "alice",
+		"facebook_uid":    "fb1",
+		"google_uid":      "gid1",
+		"oauth_provider":  "google_oauth2",
+		"external_authentications": []map[string]any{
+			{
+				"provider":  "apple",
+				"uid":       "001-test",
+				"linked_at": "2026-05-09T12:00:00Z",
+			},
+		},
+	}
+
+	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, payload)
+	})
+
+	cmd := testutil.Command(newInfoCmd(), testutil.Quiet(false))
+	cmd.SetArgs([]string{"--email", "seller@example.com"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	for _, want := range []string{
+		"Locale: fr",
+		"Timezone: Eastern Time (US & Canada)",
+		"Sign-in:",
+		"account-created IP: 1.2.3.4",
+		"current: 5.6.7.8 at 2026-05-10T09:30:00Z",
+		"last: 9.10.11.12 at 2026-05-08T18:45:00Z",
+		"count: 42",
+		"Social:",
+		"twitter: @alice (id: 1)",
+		"facebook UID: fb1",
+		"google UID: gid1",
+		"OAuth provider: google_oauth2",
+		"external authentications:",
+		"\x1b[1mPROVIDER\x1b[0m",
+		"apple",
+		"001-test",
+		"2026-05-09T12:00:00Z",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q: %q", want, out)
+		}
+	}
+}
+
+func TestFormatTwitterLabelsUserIDOnly(t *testing.T) {
+	tests := []struct {
+		name   string
+		handle string
+		userID string
+		want   string
+	}{
+		{name: "handle and ID", handle: "alice", userID: "1", want: "@alice (id: 1)"},
+		{name: "handle with at-prefix", handle: "@alice", userID: "1", want: "@alice (id: 1)"},
+		{name: "handle only", handle: "alice", want: "@alice"},
+		{name: "ID only", userID: "1", want: "(id: 1)"},
+		{name: "empty", want: ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := formatTwitter(tt.handle, tt.userID); got != tt.want {
+				t.Fatalf("formatTwitter(%q, %q) = %q, want %q", tt.handle, tt.userID, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestInfoSkipsEmptySignInAndSocialContext(t *testing.T) {
+	payload := sampleInfoPayload()
+	user := payload["user"].(map[string]any)
+	user["sign_in"] = map[string]any{
+		"account_created_ip": nil,
+		"current_ip":         nil,
+		"current_at":         nil,
+		"last_ip":            nil,
+		"last_at":            nil,
+		"count":              0,
+	}
+	user["social"] = map[string]any{
+		"twitter_user_id":          nil,
+		"twitter_handle":           nil,
+		"facebook_uid":             nil,
+		"google_uid":               nil,
+		"oauth_provider":           nil,
+		"external_authentications": []map[string]any{},
+	}
+
+	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, payload)
+	})
+
+	cmd := testutil.Command(newInfoCmd(), testutil.Quiet(false))
+	cmd.SetArgs([]string{"--email", "seller@example.com"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	for _, unwanted := range []string{"Sign-in:", "Social:"} {
+		if strings.Contains(out, unwanted) {
+			t.Errorf("output should skip empty %q block: %q", unwanted, out)
 		}
 	}
 }

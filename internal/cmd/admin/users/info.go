@@ -22,13 +22,41 @@ type userInfo struct {
 	Username                       string           `json:"username"`
 	ProfileURL                     string           `json:"profile_url"`
 	Country                        string           `json:"country"`
+	Locale                         string           `json:"locale"`
+	Timezone                       string           `json:"timezone"`
 	CreatedAt                      string           `json:"created_at"`
 	DeletedAt                      string           `json:"deleted_at"`
 	RiskState                      riskState        `json:"risk_state"`
 	ActiveWatchedUser              *watchedUserInfo `json:"active_watched_user"`
 	TwoFactorAuthenticationEnabled bool             `json:"two_factor_authentication_enabled"`
+	SignIn                         signInInfo       `json:"sign_in"`
+	Social                         socialInfo       `json:"social"`
 	Payouts                        payoutsInfo      `json:"payouts"`
 	Stats                          statsInfo        `json:"stats"`
+}
+
+type signInInfo struct {
+	AccountCreatedIP string `json:"account_created_ip"`
+	CurrentIP        string `json:"current_ip"`
+	CurrentAt        string `json:"current_at"`
+	LastIP           string `json:"last_ip"`
+	LastAt           string `json:"last_at"`
+	Count            int    `json:"count"`
+}
+
+type socialInfo struct {
+	TwitterUserID           string                       `json:"twitter_user_id"`
+	TwitterHandle           string                       `json:"twitter_handle"`
+	FacebookUID             string                       `json:"facebook_uid"`
+	GoogleUID               string                       `json:"google_uid"`
+	OAuthProvider           string                       `json:"oauth_provider"`
+	ExternalAuthentications []externalAuthenticationInfo `json:"external_authentications"`
+}
+
+type externalAuthenticationInfo struct {
+	Provider string `json:"provider"`
+	UID      string `json:"uid"`
+	LinkedAt string `json:"linked_at"`
 }
 
 type riskState struct {
@@ -131,6 +159,8 @@ func renderInfo(opts cmdutil.Options, identifier, userID string, info userInfo) 
 	writeOptional(&b, "Username", info.Username)
 	writeOptional(&b, "Profile", info.ProfileURL)
 	writeOptional(&b, "Country", info.Country)
+	writeOptional(&b, "Locale", info.Locale)
+	writeOptional(&b, "Timezone", info.Timezone)
 	writeOptional(&b, "Created", info.CreatedAt)
 	writeOptional(&b, "Deleted", info.DeletedAt)
 
@@ -142,6 +172,18 @@ func renderInfo(opts cmdutil.Options, identifier, userID string, info userInfo) 
 		twoFactor = "enabled"
 	}
 	fmt.Fprintf(&b, "Two-factor: %s\n", twoFactor)
+
+	if !info.SignIn.empty() {
+		fmt.Fprintln(&b)
+		writeSignIn(&b, info.SignIn)
+	}
+
+	if !info.Social.empty() {
+		fmt.Fprintln(&b)
+		if err := writeSocial(&b, style, info.Social); err != nil {
+			return err
+		}
+	}
 
 	if info.ActiveWatchedUser != nil {
 		fmt.Fprintln(&b)
@@ -190,6 +232,119 @@ func writeRiskState(b *strings.Builder, risk riskState) {
 	if risk.LastStatusChangedAt != "" {
 		fmt.Fprintf(b, "  last status change: %s\n", risk.LastStatusChangedAt)
 	}
+}
+
+func (s signInInfo) empty() bool {
+	return s.AccountCreatedIP == "" &&
+		s.CurrentIP == "" &&
+		s.CurrentAt == "" &&
+		s.LastIP == "" &&
+		s.LastAt == "" &&
+		s.Count == 0
+}
+
+func writeSignIn(b *strings.Builder, signIn signInInfo) {
+	fmt.Fprintln(b, "Sign-in:")
+	if signIn.AccountCreatedIP != "" {
+		fmt.Fprintf(b, "  account-created IP: %s\n", signIn.AccountCreatedIP)
+	}
+	if current := formatIPWithTime(signIn.CurrentIP, signIn.CurrentAt); current != "" {
+		fmt.Fprintf(b, "  current: %s\n", current)
+	}
+	if last := formatIPWithTime(signIn.LastIP, signIn.LastAt); last != "" {
+		fmt.Fprintf(b, "  last: %s\n", last)
+	}
+	if signIn.Count > 0 {
+		fmt.Fprintf(b, "  count: %d\n", signIn.Count)
+	}
+}
+
+func formatIPWithTime(ip, at string) string {
+	switch {
+	case ip != "" && at != "":
+		return ip + " at " + at
+	case ip != "":
+		return ip
+	default:
+		return at
+	}
+}
+
+func (s socialInfo) empty() bool {
+	return s.TwitterUserID == "" &&
+		s.TwitterHandle == "" &&
+		s.FacebookUID == "" &&
+		s.GoogleUID == "" &&
+		s.OAuthProvider == "" &&
+		!hasExternalAuthentications(s.ExternalAuthentications)
+}
+
+func hasExternalAuthentications(auths []externalAuthenticationInfo) bool {
+	for _, auth := range auths {
+		if auth.Provider != "" || auth.UID != "" || auth.LinkedAt != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func writeSocial(b *strings.Builder, style output.Styler, social socialInfo) error {
+	fmt.Fprintln(b, "Social:")
+	if twitter := formatTwitter(social.TwitterHandle, social.TwitterUserID); twitter != "" {
+		fmt.Fprintf(b, "  twitter: %s\n", twitter)
+	}
+	writeOptionalIndented(b, "facebook UID", social.FacebookUID)
+	writeOptionalIndented(b, "google UID", social.GoogleUID)
+	writeOptionalIndented(b, "OAuth provider", social.OAuthProvider)
+
+	if hasExternalAuthentications(social.ExternalAuthentications) {
+		fmt.Fprintln(b, "  external authentications:")
+		tbl := output.NewStyledTable(style, "PROVIDER", "UID", "LINKED")
+		for _, auth := range social.ExternalAuthentications {
+			if auth.Provider == "" && auth.UID == "" && auth.LinkedAt == "" {
+				continue
+			}
+			tbl.AddRow(auth.Provider, auth.UID, auth.LinkedAt)
+		}
+		if err := writeIndentedTable(b, tbl, "    "); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func formatTwitter(handle, userID string) string {
+	handle = strings.TrimPrefix(handle, "@")
+	switch {
+	case handle != "" && userID != "":
+		return "@" + handle + " (id: " + userID + ")"
+	case handle != "":
+		return "@" + handle
+	case userID != "":
+		return "(id: " + userID + ")"
+	default:
+		return ""
+	}
+}
+
+func writeOptionalIndented(b *strings.Builder, label, value string) {
+	if value != "" {
+		fmt.Fprintf(b, "  %s: %s\n", label, value)
+	}
+}
+
+func writeIndentedTable(b *strings.Builder, tbl *output.Table, indent string) error {
+	var table strings.Builder
+	if err := tbl.Render(&table); err != nil {
+		return err
+	}
+	for _, line := range strings.Split(strings.TrimRight(table.String(), "\n"), "\n") {
+		if line == "" {
+			continue
+		}
+		fmt.Fprintf(b, "%s%s\n", indent, line)
+	}
+	return nil
 }
 
 func writeWatchlist(b *strings.Builder, watchedUser *watchedUserInfo) {
