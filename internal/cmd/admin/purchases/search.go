@@ -2,6 +2,7 @@ package purchases
 
 import (
 	"fmt"
+	"io"
 	"net/url"
 	"strconv"
 
@@ -66,7 +67,7 @@ func renderSearch(opts cmdutil.Options, email string, resp searchResponse) error
 	if opts.PlainOutput {
 		rows := make([][]string, 0, len(resp.Purchases))
 		for _, p := range resp.Purchases {
-			rows = append(rows, []string{p.ID, p.Email, productLabel(p), amountLabel(p), statusLabel(p), p.CreatedAt})
+			rows = append(rows, []string{p.ID, p.Email, sellerEmail(p), productLabel(p), amountLabel(p), statusLabel(p), purchaseFlags(p), p.CreatedAt})
 		}
 		return output.PrintPlain(opts.Out(), rows)
 	}
@@ -84,19 +85,18 @@ func renderSearch(opts cmdutil.Options, email string, resp searchResponse) error
 	if resp.HasMore {
 		headline = fmt.Sprintf("Showing first %d purchase(s) for %s (truncated)", len(resp.Purchases), email)
 	}
-	if err := output.Writeln(opts.Out(), style.Bold(headline)); err != nil {
-		return err
-	}
 
-	for i, p := range resp.Purchases {
-		if i > 0 {
-			if err := output.Writeln(opts.Out(), ""); err != nil {
-				return err
-			}
-		}
-		if err := renderPurchase(opts, p); err != nil {
+	return output.WithPager(opts.Out(), opts.Err(), func(w io.Writer) error {
+		if err := output.Writeln(w, style.Bold(headline)); err != nil {
 			return err
 		}
-	}
-	return nil
+		if err := output.Writeln(w, ""); err != nil {
+			return err
+		}
+		table := output.NewStyledTable(style, "ID", "BUYER", "SELLER", "PRODUCT", "AMOUNT", "STATE", "FLAGS", "CREATED")
+		for _, p := range resp.Purchases {
+			table.AddRow(p.ID, p.Email, sellerEmail(p), productLabel(p), amountLabel(p), statusLabel(p), purchaseFlags(p), p.CreatedAt)
+		}
+		return table.Render(w)
+	})
 }
