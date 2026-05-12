@@ -41,6 +41,123 @@ func TestViewUsesInternalAdminEndpoint(t *testing.T) {
 	}
 }
 
+func TestViewSendsWithClustersAndRendersFraudContext(t *testing.T) {
+	var gotClusters string
+	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
+		gotClusters = r.URL.Query().Get("with_clusters")
+		testutil.JSON(t, w, map[string]any{
+			"purchase": map[string]any{
+				"id":                    "123",
+				"email":                 "buyer@example.com",
+				"seller_email":          "legacy-seller@example.com",
+				"seller":                map[string]any{"id": "usr_123", "email": "seller@example.com", "name": "Seller"},
+				"product_name":          "Course",
+				"formatted_total_price": "$12",
+				"purchase_state":        "successful",
+				"chargeback_date":       "2026-04-25T12:00:00Z",
+				"charge_processor":      "stripe",
+				"paypal_order_id":       "PAY-123",
+				"ip_address":            "203.0.113.42",
+				"ip_country":            "United States",
+				"billing_country":       "Germany",
+				"card_country":          "FR",
+				"country_mismatches": map[string]any{
+					"billing_vs_ip":   true,
+					"billing_vs_card": true,
+					"ip_vs_card":      true,
+				},
+				"card": map[string]any{
+					"bin":          "424242",
+					"type":         "visa",
+					"visual":       "**** **** **** 4242",
+					"expiry_month": 11,
+					"expiry_year":  2030,
+				},
+				"dispute": map[string]any{
+					"id":                          "disp_123",
+					"state":                       "formalized",
+					"reason":                      "fraudulent",
+					"charge_processor_dispute_id": "dp_123",
+					"formalized_at":               "2026-04-26T12:00:00Z",
+				},
+				"early_fraud_warning": map[string]any{
+					"id":                   "1",
+					"processor_id":         "issfr_123",
+					"fraud_type":           "made_with_stolen_card",
+					"charge_risk_level":    "highest",
+					"actionable":           true,
+					"resolution":           "unknown",
+					"processor_created_at": "2026-04-24T12:00:00Z",
+				},
+				"affiliate_credit": map[string]any{
+					"amount_cents":      750,
+					"fee_cents":         50,
+					"basis_points":      1000,
+					"affiliate_user_id": "usr_aff",
+				},
+				"clusters": map[string]any{
+					"fingerprint_count": 2,
+					"browser_count":     1,
+					"ip_count":          3,
+				},
+			},
+		})
+	})
+
+	cmd := testutil.Command(newViewCmd())
+	cmd.SetArgs([]string{"123", "--with-clusters"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	if gotClusters != "true" {
+		t.Fatalf("got with_clusters=%q, want true", gotClusters)
+	}
+	for _, want := range []string{
+		"Seller: seller@example.com",
+		"Risk:",
+		"Country mismatches: billing_vs_ip, billing_vs_card, ip_vs_card",
+		"Card: **** **** **** 4242, visa, BIN 424242, country FR, exp 11/2030",
+		"Chargeback: 2026-04-25T12:00:00Z",
+		"Dispute: formalized, fraudulent, dp_123, formalized 2026-04-26T12:00:00Z",
+		"Early fraud warning: made_with_stolen_card, risk highest, actionable, resolution unknown, issfr_123",
+		"IP: 203.0.113.42 (United States)",
+		"Processor: stripe",
+		"PayPal order: PAY-123",
+		"Affiliate credit: 750 cents (fee 50 cents, 1000 bps, affiliate usr_aff)",
+		"Clusters: fingerprint 2, browser 1, IP 3",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("output missing %q: %q", want, out)
+		}
+	}
+	if strings.Contains(out, "legacy-seller@example.com") {
+		t.Fatalf("output must prefer seller.email over legacy seller_email: %q", out)
+	}
+}
+
+func TestViewOmitsClustersUnlessRequested(t *testing.T) {
+	var gotClusters string
+	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
+		gotClusters = r.URL.Query().Get("with_clusters")
+		testutil.JSON(t, w, map[string]any{
+			"purchase": map[string]any{
+				"id":       "123",
+				"clusters": map[string]any{"fingerprint_count": 2, "browser_count": 1, "ip_count": 3},
+			},
+		})
+	})
+
+	cmd := testutil.Command(newViewCmd())
+	cmd.SetArgs([]string{"123"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	if gotClusters != "" {
+		t.Fatalf("with_clusters must be omitted by default, got %q", gotClusters)
+	}
+	if strings.Contains(out, "Clusters:") {
+		t.Fatalf("clusters must be hidden unless --with-clusters is set: %q", out)
+	}
+}
+
 func TestViewJSONPreservesResponse(t *testing.T) {
 	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
 		testutil.JSON(t, w, map[string]any{
