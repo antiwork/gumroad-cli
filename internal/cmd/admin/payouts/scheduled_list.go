@@ -11,6 +11,7 @@ import (
 	"github.com/antiwork/gumroad-cli/internal/admincmd"
 	"github.com/antiwork/gumroad-cli/internal/api"
 	"github.com/antiwork/gumroad-cli/internal/cmdutil"
+	"github.com/antiwork/gumroad-cli/internal/cmdutil/cursor"
 	"github.com/antiwork/gumroad-cli/internal/output"
 	"github.com/spf13/cobra"
 )
@@ -61,13 +62,14 @@ type scheduledPayoutCategory struct {
 
 type scheduledListResponse struct {
 	ScheduledPayouts []scheduledPayout `json:"scheduled_payouts"`
+	Pagination       cursor.Pagination `json:"pagination"`
 	Limit            api.JSONInt       `json:"limit"`
 }
 
 func newScheduledListCmd() *cobra.Command {
 	var (
 		statuses []string
-		limit    int
+		page     cursor.Flags
 		lookup   lookupFlags
 	)
 
@@ -95,12 +97,10 @@ limit is 20, capped server-side at 50.`,
 			for _, s := range normalizedStatuses {
 				params.Add("status[]", s)
 			}
-			if c.Flags().Changed("limit") {
-				if err := cmdutil.RequirePositiveIntFlag(c, "limit", limit); err != nil {
-					return err
-				}
-				params.Set("limit", strconv.Itoa(limit))
+			if err := cmdutil.RequirePositiveIntFlag(c, "limit", page.Limit); err != nil {
+				return err
 			}
+			cursor.Apply(params, page)
 			if c.Flags().Changed("email") || c.Flags().Changed("user-id") || c.Flags().Changed("external-id") {
 				target, err := resolveLookupTarget(c, lookup)
 				if err != nil {
@@ -121,7 +121,7 @@ limit is 20, capped server-side at 50.`,
 	}
 
 	cmd.Flags().StringSliceVar(&statuses, "status", nil, "Filter by status: pending, executed, cancelled, flagged, held (repeatable)")
-	cmd.Flags().IntVar(&limit, "limit", 0, "Maximum results to return (default 20, capped at 50)")
+	cursor.AddFlags(cmd, &page)
 	addLookupFlags(cmd, &lookup)
 
 	return cmd
@@ -206,7 +206,10 @@ func renderScheduledList(opts cmdutil.Options, statuses []string, resp scheduled
 				p.UnpaidBalanceFormatted,
 			)
 		}
-		return tbl.Render(w)
+		if err := tbl.Render(w); err != nil {
+			return err
+		}
+		return cursor.WriteMoreFooter(w, resp.Pagination)
 	})
 }
 

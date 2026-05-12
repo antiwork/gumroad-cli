@@ -4,12 +4,12 @@ import (
 	"fmt"
 	"io"
 	"net/url"
-	"strconv"
 	"strings"
 
 	"github.com/antiwork/gumroad-cli/internal/admincmd"
 	"github.com/antiwork/gumroad-cli/internal/api"
 	"github.com/antiwork/gumroad-cli/internal/cmdutil"
+	"github.com/antiwork/gumroad-cli/internal/cmdutil/cursor"
 	"github.com/antiwork/gumroad-cli/internal/output"
 	"github.com/spf13/cobra"
 )
@@ -17,15 +17,10 @@ import (
 type payoutsResponse struct {
 	UserID               string            `json:"user_id"`
 	RecentPayouts        []payout          `json:"recent_payouts"`
-	Pagination           payoutsPagination `json:"pagination"`
+	Pagination           cursor.Pagination `json:"pagination"`
 	NextPayoutDate       string            `json:"next_payout_date"`
 	BalanceForNextPayout string            `json:"balance_for_next_payout"`
 	PayoutNote           string            `json:"payout_note"`
-}
-
-type payoutsPagination struct {
-	Next  string      `json:"next"`
-	Limit api.JSONInt `json:"limit"`
 }
 
 type payout struct {
@@ -42,8 +37,7 @@ type payout struct {
 func newListCmd() *cobra.Command {
 	var (
 		lookup lookupFlags
-		limit  int
-		cursor string
+		page   cursor.Flags
 	)
 
 	cmd := &cobra.Command{
@@ -64,15 +58,10 @@ func newListCmd() *cobra.Command {
 			if target.UserID != "" {
 				params.Set("user_id", target.UserID)
 			}
-			if c.Flags().Changed("limit") {
-				if err := cmdutil.RequirePositiveIntFlag(c, "limit", limit); err != nil {
-					return err
-				}
-				params.Set("limit", strconv.Itoa(limit))
+			if err := cmdutil.RequirePositiveIntFlag(c, "limit", page.Limit); err != nil {
+				return err
 			}
-			if cursor != "" {
-				params.Set("cursor", cursor)
-			}
+			cursor.Apply(params, page)
 
 			return admincmd.RunGetDecoded[payoutsResponse](opts, "Fetching payouts...", "/payouts", params, func(resp payoutsResponse) error {
 				return renderPayouts(opts, target.identifier(), resp)
@@ -81,8 +70,7 @@ func newListCmd() *cobra.Command {
 	}
 
 	addLookupFlags(cmd, &lookup)
-	cmd.Flags().IntVar(&limit, "limit", 0, "Maximum results per page (default 20)")
-	cmd.Flags().StringVar(&cursor, "cursor", "", "Pagination cursor (from a previous response)")
+	cursor.AddFlags(cmd, &page)
 
 	return cmd
 }
@@ -126,10 +114,7 @@ func renderPayouts(opts cmdutil.Options, identifier string, resp payoutsResponse
 		if err := writePayoutsTable(w, style, resp.RecentPayouts); err != nil {
 			return err
 		}
-		if resp.Pagination.Next != "" {
-			return output.Writef(w, "\nMore results: --cursor %s\n", resp.Pagination.Next)
-		}
-		return nil
+		return cursor.WriteMoreFooter(w, resp.Pagination)
 	})
 }
 
