@@ -83,7 +83,7 @@ example 200 or 200.00.`,
 				return err
 			}
 
-			identifier := target.identifier()
+			identifier := target.Identifier()
 			ok, err := cmdutil.ConfirmAction(opts, fmt.Sprintf("Add user_id %s to the watchlist with revenue threshold %s?", identifier, formatWatchMoney(thresholdCents)))
 			if err != nil {
 				return err
@@ -154,7 +154,7 @@ existing note is preserved. Use --clear-note to remove the existing note.`,
 			}
 
 			notes := watchNotesPointer(c, note, clearNote)
-			identifier := target.identifier()
+			identifier := target.Identifier()
 			confirmMsg := fmt.Sprintf("Update watch for user_id %s to revenue threshold %s?", identifier, formatWatchMoney(thresholdCents))
 			switch {
 			case clearNote:
@@ -218,7 +218,7 @@ func newUnwatchCmd() *cobra.Command {
 				return err
 			}
 
-			identifier := target.identifier()
+			identifier := target.Identifier()
 			ok, err := cmdutil.ConfirmAction(opts, "Remove user_id "+identifier+" from the watchlist?")
 			if err != nil {
 				return err

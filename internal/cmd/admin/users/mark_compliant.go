@@ -41,7 +41,7 @@ against acting on an account whose email has changed.`,
 				return err
 			}
 
-			identifier := target.identifier()
+			identifier := target.Identifier()
 			ok, err := cmdutil.ConfirmAction(opts, "Mark user_id "+identifier+" compliant?")
 			if err != nil {
 				return err

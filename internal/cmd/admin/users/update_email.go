@@ -63,8 +63,8 @@ against acting on an account whose email has changed.`,
 				return cmdutil.MissingFlagError(c, "--new-email")
 			}
 
-			identifier := target.identifier()
-			confirmSubject := target.subject()
+			identifier := target.Identifier()
+			confirmSubject := target.Subject()
 			ok, err := cmdutil.ConfirmAction(opts, "Change "+confirmSubject+" to "+newEmail+"? The user must confirm via email before the change takes effect.")
 			if err != nil {
 				return err

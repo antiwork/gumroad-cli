@@ -109,8 +109,8 @@ server resolves by --user-id.`,
 				return err
 			}
 
-			identifier := target.identifier()
-			return admincmd.RunGetDecoded[infoResponse](opts, "Fetching user info...", "/users/info", target.values(), func(resp infoResponse) error {
+			identifier := target.Identifier()
+			return admincmd.RunGetDecoded[infoResponse](opts, "Fetching user info...", "/users/info", target.Values(), func(resp infoResponse) error {
 				return renderInfo(opts, identifier, resp.UserID, resp.User)
 			})
 		},

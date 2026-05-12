@@ -1,12 +1,11 @@
 package users
 
-import "net/url"
+import (
+	"net/url"
+
+	"github.com/antiwork/gumroad-cli/internal/cmd/admin/users/usertarget"
+)
 
 func userMutationParams(target userMutationTarget) url.Values {
-	params := url.Values{}
-	params.Set("user_id", target.UserID)
-	if target.ExpectedEmail != "" {
-		params.Set("expected_email", target.ExpectedEmail)
-	}
-	return params
+	return usertarget.MutationParams(target)
 }

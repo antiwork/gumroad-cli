@@ -92,8 +92,8 @@ server resolves by --user-id.`,
 				return err
 			}
 
-			return admincmd.RunGetDecoded[complianceResponse](opts, "Fetching compliance info...", "/users/compliance_info", target.values(), func(resp complianceResponse) error {
-				return renderCompliance(opts, target.identifier(), resp)
+			return admincmd.RunGetDecoded[complianceResponse](opts, "Fetching compliance info...", "/users/compliance_info", target.Values(), func(resp complianceResponse) error {
+				return renderCompliance(opts, target.Identifier(), resp)
 			})
 		},
 	}

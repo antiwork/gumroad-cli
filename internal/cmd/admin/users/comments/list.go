@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/antiwork/gumroad-cli/internal/admincmd"
+	"github.com/antiwork/gumroad-cli/internal/cmd/admin/users/usertarget"
 	"github.com/antiwork/gumroad-cli/internal/cmdutil"
 	"github.com/antiwork/gumroad-cli/internal/cmdutil/cursor"
 	"github.com/antiwork/gumroad-cli/internal/output"
@@ -22,7 +23,7 @@ type listResponse struct {
 
 func newListCmd() *cobra.Command {
 	var (
-		lookup userLookupFlags
+		lookup usertarget.LookupFlags
 		page   cursor.Flags
 		types  []string
 	)
@@ -36,7 +37,7 @@ func newListCmd() *cobra.Command {
 		Args: cmdutil.ExactArgs(0),
 		RunE: func(c *cobra.Command, args []string) error {
 			opts := cmdutil.OptionsFrom(c)
-			target, err := resolveUserLookupTarget(c, lookup)
+			target, err := usertarget.ResolveLookupTarget(c, lookup)
 			if err != nil {
 				return err
 			}
@@ -44,19 +45,19 @@ func newListCmd() *cobra.Command {
 				return err
 			}
 
-			params := target.values()
+			params := target.Values()
 			if len(types) > 0 {
 				params.Set("comment_type", strings.Join(types, ","))
 			}
 			cursor.Apply(params, page)
 
 			return admincmd.RunGetDecoded[listResponse](opts, "Fetching user comments...", "/users/comments", params, func(resp listResponse) error {
-				return renderList(opts, target.identifier(), resp)
+				return renderList(opts, target.Identifier(), resp)
 			})
 		},
 	}
 
-	addUserLookupFlags(cmd, &lookup)
+	usertarget.AddLookupFlags(cmd, &lookup)
 	cmd.Flags().StringArrayVar(&types, "type", nil, "Comment type filter (repeatable)")
 	cursor.AddFlags(cmd, &page)
 
@@ -153,7 +154,7 @@ func writeCommentBlock(w io.Writer, style output.Styler, comment commentPayload)
 }
 
 func commentTypeLabel(comment commentPayload) string {
-	return fallback(comment.CommentType, comment.Type)
+	return usertarget.Fallback(comment.CommentType, comment.Type)
 }
 
 func commentAuthorLabel(comment commentPayload) string {

@@ -44,7 +44,7 @@ against acting on an account whose email has changed.`,
 				return err
 			}
 
-			identifier := target.identifier()
+			identifier := target.Identifier()
 			ok, err := cmdutil.ConfirmAction(opts, fmt.Sprintf(suspendConfirmationMessage, identifier))
 			if err != nil {
 				return err

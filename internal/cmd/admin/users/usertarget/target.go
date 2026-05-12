@@ -1,4 +1,4 @@
-package comments
+package usertarget
 
 import (
 	"net/url"
@@ -7,40 +7,40 @@ import (
 	"github.com/spf13/cobra"
 )
 
-type userLookupFlags struct {
+type LookupFlags struct {
 	Email           string
 	UserID          string
 	ExternalIDAlias string
 }
 
-type userLookupTarget struct {
+type LookupTarget struct {
 	Email  string
 	UserID string
 }
 
-func addUserLookupFlags(cmd *cobra.Command, flags *userLookupFlags) {
+func AddLookupFlags(cmd *cobra.Command, flags *LookupFlags) {
 	cmd.Flags().StringVar(&flags.Email, "email", "", "User email")
 	cmd.Flags().StringVar(&flags.UserID, "user-id", "", "User external ID")
 	cmd.Flags().StringVar(&flags.ExternalIDAlias, "external-id", "", "Alias for --user-id")
 	_ = cmd.Flags().MarkHidden("external-id")
 }
 
-func resolveUserLookupTarget(cmd *cobra.Command, flags userLookupFlags) (userLookupTarget, error) {
-	userID, err := resolveUserIDAlias(cmd, flags.UserID, flags.ExternalIDAlias)
+func ResolveLookupTarget(cmd *cobra.Command, flags LookupFlags) (LookupTarget, error) {
+	userID, err := ResolveUserIDAlias(cmd, flags.UserID, flags.ExternalIDAlias)
 	if err != nil {
-		return userLookupTarget{}, err
+		return LookupTarget{}, err
 	}
-	if err := requireEmailOrUserID(cmd, flags.Email, userID); err != nil {
-		return userLookupTarget{}, err
+	if err := RequireEmailOrUserID(cmd, flags.Email, userID); err != nil {
+		return LookupTarget{}, err
 	}
-	return userLookupTarget{Email: flags.Email, UserID: userID}, nil
+	return LookupTarget{Email: flags.Email, UserID: userID}, nil
 }
 
-func (t userLookupTarget) identifier() string {
-	return userIdentifier(t.Email, t.UserID)
+func (t LookupTarget) Identifier() string {
+	return UserIdentifier(t.Email, t.UserID)
 }
 
-func (t userLookupTarget) values() url.Values {
+func (t LookupTarget) Values() url.Values {
 	params := url.Values{}
 	if t.Email != "" {
 		params.Set("email", t.Email)
@@ -51,19 +51,19 @@ func (t userLookupTarget) values() url.Values {
 	return params
 }
 
-type userMutationFlags struct {
+type MutationFlags struct {
 	UserID             string
 	ExternalIDAlias    string
 	ExpectedEmail      string
 	ExpectedEmailAlias string
 }
 
-type userMutationTarget struct {
+type MutationTarget struct {
 	UserID        string
 	ExpectedEmail string
 }
 
-func addUserMutationFlags(cmd *cobra.Command, flags *userMutationFlags) {
+func AddMutationFlags(cmd *cobra.Command, flags *MutationFlags) {
 	cmd.Flags().StringVar(&flags.UserID, "user-id", "", "User external ID (required)")
 	cmd.Flags().StringVar(&flags.ExpectedEmail, "expected-email", "", "Optional current email guard")
 	cmd.Flags().StringVar(&flags.ExternalIDAlias, "external-id", "", "Alias for --user-id")
@@ -72,26 +72,30 @@ func addUserMutationFlags(cmd *cobra.Command, flags *userMutationFlags) {
 	_ = cmd.Flags().MarkHidden("email")
 }
 
-func resolveUserMutationTarget(cmd *cobra.Command, flags userMutationFlags) (userMutationTarget, error) {
-	userID, err := resolveUserIDAlias(cmd, flags.UserID, flags.ExternalIDAlias)
+func ResolveMutationTarget(cmd *cobra.Command, flags MutationFlags) (MutationTarget, error) {
+	userID, err := ResolveUserIDAlias(cmd, flags.UserID, flags.ExternalIDAlias)
 	if err != nil {
-		return userMutationTarget{}, err
+		return MutationTarget{}, err
 	}
-	expectedEmail, err := resolveExpectedEmailAlias(cmd, flags.ExpectedEmail, flags.ExpectedEmailAlias)
+	expectedEmail, err := ResolveExpectedEmailAlias(cmd, flags.ExpectedEmail, flags.ExpectedEmailAlias)
 	if err != nil {
-		return userMutationTarget{}, err
+		return MutationTarget{}, err
 	}
 	if userID == "" {
-		return userMutationTarget{}, cmdutil.MissingFlagError(cmd, "--user-id")
+		return MutationTarget{}, cmdutil.MissingFlagError(cmd, "--user-id")
 	}
-	return userMutationTarget{UserID: userID, ExpectedEmail: expectedEmail}, nil
+	return MutationTarget{UserID: userID, ExpectedEmail: expectedEmail}, nil
 }
 
-func (t userMutationTarget) identifier() string {
+func (t MutationTarget) Identifier() string {
 	return t.UserID
 }
 
-func userMutationParams(target userMutationTarget) url.Values {
+func (t MutationTarget) Subject() string {
+	return "user_id " + t.UserID
+}
+
+func MutationParams(target MutationTarget) url.Values {
 	params := url.Values{}
 	params.Set("user_id", target.UserID)
 	if target.ExpectedEmail != "" {
@@ -100,28 +104,28 @@ func userMutationParams(target userMutationTarget) url.Values {
 	return params
 }
 
-func fallback(value, alt string) string {
+func Fallback(value, alt string) string {
 	if value == "" {
 		return alt
 	}
 	return value
 }
 
-func userIdentifier(email, externalID string) string {
+func UserIdentifier(email, externalID string) string {
 	if externalID != "" {
 		return externalID
 	}
 	return email
 }
 
-func requireEmailOrUserID(cmd *cobra.Command, email, userID string) error {
+func RequireEmailOrUserID(cmd *cobra.Command, email, userID string) error {
 	if email == "" && userID == "" {
 		return cmdutil.UsageErrorf(cmd, "supply --email or --user-id")
 	}
 	return nil
 }
 
-func resolveUserIDAlias(cmd *cobra.Command, userID, externalIDAlias string) (string, error) {
+func ResolveUserIDAlias(cmd *cobra.Command, userID, externalIDAlias string) (string, error) {
 	if userID != "" && externalIDAlias != "" && userID != externalIDAlias {
 		return "", cmdutil.UsageErrorf(cmd, "--user-id and --external-id must match")
 	}
@@ -131,7 +135,7 @@ func resolveUserIDAlias(cmd *cobra.Command, userID, externalIDAlias string) (str
 	return externalIDAlias, nil
 }
 
-func resolveExpectedEmailAlias(cmd *cobra.Command, expectedEmail, emailAlias string) (string, error) {
+func ResolveExpectedEmailAlias(cmd *cobra.Command, expectedEmail, emailAlias string) (string, error) {
 	if expectedEmail != "" && emailAlias != "" && expectedEmail != emailAlias {
 		return "", cmdutil.UsageErrorf(cmd, "--expected-email and --email must match")
 	}

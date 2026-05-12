@@ -34,8 +34,8 @@ server resolves by --user-id.`,
 				return err
 			}
 
-			identifier := target.identifier()
-			return admincmd.RunGetDecoded[suspensionResponse](opts, "Fetching suspension info...", "/users/suspension", target.values(), func(resp suspensionResponse) error {
+			identifier := target.Identifier()
+			return admincmd.RunGetDecoded[suspensionResponse](opts, "Fetching suspension info...", "/users/suspension", target.Values(), func(resp suspensionResponse) error {
 				return renderSuspension(opts, identifier, resp)
 			})
 		},

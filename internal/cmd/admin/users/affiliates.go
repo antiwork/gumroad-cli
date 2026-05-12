@@ -91,12 +91,12 @@ func newAffiliatesCmd() *cobra.Command {
 				return cmdutil.UsageErrorf(c, "--limit must be %d or less", maxAffiliateLimit)
 			}
 
-			params := target.values()
+			params := target.Values()
 			params.Set("direction", direction)
 			cursor.Apply(params, page)
 
 			return admincmd.RunGetDecoded[affiliatesResponse](opts, "Fetching user affiliates...", "/users/affiliates", params, func(resp affiliatesResponse) error {
-				return renderAffiliates(opts, target.identifier(), direction, resp)
+				return renderAffiliates(opts, target.Identifier(), direction, resp)
 			})
 		},
 	}

@@ -88,7 +88,7 @@ func runTwoFactor(c *cobra.Command, flags userMutationFlags, enabled bool, verb,
 		return err
 	}
 
-	identifier := target.identifier()
+	identifier := target.Identifier()
 	confirmMsg := "Enable two-factor authentication for user_id " + identifier + "?"
 	cancelAction := "enable two-factor for user_id " + identifier
 	if verb == "disable" {

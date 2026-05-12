@@ -42,7 +42,7 @@ against acting on an account whose email has changed.`,
 				return err
 			}
 
-			identifier := target.identifier()
+			identifier := target.Identifier()
 			ok, err := cmdutil.ConfirmAction(opts, "Send password reset instructions to user_id "+identifier+"?")
 			if err != nil {
 				return err
