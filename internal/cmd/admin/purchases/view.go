@@ -3,6 +3,7 @@ package purchases
 import (
 	"fmt"
 	"net/url"
+	"strings"
 
 	"github.com/antiwork/gumroad-cli/internal/admincmd"
 	"github.com/antiwork/gumroad-cli/internal/api"
@@ -15,21 +16,43 @@ type purchaseResponse struct {
 	Purchase purchase `json:"purchase"`
 }
 
+type Purchase = purchase
+
 type purchase struct {
-	ID                              string      `json:"id"`
-	Email                           string      `json:"email"`
-	SellerEmail                     string      `json:"seller_email"`
-	ProductName                     string      `json:"product_name"`
-	ProductAlias                    string      `json:"link_name"`
-	ProductID                       string      `json:"product_id"`
-	FormattedTotalPrice             string      `json:"formatted_total_price"`
-	PriceCents                      api.JSONInt `json:"price_cents"`
-	CurrencyType                    string      `json:"currency_type"`
-	AmountRefundableCentsInCurrency api.JSONInt `json:"amount_refundable_cents_in_currency"`
-	PurchaseState                   string      `json:"purchase_state"`
-	RefundStatus                    string      `json:"refund_status"`
-	CreatedAt                       string      `json:"created_at"`
-	ReceiptURL                      string      `json:"receipt_url"`
+	ID                              string        `json:"id"`
+	Email                           string        `json:"email"`
+	SellerEmail                     string        `json:"seller_email"`
+	Seller                          seller        `json:"seller"`
+	ProductName                     string        `json:"product_name"`
+	ProductAlias                    string        `json:"link_name"`
+	ProductID                       string        `json:"product_id"`
+	FormattedTotalPrice             string        `json:"formatted_total_price"`
+	PriceCents                      api.JSONInt   `json:"price_cents"`
+	CurrencyType                    string        `json:"currency_type"`
+	AmountRefundableCentsInCurrency api.JSONInt   `json:"amount_refundable_cents_in_currency"`
+	PurchaseState                   string        `json:"purchase_state"`
+	RefundStatus                    string        `json:"refund_status"`
+	CreatedAt                       string        `json:"created_at"`
+	ReceiptURL                      string        `json:"receipt_url"`
+	ChargebackDate                  string        `json:"chargeback_date"`
+	CountryMismatches               mismatches    `json:"country_mismatches"`
+	EarlyFraudWarning               *fraudWarning `json:"early_fraud_warning"`
+}
+
+type seller struct {
+	ID    string `json:"id"`
+	Email string `json:"email"`
+	Name  string `json:"name"`
+}
+
+type mismatches struct {
+	BillingVsIP   bool `json:"billing_vs_ip"`
+	BillingVsCard bool `json:"billing_vs_card"`
+	IPVsCard      bool `json:"ip_vs_card"`
+}
+
+type fraudWarning struct {
+	ID string `json:"id"`
 }
 
 func newViewCmd() *cobra.Command {
@@ -57,6 +80,10 @@ func productLabel(p purchase) string {
 	return p.ProductID
 }
 
+func ProductLabel(p Purchase) string {
+	return productLabel(p)
+}
+
 func amountLabel(p purchase) string {
 	if p.FormattedTotalPrice != "" {
 		return p.FormattedTotalPrice
@@ -65,6 +92,10 @@ func amountLabel(p purchase) string {
 		return fmt.Sprintf("%d cents", p.PriceCents)
 	}
 	return ""
+}
+
+func AmountLabel(p Purchase) string {
+	return amountLabel(p)
 }
 
 func statusLabel(p purchase) string {
@@ -76,6 +107,37 @@ func statusLabel(p purchase) string {
 		status += p.RefundStatus
 	}
 	return status
+}
+
+func StatusLabel(p Purchase) string {
+	return statusLabel(p)
+}
+
+func SellerLabel(p Purchase) string {
+	switch {
+	case p.Seller.Email != "":
+		return p.Seller.Email
+	case p.SellerEmail != "":
+		return p.SellerEmail
+	case p.Seller.Name != "":
+		return p.Seller.Name
+	default:
+		return p.Seller.ID
+	}
+}
+
+func RiskFlagsLabel(p Purchase) string {
+	flags := make([]string, 0, 3)
+	if p.ChargebackDate != "" {
+		flags = append(flags, "CB")
+	}
+	if p.EarlyFraudWarning != nil {
+		flags = append(flags, "EFW")
+	}
+	if p.CountryMismatches.BillingVsIP || p.CountryMismatches.BillingVsCard || p.CountryMismatches.IPVsCard {
+		flags = append(flags, "CM")
+	}
+	return strings.Join(flags, ",")
 }
 
 func renderPurchase(opts cmdutil.Options, p purchase) error {
