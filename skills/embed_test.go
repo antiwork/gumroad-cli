@@ -36,3 +36,30 @@ func TestSkillMarkdown_ContainsAllCommands(t *testing.T) {
 		}
 	}
 }
+
+func TestSkillMarkdown_ContainsAdminRolloutCommands(t *testing.T) {
+	data, err := SkillMarkdown()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	content := string(data)
+	for _, example := range []string{
+		"gumroad admin users info --email",
+		"gumroad admin users affiliates --user-id",
+		"gumroad admin users comments list --user-id",
+		"gumroad admin users comments add --user-id",
+		"gumroad admin users compliance --user-id",
+		"gumroad admin users purchases --user-id",
+		"gumroad admin users related --email",
+		"gumroad admin purchases view <purchase-id> --with-clusters",
+		"gumroad admin purchases search --email",
+		"gumroad admin purchases lookup --stripe-fingerprint",
+		"gumroad admin products list --email",
+		"gumroad admin products view <product-id> --with-fraud-context",
+	} {
+		if !strings.Contains(content, example) {
+			t.Errorf("expected skill to mention admin example %q", example)
+		}
+	}
+}

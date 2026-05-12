@@ -54,6 +54,18 @@ Responses are wrapped in `{"success": true, ...}` with resource-specific keys:
 - `variants list` → `.variants[]`
 - `files upload` / `files complete` → `.file_url`
 - `webhooks list` → `.resource_subscriptions[]`
+- `admin users info` → `.user`
+- `admin users affiliates` → `.affiliates[]`
+- `admin users comments list` → `.comments[]`
+- `admin users comments add` → `.comment`
+- `admin users compliance` → `.compliance_info`, `.info_requests[]`
+- `admin users purchases` → `.purchases[]`
+- `admin users related` → `.related_users[]`
+- `admin purchases view` → `.purchase`
+- `admin purchases search` → `.purchases[]`
+- `admin purchases lookup` → `.purchases[]`
+- `admin products list` → `.products[]`, `admin products view` → `.product`
+- Cursor-paginated admin reads include `.pagination.next`; pass it back with `--cursor`.
 
 ## Commands
 
@@ -80,14 +92,39 @@ gumroad user --json --jq '.user.email' --no-input
 ### admin — Internal admin API
 
 ```sh
-# Inspect user risk, payout, and watchlist state
-gumroad admin users info --email seller@example.com --json --non-interactive
+# Admin commands need internal admin auth.
+# In agents/CI, set GUMROAD_ADMIN_TOKEN and pass --non-interactive.
+
+# Inspect user identity, sign-in, social, risk, payout, and watchlist state
+gumroad admin users info --email seller@example.com --json --non-interactive --no-input
+
+# Review affiliate relationships
+gumroad admin users affiliates --user-id 2245593582708 --direction granted --limit 50 --json --non-interactive --no-input
+gumroad admin users affiliates --email seller@example.com --direction received --cursor cur-next --json --non-interactive --no-input
+
+# Read and add admin comments
+gumroad admin users comments list --user-id 2245593582708 --type note --limit 50 --json --non-interactive --no-input
+gumroad admin users comments add --user-id 2245593582708 --content "VAT exempt confirmed" --yes --json --non-interactive --no-input
+
+# Inspect compliance and buyer history
+gumroad admin users compliance --user-id 2245593582708 --json --non-interactive --no-input
+gumroad admin users purchases --user-id 2245593582708 --status successful --has-early-fraud-warning=false --limit 50 --json --non-interactive --no-input
+
+# Find related accounts by risk signals
+gumroad admin users related --email seller@example.com --signal ip --signal payment_address --json --non-interactive --no-input
+
+# Inspect purchase and product fraud context
+gumroad admin purchases view <purchase-id> --with-clusters --json --non-interactive --no-input
+gumroad admin purchases search --email buyer@example.com --json --non-interactive --no-input
+gumroad admin purchases lookup --stripe-fingerprint fp_abc --limit 25 --json --non-interactive --no-input
+gumroad admin products list --email seller@example.com --json --non-interactive --no-input
+gumroad admin products view <product-id> --with-fraud-context --json --non-interactive --no-input
 
 # Watchlist state does not pause payouts or change user risk state
-gumroad admin users watch --user-id 2245593582708 --expected-email seller@example.com --revenue-threshold 200 --note "Review next buyers" --yes --json --non-interactive
-gumroad admin users update-watch --user-id 2245593582708 --expected-email seller@example.com --revenue-threshold 500 --yes --json --non-interactive
-gumroad admin users update-watch --user-id 2245593582708 --expected-email seller@example.com --revenue-threshold 500 --clear-note --yes --json --non-interactive
-gumroad admin users unwatch --user-id 2245593582708 --expected-email seller@example.com --yes --json --non-interactive
+gumroad admin users watch --user-id 2245593582708 --expected-email seller@example.com --revenue-threshold 200 --note "Review next buyers" --yes --json --non-interactive --no-input
+gumroad admin users update-watch --user-id 2245593582708 --expected-email seller@example.com --revenue-threshold 500 --yes --json --non-interactive --no-input
+gumroad admin users update-watch --user-id 2245593582708 --expected-email seller@example.com --revenue-threshold 500 --clear-note --yes --json --non-interactive --no-input
+gumroad admin users unwatch --user-id 2245593582708 --expected-email seller@example.com --yes --json --non-interactive --no-input
 ```
 
 ### products — Manage products
