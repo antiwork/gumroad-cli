@@ -89,6 +89,7 @@ func applyUserPurchaseFilters(cmd *cobra.Command, params url.Values, statuses []
 		return err
 	}
 	if len(normalizedStatuses) > 0 {
+		// /users/purchases accepts a CSV status param; repeated CLI flags stay user-facing only.
 		params.Set("status", strings.Join(normalizedStatuses, ","))
 	}
 	if startAt != "" {
