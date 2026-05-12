@@ -258,14 +258,34 @@ func TestListRendersOneLevelAndMultiLevelTaxonomyPaths(t *testing.T) {
 	cmd.SetArgs([]string{"--email", "seller@example.com"})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
-	for _, want := range []string{
-		"books",
-		"education/books/textbooks",
+	for _, tc := range []struct {
+		id       string
+		name     string
+		taxonomy string
+	}{
+		{"one123", "Book", "books"},
+		{"multi123", "Textbook", "education/books/textbooks"},
 	} {
-		if !strings.Contains(out, want) {
-			t.Errorf("output missing %q: %q", want, out)
+		if !outputLineContains(out, tc.id, tc.name, tc.taxonomy) {
+			t.Errorf("output missing taxonomy %q on row %s/%s: %q", tc.taxonomy, tc.id, tc.name, out)
 		}
 	}
+}
+
+func outputLineContains(out string, values ...string) bool {
+	for _, line := range strings.Split(out, "\n") {
+		matches := true
+		for _, value := range values {
+			if !strings.Contains(line, value) {
+				matches = false
+				break
+			}
+		}
+		if matches {
+			return true
+		}
+	}
+	return false
 }
 
 func TestListEmptyResultStillShowsPaginationFooter(t *testing.T) {
