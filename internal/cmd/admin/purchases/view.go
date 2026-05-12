@@ -190,6 +190,31 @@ func SellerLabel(p Purchase) string {
 	return sellerEmail(p)
 }
 
+func buyerLabel(p purchase) string {
+	return p.Email
+}
+
+func sellerLabel(p purchase) string {
+	if p.Seller != nil && (p.Seller.Email != "" || p.Seller.Name != "" || p.Seller.ID != "") {
+		return userLabel(*p.Seller)
+	}
+	return p.SellerEmail
+}
+
+func userLabel(user purchaseSeller) string {
+	parts := make([]string, 0, 3)
+	if user.Email != "" {
+		parts = append(parts, user.Email)
+	}
+	if user.Name != "" && user.Name != user.Email {
+		parts = append(parts, user.Name)
+	}
+	if user.ID != "" {
+		parts = append(parts, user.ID)
+	}
+	return strings.Join(parts, " / ")
+}
+
 func purchaseFlags(p purchase) string {
 	flags := []string{}
 	if p.ChargebackDate != "" {

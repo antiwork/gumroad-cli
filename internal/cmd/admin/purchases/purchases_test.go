@@ -306,6 +306,7 @@ func TestNewPurchasesCmdWiresSubcommands(t *testing.T) {
 	want := []string{
 		"view <purchase-id>",
 		"search",
+		"lookup",
 		"refund <purchase-id>",
 		"refund-taxes <purchase-id>",
 		"refund-for-fraud <purchase-id>",

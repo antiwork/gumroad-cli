@@ -8,6 +8,7 @@ func NewPurchasesCmd() *cobra.Command {
 		Short: "Read and manage admin purchase records",
 		Example: `  gumroad admin purchases view <purchase-id>
   gumroad admin purchases search --email buyer@example.com
+  gumroad admin purchases lookup --stripe-fingerprint fp_abc
   gumroad admin purchases refund <purchase-id> --email buyer@example.com
   gumroad admin purchases refund-taxes <purchase-id> --email buyer@example.com
   gumroad admin purchases refund-for-fraud <purchase-id> --email buyer@example.com
@@ -21,6 +22,7 @@ func NewPurchasesCmd() *cobra.Command {
 
 	cmd.AddCommand(newViewCmd())
 	cmd.AddCommand(newSearchCmd())
+	cmd.AddCommand(newLookupCmd())
 	cmd.AddCommand(newRefundCmd())
 	cmd.AddCommand(newRefundTaxesCmd())
 	cmd.AddCommand(newRefundForFraudCmd())

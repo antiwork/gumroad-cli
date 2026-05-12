@@ -15,6 +15,7 @@ func NewAdminCmd() *cobra.Command {
 		Short: "Run Gumroad admin commands",
 		Long:  "Run internal Gumroad admin API commands with a separate admin token.",
 		Example: `  gumroad admin purchases view <purchase-id>
+  gumroad admin purchases lookup --stripe-fingerprint <fingerprint>
   gumroad admin purchases refund <purchase-id> --email <email>
   gumroad admin purchases cancel-subscription <purchase-id> --email <email>
   gumroad admin licenses lookup --key <license-key>
