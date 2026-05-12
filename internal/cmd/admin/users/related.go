@@ -168,7 +168,7 @@ func writeRelatedPlain(w io.Writer, users []relatedUser) error {
 			user.ID,
 			user.Email,
 			user.Name,
-			relatedRiskLabel(user.RiskState),
+			relatedRiskLabel(user),
 			relatedRelationsLabel(user.Relations),
 		})
 	}
@@ -182,15 +182,22 @@ func writeRelatedTable(w io.Writer, style output.Styler, users []relatedUser) er
 			user.ID,
 			user.Email,
 			user.Name,
-			relatedRiskLabel(user.RiskState),
+			relatedRiskLabel(user),
 			relatedRelationsLabel(user.Relations),
 		)
 	}
 	return tbl.Render(w)
 }
 
-func relatedRiskLabel(risk riskState) string {
-	return fallback(risk.Status, risk.UserRiskState)
+func relatedRiskLabel(user relatedUser) string {
+	label := fallback(user.RiskState.Status, user.RiskState.UserRiskState)
+	if user.DeletedAt == "" {
+		return label
+	}
+	if label == "" {
+		return "deleted " + user.DeletedAt
+	}
+	return label + " (deleted " + user.DeletedAt + ")"
 }
 
 func relatedRelationsLabel(relations []relatedRelation) string {

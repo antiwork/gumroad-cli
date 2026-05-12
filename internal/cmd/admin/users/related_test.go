@@ -56,7 +56,7 @@ func TestRelatedUsesInternalAdminEndpoint(t *testing.T) {
 		"rel_123",
 		"related@example.com",
 		"Related User",
-		"Suspended for fraud",
+		"Suspended for fraud (deleted 2026-01-15T10:00:00Z)",
 		"ip:1.2.3.4 (account_created_ip, current_sign_in_ip)",
 		"payment_address:shared@example.com",
 	} {
@@ -230,7 +230,7 @@ func TestRelatedPlainOutput(t *testing.T) {
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
 	want := strings.Join([]string{
-		"rel_123\trelated@example.com\tRelated User\tSuspended for fraud\tip:1.2.3.4 (account_created_ip, current_sign_in_ip), payment_address:shared@example.com",
+		"rel_123\trelated@example.com\tRelated User\tSuspended for fraud (deleted 2026-01-15T10:00:00Z)\tip:1.2.3.4 (account_created_ip, current_sign_in_ip), payment_address:shared@example.com",
 		"rel_456\tcard@example.com\t\tcompliant\tcard_fingerprint",
 	}, "\n")
 	if strings.TrimSpace(out) != want {
@@ -247,9 +247,10 @@ func TestRelatedRelationLabelWithoutSharedValueIncludesVia(t *testing.T) {
 
 func relatedUserFixture() map[string]any {
 	return map[string]any{
-		"id":    "rel_123",
-		"email": "related@example.com",
-		"name":  "Related User",
+		"id":         "rel_123",
+		"email":      "related@example.com",
+		"name":       "Related User",
+		"deleted_at": "2026-01-15T10:00:00Z",
 		"risk_state": map[string]any{
 			"status":          "Suspended for fraud",
 			"user_risk_state": "suspended_for_fraud",
