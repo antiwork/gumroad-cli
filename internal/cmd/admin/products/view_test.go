@@ -11,6 +11,12 @@ import (
 
 func sampleViewPayload() map[string]any {
 	p := sampleProduct("abc123", "Art Pack")
+	p["recent_chargeback_rate"] = map[string]any{
+		"window_days":       90,
+		"successful_count":  5,
+		"chargedback_count": 1,
+		"rate":              0.2,
+	}
 	p["files"] = []map[string]any{
 		{
 			"id":           "f_1",
@@ -76,7 +82,16 @@ func TestViewUsesInternalAdminEndpointAndRendersHumanOutput(t *testing.T) {
 		"Seller: seller@example.com (u_123)",
 		"Price: 200.00 USD",
 		"Status: alive",
+		"Taxonomy: art/painting",
+		"Lifecycle:",
 		"Created: 2026-05-01T12:00:00Z",
+		"Risk:",
+		"Bad-card counter: 3",
+		"Recent chargeback rate: 20.00% (1/5 over 90d)",
+		"Affiliates (1):",
+		"DirectAffiliate",
+		"affiliate@example.com (u_aff)",
+		"1500",
 		"Description:",
 		"A short description",
 		"Files (2):",
@@ -89,6 +104,40 @@ func TestViewUsesInternalAdminEndpointAndRendersHumanOutput(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("output missing %q: %q", want, out)
 		}
+	}
+}
+
+func TestViewSendsWithFraudContextFlag(t *testing.T) {
+	var gotFraudContext string
+
+	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
+		gotFraudContext = r.URL.Query().Get("with_fraud_context")
+		testutil.JSON(t, w, sampleViewPayload())
+	})
+
+	cmd := testutil.Command(newViewCmd())
+	cmd.SetArgs([]string{"abc123", "--with-fraud-context"})
+	testutil.MustExecute(t, cmd)
+
+	if gotFraudContext != "true" {
+		t.Fatalf("with_fraud_context = %q, want true", gotFraudContext)
+	}
+}
+
+func TestViewOmitsWithFraudContextByDefault(t *testing.T) {
+	var gotFraudContext string
+
+	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
+		gotFraudContext = r.URL.Query().Get("with_fraud_context")
+		testutil.JSON(t, w, sampleViewPayload())
+	})
+
+	cmd := testutil.Command(newViewCmd())
+	cmd.SetArgs([]string{"abc123"})
+	testutil.MustExecute(t, cmd)
+
+	if gotFraudContext != "" {
+		t.Fatalf("with_fraud_context should be omitted by default, got %q", gotFraudContext)
 	}
 }
 
@@ -168,7 +217,7 @@ func TestViewPlainOutput(t *testing.T) {
 	cmd.SetArgs([]string{"abc123"})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
-	want := "abc123\tArt Pack\t200.00 USD\talive\tseller@example.com\t2\t2026-05-01T12:00:00Z\thttps://gumroad.com/l/abc123"
+	want := "abc123\tArt Pack\t200.00 USD\talive\tseller@example.com\t3\tart/painting\t1\t2\t2026-05-01T12:00:00Z\thttps://gumroad.com/l/abc123\t20.00% (1/5 over 90d)"
 	if strings.TrimSpace(out) != want {
 		t.Fatalf("unexpected plain output:\n got: %q\nwant: %q", out, want)
 	}
@@ -240,6 +289,23 @@ func TestSellerLabelHandlesPartialIdentifiers(t *testing.T) {
 	}
 }
 
+func TestTaxonomyPath(t *testing.T) {
+	cases := []struct {
+		taxonomy productTaxonomy
+		want     string
+	}{
+		{productTaxonomy{}, ""},
+		{productTaxonomy{Slug: "books"}, "books"},
+		{productTaxonomy{Slug: "books", AncestryPath: []string{"books"}}, "books"},
+		{productTaxonomy{Slug: "books", AncestryPath: []string{"physical-goods", "books"}}, "physical-goods/books"},
+	}
+	for _, tc := range cases {
+		if got := taxonomyPath(tc.taxonomy); got != tc.want {
+			t.Errorf("taxonomyPath(%+v) = %q, want %q", tc.taxonomy, got, tc.want)
+		}
+	}
+}
+
 func TestProductStatusLabel(t *testing.T) {
 	cases := []struct {
 		p    product
@@ -247,11 +313,31 @@ func TestProductStatusLabel(t *testing.T) {
 	}{
 		{product{Alive: true}, "alive"},
 		{product{Alive: false}, "unpublished"},
+		{product{Alive: true, PurchaseDisabledAt: "2026-04-15T10:00:00Z"}, "purchase-disabled"},
+		{product{Alive: true, BannedAt: "2026-04-15T10:00:00Z"}, "banned"},
+		{product{Alive: true, BannedAt: "x", PurchaseDisabledAt: "y"}, "banned"},
 		{product{Alive: true, DeletedAt: "2026-04-15T10:00:00Z"}, "deleted"},
 	}
 	for _, tc := range cases {
 		if got := productStatusLabel(tc.p); got != tc.want {
 			t.Errorf("productStatusLabel(%+v) = %q, want %q", tc.p, got, tc.want)
+		}
+	}
+}
+
+func TestFormatChargebackRate(t *testing.T) {
+	rate := 0.1667
+	cases := []struct {
+		rate *productChargebackRate
+		want string
+	}{
+		{nil, ""},
+		{&productChargebackRate{WindowDays: 90, SuccessfulCount: 0, ChargedbackCount: 0}, "n/a (0/0 over 90d)"},
+		{&productChargebackRate{WindowDays: 90, SuccessfulCount: 6, ChargedbackCount: 1, Rate: &rate}, "16.67% (1/6 over 90d)"},
+	}
+	for _, tc := range cases {
+		if got := formatChargebackRate(tc.rate); got != tc.want {
+			t.Errorf("formatChargebackRate(%+v) = %q, want %q", tc.rate, got, tc.want)
 		}
 	}
 }

@@ -147,8 +147,11 @@ func writeListPlain(w io.Writer, products []product) error {
 			p.ID,
 			productNameWithDeleted(p),
 			formatPrice(p.PriceCents, p.CurrencyCode),
-			strconv.Itoa(len(p.Files)),
 			productStatusLabel(p),
+			strconv.Itoa(int(p.BadCardCounter)),
+			taxonomyPath(p.Taxonomy),
+			strconv.Itoa(len(p.Affiliates)),
+			strconv.Itoa(len(p.Files)),
 			p.CreatedAt,
 		})
 	}
@@ -156,14 +159,17 @@ func writeListPlain(w io.Writer, products []product) error {
 }
 
 func writeListTable(w io.Writer, style output.Styler, products []product) error {
-	tbl := output.NewStyledTable(style, "ID", "NAME", "PRICE", "FILES", "STATUS", "CREATED")
+	tbl := output.NewStyledTable(style, "ID", "NAME", "PRICE", "STATUS", "BAD CARDS", "TAXONOMY", "AFFILIATES", "FILES", "CREATED")
 	for _, p := range products {
 		tbl.AddRow(
 			p.ID,
 			productNameWithDeleted(p),
 			formatPrice(p.PriceCents, p.CurrencyCode),
-			strconv.Itoa(len(p.Files)),
 			productStatusLabel(p),
+			strconv.Itoa(int(p.BadCardCounter)),
+			taxonomyPath(p.Taxonomy),
+			strconv.Itoa(len(p.Affiliates)),
+			strconv.Itoa(len(p.Files)),
 			p.CreatedAt,
 		)
 	}

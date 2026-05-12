@@ -11,18 +11,40 @@ import (
 
 func sampleProduct(id, name string) map[string]any {
 	return map[string]any{
-		"id":            id,
-		"name":          name,
-		"description":   "A short description",
-		"price_cents":   20000,
-		"currency_code": "usd",
-		"permalink":     id,
-		"long_url":      "https://gumroad.com/l/" + id,
-		"preview_url":   "https://example.com/preview.jpg",
-		"created_at":    "2026-05-01T12:00:00Z",
-		"deleted_at":    nil,
-		"alive":         true,
-		"is_adult":      false,
+		"id":                   id,
+		"name":                 name,
+		"description":          "A short description",
+		"price_cents":          20000,
+		"currency_code":        "usd",
+		"permalink":            id,
+		"long_url":             "https://gumroad.com/l/" + id,
+		"preview_url":          "https://example.com/preview.jpg",
+		"created_at":           "2026-05-01T12:00:00Z",
+		"deleted_at":           nil,
+		"banned_at":            nil,
+		"purchase_disabled_at": nil,
+		"alive":                true,
+		"is_adult":             false,
+		"bad_card_counter":     3,
+		"taxonomy": map[string]any{
+			"id":            "tax_1",
+			"slug":          "painting",
+			"ancestry_path": []string{"art", "painting"},
+		},
+		"affiliates": []map[string]any{
+			{
+				"id":   "aff_1",
+				"type": "DirectAffiliate",
+				"affiliate_user": map[string]any{
+					"id":    "u_aff",
+					"email": "affiliate@example.com",
+				},
+				"basis_points":    1500,
+				"destination_url": "https://example.com/a",
+				"alive":           true,
+				"deleted_at":      nil,
+			},
+		},
 		"seller": map[string]any{
 			"id":    "u_123",
 			"email": "seller@example.com",
@@ -131,6 +153,7 @@ func TestListUsesInternalAdminEndpointAndRendersHumanOutput(t *testing.T) {
 		"abc123",
 		"Art Pack",
 		"200.00 USD",
+		"art/painting",
 		"Page 1 of 5 (47 total)",
 	} {
 		if !strings.Contains(out, want) {
@@ -178,6 +201,70 @@ func TestListMarksDeletedProducts(t *testing.T) {
 	}
 	if !strings.Contains(out, "deleted") {
 		t.Errorf("expected deleted status column: %q", out)
+	}
+}
+
+func TestListMarksBannedAndPurchaseDisabledProducts(t *testing.T) {
+	payload := sampleListPayload()
+	banned := sampleProduct("ban123", "Banned Pack")
+	banned["banned_at"] = "2026-04-15T10:00:00Z"
+	banned["alive"] = false
+	disabled := sampleProduct("dis123", "Disabled Pack")
+	disabled["purchase_disabled_at"] = "2026-04-16T10:00:00Z"
+	disabled["alive"] = false
+	payload["products"] = []map[string]any{banned, disabled}
+
+	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, payload)
+	})
+
+	cmd := testutil.Command(newListCmd(), testutil.Quiet(false))
+	cmd.SetArgs([]string{"--email", "seller@example.com"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	for _, want := range []string{
+		"Banned Pack",
+		"banned",
+		"Disabled Pack",
+		"purchase-disabled",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q: %q", want, out)
+		}
+	}
+}
+
+func TestListRendersOneLevelAndMultiLevelTaxonomyPaths(t *testing.T) {
+	payload := sampleListPayload()
+	oneLevel := sampleProduct("one123", "Book")
+	oneLevel["taxonomy"] = map[string]any{
+		"id":            "tax_book",
+		"slug":          "books",
+		"ancestry_path": []string{"books"},
+	}
+	multiLevel := sampleProduct("multi123", "Textbook")
+	multiLevel["taxonomy"] = map[string]any{
+		"id":            "tax_textbook",
+		"slug":          "textbooks",
+		"ancestry_path": []string{"education", "books", "textbooks"},
+	}
+	payload["products"] = []map[string]any{oneLevel, multiLevel}
+
+	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, payload)
+	})
+
+	cmd := testutil.Command(newListCmd(), testutil.Quiet(false))
+	cmd.SetArgs([]string{"--email", "seller@example.com"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	for _, want := range []string{
+		"books",
+		"education/books/textbooks",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q: %q", want, out)
+		}
 	}
 }
 
@@ -297,7 +384,7 @@ func TestListPlainOutput(t *testing.T) {
 	cmd.SetArgs([]string{"--email", "seller@example.com"})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
-	want := "abc123\tArt Pack\t200.00 USD\t1\talive\t2026-05-01T12:00:00Z"
+	want := "abc123\tArt Pack\t200.00 USD\talive\t3\tart/painting\t1\t1\t2026-05-01T12:00:00Z"
 	if strings.TrimSpace(out) != want {
 		t.Fatalf("unexpected plain output:\n got: %q\nwant: %q", out, want)
 	}
