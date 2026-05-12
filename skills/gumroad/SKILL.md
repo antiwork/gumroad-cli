@@ -60,12 +60,18 @@ Responses are wrapped in `{"success": true, ...}` with resource-specific keys:
 - `admin users comments add` → `.comment`
 - `admin users compliance` → `.compliance_info`, `.info_requests[]`
 - `admin users purchases` → `.purchases[]`
-- `admin users related` → `.related_users[]`
+- `admin users related` → `.related_users[]`, `.truncated`, `.per_signal_limit`
 - `admin purchases view` → `.purchase`
-- `admin purchases search` → `.purchases[]`
+- `admin purchases search` → `.purchases[]`, `.has_more`, `.limit`
 - `admin purchases lookup` → `.purchases[]`
 - `admin products list` → `.products[]`, `admin products view` → `.product`
-- Cursor-paginated admin reads include `.pagination.next`; pass it back with `--cursor`.
+
+Admin pagination models differ by command:
+
+- Cursor-paginated: `admin users affiliates`, `admin users comments list`, `admin users purchases`, and `admin purchases lookup` return `.pagination.next` as a cursor string. Pass it back with `--cursor`.
+- Page-paginated: `admin products list` returns `.pagination.next` as an integer page number. Pass it back with `--page`; use `--per-page` for page size.
+- Capped, not continuable: `admin users related` returns at most 50 related users per signal. Always inspect `.truncated`; when any signal is `true`, the result hit the cap and there is no cursor/page to fetch the rest.
+- Capped, not continuable: `admin purchases search` returns `.has_more` when the server capped results. `--limit` is server-capped at 25 and there is no continuation token.
 
 ## Commands
 
@@ -112,12 +118,13 @@ gumroad admin users purchases --user-id 2245593582708 --status successful --has-
 
 # Find related accounts by risk signals
 gumroad admin users related --email seller@example.com --signal ip --signal payment_address --json --non-interactive --no-input
+gumroad admin users related --email seller@example.com --json --jq '{related_users, truncated, per_signal_limit}' --non-interactive --no-input
 
 # Inspect purchase and product fraud context
 gumroad admin purchases view <purchase-id> --with-clusters --json --non-interactive --no-input
-gumroad admin purchases search --email buyer@example.com --json --non-interactive --no-input
+gumroad admin purchases search --email buyer@example.com --json --jq '{purchases, has_more, limit}' --non-interactive --no-input
 gumroad admin purchases lookup --stripe-fingerprint fp_abc --limit 25 --json --non-interactive --no-input
-gumroad admin products list --email seller@example.com --json --non-interactive --no-input
+gumroad admin products list --email seller@example.com --page 2 --per-page 25 --json --non-interactive --no-input
 gumroad admin products view <product-id> --with-fraud-context --json --non-interactive --no-input
 
 # Watchlist state does not pause payouts or change user risk state

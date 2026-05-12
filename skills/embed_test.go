@@ -57,6 +57,12 @@ func TestSkillMarkdown_ContainsAdminRolloutCommands(t *testing.T) {
 		"gumroad admin purchases lookup --stripe-fingerprint",
 		"gumroad admin products list --email",
 		"gumroad admin products view <product-id> --with-fraud-context",
+		"Cursor-paginated: `admin users affiliates`",
+		"Page-paginated: `admin products list`",
+		"Capped, not continuable: `admin users related`",
+		"Capped, not continuable: `admin purchases search`",
+		".truncated",
+		".has_more",
 	} {
 		if !strings.Contains(content, example) {
 			t.Errorf("expected skill to mention admin example %q", example)
