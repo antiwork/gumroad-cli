@@ -17,6 +17,8 @@ type purchaseResponse struct {
 	Purchase purchase `json:"purchase"`
 }
 
+type Purchase = purchase
+
 type purchase struct {
 	ID                              string                   `json:"id"`
 	Email                           string                   `json:"email"`
@@ -144,6 +146,10 @@ func productLabel(p purchase) string {
 	return p.ProductID
 }
 
+func ProductLabel(p Purchase) string {
+	return productLabel(p)
+}
+
 func amountLabel(p purchase) string {
 	if p.FormattedTotalPrice != "" {
 		return p.FormattedTotalPrice
@@ -152,6 +158,10 @@ func amountLabel(p purchase) string {
 		return fmt.Sprintf("%d cents", p.PriceCents)
 	}
 	return ""
+}
+
+func AmountLabel(p Purchase) string {
+	return amountLabel(p)
 }
 
 func statusLabel(p purchase) string {
@@ -165,11 +175,19 @@ func statusLabel(p purchase) string {
 	return status
 }
 
+func StatusLabel(p Purchase) string {
+	return statusLabel(p)
+}
+
 func sellerEmail(p purchase) string {
 	if p.Seller != nil && p.Seller.Email != "" {
 		return p.Seller.Email
 	}
 	return p.SellerEmail
+}
+
+func SellerLabel(p Purchase) string {
+	return sellerEmail(p)
 }
 
 func purchaseFlags(p purchase) string {
@@ -184,6 +202,10 @@ func purchaseFlags(p purchase) string {
 		flags = append(flags, "COUNTRY")
 	}
 	return strings.Join(flags, ",")
+}
+
+func RiskFlagsLabel(p Purchase) string {
+	return purchaseFlags(p)
 }
 
 func (m countryMismatches) hasAny() bool {
