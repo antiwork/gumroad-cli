@@ -31,7 +31,7 @@ func newListCmd() *cobra.Command {
 		Use:   "list",
 		Short: "List admin comments for a user",
 		Example: `  gumroad admin users comments list --user-id 2245593582708
-  gumroad admin users comments list --email user@example.com --type Note --type Refund_note --limit 50
+  gumroad admin users comments list --email user@example.com --type note --type suspension_note --limit 50
   gumroad admin users comments list --email user@example.com --cursor cur-next`,
 		Args: cmdutil.ExactArgs(0),
 		RunE: func(c *cobra.Command, args []string) error {

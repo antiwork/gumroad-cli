@@ -39,7 +39,7 @@ func TestListUsesInternalAdminEndpoint(t *testing.T) {
 	for _, want := range []string{
 		"1 comment(s) for user@example.com",
 		"User ID: user_123",
-		"c_123 Note",
+		"c_123 note",
 		"Author: Admin User",
 		"Created: 2026-05-01T12:00:00Z",
 		"Customer said the receipt was missing",
@@ -50,10 +50,13 @@ func TestListUsesInternalAdminEndpoint(t *testing.T) {
 	}
 }
 
-func TestListPassesUserIDTypesLimitAndCursor(t *testing.T) {
+func TestListPassesRepeatableTypesAsServerCSVParam(t *testing.T) {
 	var gotQuery string
+	var gotCommentTypes, gotArrayCommentTypes []string
 	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
 		gotQuery = r.URL.RawQuery
+		gotCommentTypes = r.URL.Query()["comment_type"]
+		gotArrayCommentTypes = r.URL.Query()["comment_type[]"]
 		testutil.JSON(t, w, map[string]any{
 			"comments":   []any{},
 			"pagination": map[string]any{"next": nil, "limit": 50},
@@ -64,17 +67,23 @@ func TestListPassesUserIDTypesLimitAndCursor(t *testing.T) {
 	cmd := testutil.Command(newListCmd(), testutil.Quiet(false))
 	cmd.SetArgs([]string{
 		"--user-id", "user_123",
-		"--type", "Note",
-		"--type", "Refund_note",
+		"--type", "note",
+		"--type", "suspension_note",
 		"--limit", "50",
 		"--cursor", "cur-1",
 	})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
-	for _, want := range []string{"user_id=user_123", "comment_type=Note%2CRefund_note", "limit=50", "cursor=cur-1"} {
+	for _, want := range []string{"user_id=user_123", "comment_type=note%2Csuspension_note", "limit=50", "cursor=cur-1"} {
 		if !strings.Contains(gotQuery, want) {
 			t.Fatalf("query missing %q: %q", want, gotQuery)
 		}
+	}
+	if len(gotCommentTypes) != 1 || gotCommentTypes[0] != "note,suspension_note" {
+		t.Fatalf("got comment_type params %#v, want one CSV param", gotCommentTypes)
+	}
+	if len(gotArrayCommentTypes) != 0 {
+		t.Fatalf("must not send Rails array params for server CSV contract, got %#v", gotArrayCommentTypes)
 	}
 	if !strings.Contains(out, "No comments found for user_123.") {
 		t.Fatalf("unexpected empty output: %q", out)
@@ -163,7 +172,7 @@ func TestListPlainOutput(t *testing.T) {
 				commentFixture(),
 				{
 					"id":           "c_456",
-					"comment_type": "Refund_note",
+					"comment_type": "suspension_note",
 					"author":       map[string]any{"name": "Support", "email": "support@example.com"},
 					"content":      "Refunded after duplicate charge\nsecond line",
 					"created_at":   "2026-05-02T12:00:00Z",
@@ -178,8 +187,8 @@ func TestListPlainOutput(t *testing.T) {
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
 	want := strings.Join([]string{
-		"c_123\tNote\tAdmin User\t2026-05-01T12:00:00Z\t\tCustomer said the receipt was missing.",
-		"c_456\tRefund_note\tSupport / support@example.com\t2026-05-02T12:00:00Z\t2026-05-03T12:00:00Z\tRefunded after duplicate charge\\nsecond line",
+		"c_123\tnote\tAdmin User\t2026-05-01T12:00:00Z\t\tCustomer said the receipt was missing.",
+		"c_456\tsuspension_note\tSupport / support@example.com\t2026-05-02T12:00:00Z\t2026-05-03T12:00:00Z\tRefunded after duplicate charge\\nsecond line",
 	}, "\n")
 	if strings.TrimSpace(out) != want {
 		t.Fatalf("unexpected plain output:\ngot  %q\nwant %q", strings.TrimSpace(out), want)
@@ -193,7 +202,7 @@ func TestListHumanOutputTruncatesContentAndMarksDeleted(t *testing.T) {
 			"comments": []map[string]any{
 				{
 					"id":           "c_deleted",
-					"comment_type": "Refund_note",
+					"comment_type": "suspension_note",
 					"author_name":  "Admin User",
 					"content":      longContent,
 					"created_at":   "2026-05-01T12:00:00Z",
@@ -207,7 +216,7 @@ func TestListHumanOutputTruncatesContentAndMarksDeleted(t *testing.T) {
 	cmd.SetArgs([]string{"--user-id", "user_123"})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
-	if !strings.Contains(out, "c_deleted Refund_note (deleted)") {
+	if !strings.Contains(out, "c_deleted suspension_note (deleted)") {
 		t.Fatalf("expected deleted marker, got %q", out)
 	}
 	if !strings.Contains(out, "Deleted: 2026-05-02T12:00:00Z") {
@@ -249,7 +258,7 @@ func TestNewCommentsCmdWiresSubcommands(t *testing.T) {
 func commentFixture() map[string]any {
 	return map[string]any{
 		"id":           "c_123",
-		"comment_type": "Note",
+		"comment_type": "note",
 		"author_name":  "Admin User",
 		"content":      "Customer said the receipt was missing.",
 		"created_at":   "2026-05-01T12:00:00Z",
