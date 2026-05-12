@@ -179,6 +179,7 @@ func TestNewUsersCmdWiresSubcommands(t *testing.T) {
 	want := []string{
 		"info",
 		"affiliates",
+		"related",
 		"suspension",
 		"mark-compliant",
 		"watch",
