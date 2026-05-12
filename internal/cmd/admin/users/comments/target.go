@@ -1,79 +1,11 @@
-package users
+package comments
 
 import (
-	"io"
 	"net/url"
-	"strings"
 
-	usercomments "github.com/antiwork/gumroad-cli/internal/cmd/admin/users/comments"
 	"github.com/antiwork/gumroad-cli/internal/cmdutil"
-	"github.com/antiwork/gumroad-cli/internal/output"
 	"github.com/spf13/cobra"
 )
-
-func NewUsersCmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "users",
-		Short: "Read and manage admin user records",
-		Example: `  gumroad admin users info --email user@example.com
-  gumroad admin users info --user-id 2245593582708
-  gumroad admin users affiliates --user-id 2245593582708 --direction granted
-  gumroad admin users comments list --user-id 2245593582708
-  gumroad admin users comments add --user-id 2245593582708 --content "VAT exempt confirmed"
-  gumroad admin users suspension --email user@example.com
-  gumroad admin users mark-compliant --user-id 2245593582708 --expected-email user@example.com
-  gumroad admin users watch --user-id 2245593582708 --revenue-threshold 200 --note "Review next buyers"
-  gumroad admin users update-watch --user-id 2245593582708 --revenue-threshold 500
-  gumroad admin users unwatch --user-id 2245593582708
-  gumroad admin users suspend --user-id 2245593582708 --note "Chargeback risk confirmed"
-  gumroad admin users reset-password --user-id 2245593582708
-  gumroad admin users update-email --user-id 2245593582708 --new-email new@example.com
-  gumroad admin users two-factor disable --user-id 2245593582708`,
-	}
-
-	cmd.AddCommand(newInfoCmd())
-	cmd.AddCommand(newAffiliatesCmd())
-	cmd.AddCommand(usercomments.NewCommentsCmd())
-	cmd.AddCommand(newSuspensionCmd())
-	cmd.AddCommand(newMarkCompliantCmd())
-	cmd.AddCommand(newWatchCmd())
-	cmd.AddCommand(newUpdateWatchCmd())
-	cmd.AddCommand(newUnwatchCmd())
-	cmd.AddCommand(newSuspendCmd())
-	cmd.AddCommand(newResetPasswordCmd())
-	cmd.AddCommand(newUpdateEmailCmd())
-	cmd.AddCommand(newTwoFactorCmd())
-
-	return cmd
-}
-
-func fallback(value, alt string) string {
-	if value == "" {
-		return alt
-	}
-	return value
-}
-
-func writeIdentifierLine(w io.Writer, label, message, identifier string) error {
-	if identifier == "" || strings.Contains(message, identifier) {
-		return nil
-	}
-	return output.Writef(w, "%s: %s\n", label, identifier)
-}
-
-func userIdentifier(email, externalID string) string {
-	if externalID != "" {
-		return externalID
-	}
-	return email
-}
-
-func requireEmailOrUserID(cmd *cobra.Command, email, userID string) error {
-	if email == "" && userID == "" {
-		return cmdutil.UsageErrorf(cmd, "supply --email or --user-id")
-	}
-	return nil
-}
 
 type userLookupFlags struct {
 	Email           string
@@ -159,8 +91,34 @@ func (t userMutationTarget) identifier() string {
 	return t.UserID
 }
 
-func (t userMutationTarget) subject() string {
-	return "user_id " + t.UserID
+func userMutationParams(target userMutationTarget) url.Values {
+	params := url.Values{}
+	params.Set("user_id", target.UserID)
+	if target.ExpectedEmail != "" {
+		params.Set("expected_email", target.ExpectedEmail)
+	}
+	return params
+}
+
+func fallback(value, alt string) string {
+	if value == "" {
+		return alt
+	}
+	return value
+}
+
+func userIdentifier(email, externalID string) string {
+	if externalID != "" {
+		return externalID
+	}
+	return email
+}
+
+func requireEmailOrUserID(cmd *cobra.Command, email, userID string) error {
+	if email == "" && userID == "" {
+		return cmdutil.UsageErrorf(cmd, "supply --email or --user-id")
+	}
+	return nil
 }
 
 func resolveUserIDAlias(cmd *cobra.Command, userID, externalIDAlias string) (string, error) {

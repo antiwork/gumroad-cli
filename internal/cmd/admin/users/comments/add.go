@@ -1,4 +1,4 @@
-package users
+package comments
 
 import (
 	"crypto/rand"
@@ -25,15 +25,7 @@ type addCommentResponse struct {
 	Comment commentPayload `json:"comment"`
 }
 
-type commentPayload struct {
-	ID          string `json:"id"`
-	AuthorName  string `json:"author_name"`
-	Content     string `json:"content"`
-	CommentType string `json:"comment_type"`
-	CreatedAt   string `json:"created_at"`
-}
-
-func newAddCommentCmd() *cobra.Command {
+func newAddCmd() *cobra.Command {
 	var (
 		targetFlags    userMutationFlags
 		content        string
@@ -41,7 +33,7 @@ func newAddCommentCmd() *cobra.Command {
 	)
 
 	cmd := &cobra.Command{
-		Use:   "add-comment",
+		Use:   "add",
 		Short: "Add an admin note to a user's record",
 		Long: `Add an admin note to a user's record.
 
@@ -52,9 +44,9 @@ operator can rerun the same command if a transient failure occurs.
 
 Identify the user with --user-id. Pass --expected-email as an optional guard
 against acting on an account whose email has changed.`,
-		Example: `  gumroad admin users add-comment --user-id 2245593582708 --content "VAT exempt confirmed"
-  gumroad admin users add-comment --user-id 2245593582708 --expected-email user@example.com --content "VAT exempt confirmed"
-  gumroad admin users add-comment --user-id 2245593582708 --content "..." --idempotency-key 8f3a...`,
+		Example: `  gumroad admin users comments add --user-id 2245593582708 --content "VAT exempt confirmed"
+  gumroad admin users comments add --user-id 2245593582708 --expected-email user@example.com --content "VAT exempt confirmed"
+  gumroad admin users comments add --user-id 2245593582708 --content "..." --idempotency-key 8f3a...`,
 		Args: cmdutil.ExactArgs(0),
 		RunE: func(c *cobra.Command, args []string) error {
 			opts := cmdutil.OptionsFrom(c)

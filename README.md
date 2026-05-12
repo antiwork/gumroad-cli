@@ -110,6 +110,8 @@ Admin commands use a separate internal token. Run `gumroad auth login` and check
 ```sh
 gumroad admin users info --email seller@example.com --json
 gumroad admin users affiliates --user-id 2245593582708 --direction granted --limit 50
+gumroad admin users comments list --user-id 2245593582708 --type Note --limit 50
+gumroad admin users comments add --user-id 2245593582708 --content "VAT exempt confirmed"
 gumroad admin users watch --user-id 2245593582708 --expected-email seller@example.com --revenue-threshold 200 --note "Review next buyers"
 gumroad admin users update-watch --user-id 2245593582708 --expected-email seller@example.com --revenue-threshold 500
 gumroad admin users unwatch --user-id 2245593582708 --expected-email seller@example.com

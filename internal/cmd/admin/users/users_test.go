@@ -179,6 +179,7 @@ func TestNewUsersCmdWiresSubcommands(t *testing.T) {
 	want := []string{
 		"info",
 		"affiliates",
+		"comments",
 		"suspension",
 		"mark-compliant",
 		"watch",
@@ -188,7 +189,6 @@ func TestNewUsersCmdWiresSubcommands(t *testing.T) {
 		"reset-password",
 		"update-email",
 		"two-factor",
-		"add-comment",
 	}
 
 	if len(got) != len(want) {
