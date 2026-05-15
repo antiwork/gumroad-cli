@@ -138,12 +138,24 @@ func TestRadarPlainOutput(t *testing.T) {
 	cmd.SetArgs([]string{"--email", "seller@example.com"})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
-	want := strings.Join([]string{
-		"seller@example.com\tuser_123\t3\t3\tmade_with_stolen_card=2, misc=1\t2\t1\t1\t33.33\tpurchase_123\tmade_with_stolen_card\thighest\tunknown\t2026-05-15T12:00:00Z",
-		"seller@example.com\tuser_123\t3\t3\tmade_with_stolen_card=2, misc=1\t2\t1\t1\t33.33\tCH-charge_123\tmisc\televated\tresolved_ignored\t2026-05-15T11:00:00Z",
-	}, "\n")
+	want := "seller@example.com\tuser_123\t3\t3\tmade_with_stolen_card=2, misc=1\t2\t1\t1\t33.33"
 	if strings.TrimSpace(out) != want {
 		t.Fatalf("unexpected plain output:\ngot  %q\nwant %q", strings.TrimSpace(out), want)
+	}
+}
+
+func TestRadarPlainOutputWithoutRecentEFWs(t *testing.T) {
+	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, emptyRadarPayload())
+	})
+
+	cmd := testutil.Command(newRadarCmd(), testutil.PlainOutput())
+	cmd.SetArgs([]string{"--user-id", "user_123"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	want := "user_123\tuser_123\t0\t0\t(none)\t0\t0\t0\t0"
+	if strings.TrimSpace(out) != want {
+		t.Fatalf("unexpected empty plain output:\ngot  %q\nwant %q", strings.TrimSpace(out), want)
 	}
 }
 

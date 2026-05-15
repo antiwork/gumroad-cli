@@ -156,23 +156,11 @@ func writeRadarEFWTable(w io.Writer, style output.Styler, efws []recentEFW) erro
 }
 
 func writeRadarPlain(w io.Writer, identifier string, resp radarResponse) error {
-	capacity := len(resp.RecentEFWs)
-	if capacity == 0 {
-		capacity = 1
-	}
-	rows := make([][]string, 0, capacity)
-	if len(resp.RecentEFWs) == 0 {
-		rows = append(rows, radarPlainRow(identifier, resp.UserID, resp.RadarStats, recentEFW{}))
-	} else {
-		for _, efw := range resp.RecentEFWs {
-			rows = append(rows, radarPlainRow(identifier, resp.UserID, resp.RadarStats, efw))
-		}
-	}
-	return output.PrintPlain(w, rows)
+	return output.PrintPlain(w, [][]string{radarPlainRow(identifier, resp.UserID, resp.RadarStats)})
 }
 
-func radarPlainRow(identifier, userID string, stats radarStats, efw recentEFW) []string {
-	return append([]string{
+func radarPlainRow(identifier, userID string, stats radarStats) []string {
+	return []string{
 		identifier,
 		userID,
 		formatRadarInt(stats.SuccessfulPurchases),
@@ -182,7 +170,7 @@ func radarPlainRow(identifier, userID string, stats radarStats, efw recentEFW) [
 		formatRadarInt(stats.EFWWithHighestRisk),
 		formatRadarInt(stats.DisputeCount),
 		formatRadarDecimal(stats.DisputeRate),
-	}, radarEFWRow(efw)...)
+	}
 }
 
 func radarEFWRow(efw recentEFW) []string {
@@ -220,7 +208,7 @@ func formatRadarInt(value api.JSONInt) string {
 func formatRadarDecimal(value float64) string {
 	formatted := strconv.FormatFloat(value, 'f', 2, 64)
 	formatted = strings.TrimRight(strings.TrimRight(formatted, "0"), ".")
-	if formatted == "" || formatted == "-0" {
+	if formatted == "-0" {
 		return "0"
 	}
 	return formatted
