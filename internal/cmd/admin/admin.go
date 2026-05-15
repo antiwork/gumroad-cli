@@ -24,6 +24,7 @@ func NewAdminCmd() *cobra.Command {
   gumroad admin users comments list --user-id <user-id>
   gumroad admin users comments add --user-id <user-id> --content "VAT exempt confirmed"
   gumroad admin users compliance --user-id <user-id>
+  gumroad admin users radar --user-id <user-id>
   gumroad admin users purchases --user-id <user-id> --status successful
   gumroad admin users related --email <email> --signal ip
   gumroad admin users suspension --email <email>

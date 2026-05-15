@@ -59,6 +59,7 @@ Responses are wrapped in `{"success": true, ...}` with resource-specific keys:
 - `admin users comments list` → `.comments[]`
 - `admin users comments add` → `.comment`
 - `admin users compliance` → `.compliance_info`, `.info_requests[]`
+- `admin users radar` → `.radar_stats`, `.recent_efws[]`
 - `admin users purchases` → `.purchases[]`
 - `admin users related` → `.related_users[]`, `.truncated`, `.per_signal_limit`
 - `admin purchases view` → `.purchase`
@@ -68,7 +69,7 @@ Responses are wrapped in `{"success": true, ...}` with resource-specific keys:
 
 Admin pagination models differ by command:
 
-- Cursor-paginated: `admin users affiliates`, `admin users comments list`, `admin users purchases`, and `admin purchases lookup` return `.pagination.next` as a cursor string. Pass it back with `--cursor`.
+- Cursor-paginated: `admin users affiliates`, `admin users comments list`, `admin users radar`, `admin users purchases`, and `admin purchases lookup` return `.pagination.next` as a cursor string. Pass it back with `--cursor`.
 - Page-paginated: `admin products list` returns `.pagination.next` as an integer page number. Pass it back with `--page`; use `--per-page` for page size.
 - Capped, not continuable: `admin users related` returns at most 50 related users per signal. Always inspect `.truncated`; when any signal is `true`, the result hit the cap and there is no cursor/page to fetch the rest.
 - Capped, not continuable: `admin purchases search` returns `.has_more` when the server capped results. `--limit` is server-capped at 25 and there is no continuation token.
@@ -112,8 +113,9 @@ gumroad admin users affiliates --email seller@example.com --direction received -
 gumroad admin users comments list --user-id 2245593582708 --type note --limit 50 --json --non-interactive --no-input
 gumroad admin users comments add --user-id 2245593582708 --content "VAT exempt confirmed" --yes --json --non-interactive --no-input
 
-# Inspect compliance and buyer history
+# Inspect compliance, Radar risk, and buyer history
 gumroad admin users compliance --user-id 2245593582708 --json --non-interactive --no-input
+gumroad admin users radar --user-id 2245593582708 --limit 50 --json --non-interactive --no-input
 gumroad admin users purchases --user-id 2245593582708 --status successful --has-early-fraud-warning=false --limit 50 --json --non-interactive --no-input
 
 # Find related accounts by risk signals
