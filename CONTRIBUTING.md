@@ -44,7 +44,7 @@ End with an AI disclosure after a `---` separator. Name the specific model (e.g.
 
 ### Claude Code Review
 
-Claude Code Review is set to manual mode. After opening a PR, request a review by posting a `@claude review` comment on the PR.
+Claude Code Review is set to manual mode. After opening a PR, request a review by posting a `@claude review once` comment on the PR.
 
 ## AI models
 
