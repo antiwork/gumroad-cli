@@ -254,8 +254,8 @@ func buildProductUpdateFilesPayload(plan productFileUpdatePlan, uploadURLs []str
 	}
 	for i, requested := range plan.Uploads {
 		entry := map[string]any{
-			"id":  fileRefs[i].FileID,
-			"url": uploadURLs[i],
+			"external_id": fileRefs[i].FileID,
+			"url":         uploadURLs[i],
 		}
 		if requested.DisplayName != "" {
 			entry["display_name"] = requested.DisplayName
