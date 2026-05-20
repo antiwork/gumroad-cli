@@ -1,0 +1,18 @@
+# Authenticate (opens browser for OAuth)
+gumroad auth login
+
+# Or use an environment variable for CI / agents
+export GUMROAD_ACCESS_TOKEN=your-token
+
+# View your account
+gumroad user
+
+# List products, then inspect one
+gumroad products list
+gumroad products view abc123
+
+# Fetch all sales, filter with jq
+gumroad sales list --all --json --jq '.sales[] | {email, formatted_total_price}'
+
+# Preview a refund without executing it
+gumroad sales refund abc123 --amount 5.00 --dry-run
