@@ -179,6 +179,38 @@ func TestList_CSVOutputUsesCurrentSalesAPIFields(t *testing.T) {
 	}
 }
 
+func TestList_CSVOutputSkipsNullPrimaryNumericFields(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{
+			"sales": []map[string]any{
+				{
+					"id":                    "s1",
+					"email":                 "a@b.com",
+					"product_name":          "Art",
+					"total_cents":           nil,
+					"price":                 1000,
+					"currency":              "usd",
+					"refunded":              true,
+					"refunded_cents":        nil,
+					"amount_refunded_cents": 250,
+					"created_at":            "2024-01-15T10:00:00Z",
+				},
+			},
+		})
+	})
+
+	cmd := testutil.Command(newListCmd())
+	cmd.SetArgs([]string{"--csv"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	records := readCSVRecords(t, out)
+	want := [][]string{
+		{"id", "email", "product_name", "total_cents", "currency", "refunded", "refunded_cents", "created_at"},
+		{"s1", "a@b.com", "Art", "1000", "usd", "true", "250", "2024-01-15T10:00:00Z"},
+	}
+	assertCSVRecords(t, records, want)
+}
+
 func TestList_EmptyCSVOutputWritesHeader(t *testing.T) {
 	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
 		testutil.JSON(t, w, map[string]any{"sales": []any{}})

@@ -1,6 +1,7 @@
 package sales
 
 import (
+	"bytes"
 	"encoding/csv"
 	"io"
 	"net/url"
@@ -21,19 +22,45 @@ type saleListItem struct {
 	FormattedTotal      string       `json:"formatted_total_price"`
 	CreatedAt           string       `json:"created_at"`
 	Refunded            bool         `json:"refunded"`
-	TotalCents          *api.JSONInt `json:"total_cents"`
-	Price               *api.JSONInt `json:"price"`
+	TotalCents          *nullableInt `json:"total_cents"`
+	Price               *nullableInt `json:"price"`
 	Currency            string       `json:"currency"`
 	CurrencyType        string       `json:"currency_type"`
 	PriceCurrencyType   string       `json:"price_currency_type"`
-	RefundedCents       *api.JSONInt `json:"refunded_cents"`
-	AmountRefundedCents *api.JSONInt `json:"amount_refunded_cents"`
+	RefundedCents       *nullableInt `json:"refunded_cents"`
+	AmountRefundedCents *nullableInt `json:"amount_refunded_cents"`
 }
 
 type salesListResponse struct {
 	Success     bool           `json:"success"`
 	Sales       []saleListItem `json:"sales"`
 	NextPageKey string         `json:"next_page_key,omitempty"`
+}
+
+type nullableInt struct {
+	value api.JSONInt
+	valid bool
+}
+
+func (n *nullableInt) UnmarshalJSON(data []byte) error {
+	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+		n.valid = false
+		n.value = 0
+		return nil
+	}
+
+	if err := n.value.UnmarshalJSON(data); err != nil {
+		return err
+	}
+	n.valid = true
+	return nil
+}
+
+func (n nullableInt) MarshalJSON() ([]byte, error) {
+	if !n.valid {
+		return []byte("null"), nil
+	}
+	return []byte(strconv.Itoa(int(n.value))), nil
 }
 
 func newListCmd() *cobra.Command {
@@ -254,10 +281,10 @@ func writeSalesCSVRows(cw *csv.Writer, sales []saleListItem) error {
 			s.ID,
 			s.Email,
 			s.ProductName,
-			formatJSONInt(firstJSONInt(s.TotalCents, s.Price)),
+			formatNullableInt(firstNullableInt(s.TotalCents, s.Price)),
 			s.csvCurrency(),
 			strconv.FormatBool(s.Refunded),
-			formatJSONInt(firstJSONInt(s.RefundedCents, s.AmountRefundedCents)),
+			formatNullableInt(firstNullableInt(s.RefundedCents, s.AmountRefundedCents)),
 			s.CreatedAt,
 		}); err != nil {
 			return err
@@ -275,20 +302,20 @@ func (s saleListItem) csvCurrency() string {
 	return ""
 }
 
-func firstJSONInt(values ...*api.JSONInt) *api.JSONInt {
+func firstNullableInt(values ...*nullableInt) *nullableInt {
 	for _, value := range values {
-		if value != nil {
+		if value != nil && value.valid {
 			return value
 		}
 	}
 	return nil
 }
 
-func formatJSONInt(value *api.JSONInt) string {
+func formatNullableInt(value *nullableInt) string {
 	if value == nil {
 		return "0"
 	}
-	return strconv.Itoa(int(*value))
+	return strconv.Itoa(int(value.value))
 }
 
 func writeSalesTable(w io.Writer, style output.Styler, sales []saleListItem) error {
