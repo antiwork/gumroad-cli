@@ -37,6 +37,23 @@ func TestSkillMarkdown_ContainsAllCommands(t *testing.T) {
 	}
 }
 
+func TestSkillMarkdown_ContainsSalesCSVExample(t *testing.T) {
+	data, err := SkillMarkdown()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	content := string(data)
+	for _, example := range []string{
+		"gumroad sales list --after 2024-01-01 --before 2024-01-31 --csv --no-input",
+		"`--product`, `--order`, `--email`, `--after` (YYYY-MM-DD), `--before` (YYYY-MM-DD), `--all`, `--page-key`, `--csv`",
+	} {
+		if !strings.Contains(content, example) {
+			t.Errorf("expected skill to mention sales CSV example %q", example)
+		}
+	}
+}
+
 func TestSkillMarkdown_ContainsAdminRolloutCommands(t *testing.T) {
 	data, err := SkillMarkdown()
 	if err != nil {

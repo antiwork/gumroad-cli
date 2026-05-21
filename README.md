@@ -63,6 +63,9 @@ gumroad products view abc123
 # Fetch all sales, filter with jq
 gumroad sales list --all --json --jq '.sales[] | {email, formatted_total_price}'
 
+# Export a small filtered sales CSV
+gumroad sales list --after 2024-01-01 --before 2024-01-31 --csv > sales.csv
+
 # Preview a refund without executing it
 gumroad sales refund abc123 --amount 5.00 --dry-run
 ```
@@ -158,6 +161,8 @@ gumroad products update <product_id> --replace-files --keep-file <file_id> --fil
 | `--quiet` | Minimal | Scripts |
 
 Paginated commands (`sales list`, `payouts list`, `subscribers list`) accept `--all` to fetch every page. Use `--page-delay 200ms` to pace large fetches.
+
+`gumroad sales list --csv` writes `id,email,product_name,total_cents,currency,refunded,refunded_cents,created_at` for small filtered exports.
 
 ## AI agents
 

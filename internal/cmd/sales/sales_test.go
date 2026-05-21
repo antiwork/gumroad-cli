@@ -1,15 +1,36 @@
 package sales
 
 import (
+	"encoding/csv"
 	"encoding/json"
 	"errors"
 	"net/http"
+	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/antiwork/gumroad-cli/internal/cmdutil"
 	"github.com/antiwork/gumroad-cli/internal/testutil"
+	"github.com/spf13/cobra"
 )
+
+func readCSVRecords(t *testing.T, value string) [][]string {
+	t.Helper()
+
+	records, err := csv.NewReader(strings.NewReader(value)).ReadAll()
+	if err != nil {
+		t.Fatalf("read CSV output: %v\n%s", err, value)
+	}
+	return records
+}
+
+func assertCSVRecords(t *testing.T, got, want [][]string) {
+	t.Helper()
+
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected CSV records:\ngot  %#v\nwant %#v", got, want)
+	}
+}
 
 func TestList_AllFilters(t *testing.T) {
 	var gotQuery string
@@ -64,6 +85,84 @@ func TestList_Pagination(t *testing.T) {
 	}
 }
 
+func TestList_CSVOutput(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{
+			"sales": []map[string]any{
+				{
+					"id":             "s1",
+					"email":          "a@b.com",
+					"product_name":   "Art, Pack",
+					"total_cents":    1000,
+					"currency":       "usd",
+					"refunded":       true,
+					"refunded_cents": 250,
+					"created_at":     "2024-01-15T10:00:00Z",
+				},
+			},
+		})
+	})
+
+	cmd := testutil.Command(newListCmd())
+	cmd.SetArgs([]string{"--csv"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	records := readCSVRecords(t, out)
+	want := [][]string{
+		{"id", "email", "product_name", "total_cents", "currency", "refunded", "refunded_cents", "created_at"},
+		{"s1", "a@b.com", "Art, Pack", "1000", "usd", "true", "250", "2024-01-15T10:00:00Z"},
+	}
+	assertCSVRecords(t, records, want)
+}
+
+func TestList_CSVOutputUsesCurrentSalesAPIFields(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{
+			"sales": []map[string]any{
+				{
+					"id":                    "s1",
+					"email":                 "a@b.com",
+					"product_name":          "Art",
+					"price":                 1000,
+					"currency_type":         "usd",
+					"refunded":              false,
+					"amount_refunded_cents": 0,
+					"created_at":            "2024-01-15T10:00:00Z",
+				},
+			},
+		})
+	})
+
+	cmd := testutil.Command(newListCmd())
+	cmd.SetArgs([]string{"--csv"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	records := readCSVRecords(t, out)
+	if got := records[1][3]; got != "1000" {
+		t.Fatalf("got total_cents %q, want 1000", got)
+	}
+	if got := records[1][4]; got != "usd" {
+		t.Fatalf("got currency %q, want usd", got)
+	}
+	if got := records[1][6]; got != "0" {
+		t.Fatalf("got refunded_cents %q, want 0", got)
+	}
+}
+
+func TestList_EmptyCSVOutputWritesHeader(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{"sales": []any{}})
+	})
+
+	cmd := testutil.Command(newListCmd())
+	cmd.SetArgs([]string{"--csv"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	records := readCSVRecords(t, out)
+	want := [][]string{{"id", "email", "product_name", "total_cents", "currency", "refunded", "refunded_cents", "created_at"}}
+	assertCSVRecords(t, records, want)
+}
+
 func TestList_AllFetchesAllPages(t *testing.T) {
 	requests := 0
 	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
@@ -105,6 +204,45 @@ func TestList_AllFetchesAllPages(t *testing.T) {
 	}
 }
 
+func TestList_AllCSVOutputStreamsAllPages(t *testing.T) {
+	requests := 0
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		switch r.URL.Query().Get("page_key") {
+		case "":
+			testutil.JSON(t, w, map[string]any{
+				"sales": []map[string]any{
+					{"id": "s1", "email": "a@b.com", "product_name": "Art", "price": 1000, "currency_type": "usd", "created_at": "2024-01-15"},
+				},
+				"next_page_key": "cursor123",
+			})
+		case "cursor123":
+			testutil.JSON(t, w, map[string]any{
+				"sales": []map[string]any{
+					{"id": "s2", "email": "b@c.com", "product_name": "Book", "price": 1200, "currency_type": "usd", "refunded": true, "amount_refunded_cents": 1200, "created_at": "2024-01-16"},
+				},
+			})
+		default:
+			t.Fatalf("unexpected page_key %q", r.URL.Query().Get("page_key"))
+		}
+	})
+
+	cmd := testutil.Command(newListCmd())
+	cmd.SetArgs([]string{"--all", "--csv"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	records := readCSVRecords(t, out)
+	want := [][]string{
+		{"id", "email", "product_name", "total_cents", "currency", "refunded", "refunded_cents", "created_at"},
+		{"s1", "a@b.com", "Art", "1000", "usd", "false", "0", "2024-01-15"},
+		{"s2", "b@c.com", "Book", "1200", "usd", "true", "1200", "2024-01-16"},
+	}
+	assertCSVRecords(t, records, want)
+	if requests != 2 {
+		t.Fatalf("got %d requests, want 2", requests)
+	}
+}
+
 func TestList_SinglePageDoesNotWalkPages(t *testing.T) {
 	requests := 0
 	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
@@ -139,6 +277,34 @@ func TestList_SinglePageDoesNotWalkPages(t *testing.T) {
 	}
 	if resp.NextPageKey != "cursor123" {
 		t.Fatalf("got next_page_key=%q, want cursor123", resp.NextPageKey)
+	}
+}
+
+func TestList_CSVRejectsOtherOutputModes(t *testing.T) {
+	tests := []struct {
+		name    string
+		command *cobra.Command
+	}{
+		{"json", testutil.Command(newListCmd(), testutil.JSONOutput())},
+		{"jq", testutil.Command(newListCmd(), testutil.JQ(".sales"))},
+		{"plain", testutil.Command(newListCmd(), testutil.PlainOutput())},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+				t.Error("should not reach API with conflicting output flags")
+			})
+
+			tt.command.SetArgs([]string{"--csv"})
+			err := tt.command.Execute()
+			if err == nil {
+				t.Fatal("expected conflicting output mode error")
+			}
+			if !strings.Contains(err.Error(), "--csv cannot be combined with --json, --jq, or --plain") {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
 	}
 }
 

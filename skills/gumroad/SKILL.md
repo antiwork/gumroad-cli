@@ -198,6 +198,7 @@ gumroad sales list --json --no-input
 gumroad sales list --product <id> --after 2024-01-01 --json --no-input
 gumroad sales list --email user@example.com --json --no-input
 gumroad sales list --all --json --no-input
+gumroad sales list --after 2024-01-01 --before 2024-01-31 --csv --no-input
 
 # Find a sale by email
 gumroad sales list --json --jq '.sales[] | select(.email == "user@example.com")' --no-input
@@ -213,7 +214,7 @@ gumroad sales refund <id> --amount 5.00 --yes --json --no-input
 gumroad sales resend-receipt <id> --json --no-input
 ```
 
-**List filters:** `--product`, `--order`, `--email`, `--after` (YYYY-MM-DD), `--before` (YYYY-MM-DD), `--all`, `--page-key`.
+**List filters/output:** `--product`, `--order`, `--email`, `--after` (YYYY-MM-DD), `--before` (YYYY-MM-DD), `--all`, `--page-key`, `--csv`.
 
 ### payouts — View payouts
 

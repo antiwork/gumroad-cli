@@ -1,8 +1,11 @@
 package sales
 
 import (
+	"encoding/csv"
 	"io"
 	"net/url"
+	"strconv"
+	"strings"
 
 	"github.com/antiwork/gumroad-cli/internal/api"
 	"github.com/antiwork/gumroad-cli/internal/cmdutil"
@@ -12,12 +15,19 @@ import (
 )
 
 type saleListItem struct {
-	ID             string `json:"id"`
-	Email          string `json:"email"`
-	ProductName    string `json:"product_name"`
-	FormattedTotal string `json:"formatted_total_price"`
-	CreatedAt      string `json:"created_at"`
-	Refunded       bool   `json:"refunded"`
+	ID                  string       `json:"id"`
+	Email               string       `json:"email"`
+	ProductName         string       `json:"product_name"`
+	FormattedTotal      string       `json:"formatted_total_price"`
+	CreatedAt           string       `json:"created_at"`
+	Refunded            bool         `json:"refunded"`
+	TotalCents          *api.JSONInt `json:"total_cents"`
+	Price               *api.JSONInt `json:"price"`
+	Currency            string       `json:"currency"`
+	CurrencyType        string       `json:"currency_type"`
+	PriceCurrencyType   string       `json:"price_currency_type"`
+	RefundedCents       *api.JSONInt `json:"refunded_cents"`
+	AmountRefundedCents *api.JSONInt `json:"amount_refunded_cents"`
 }
 
 type salesListResponse struct {
@@ -28,7 +38,7 @@ type salesListResponse struct {
 
 func newListCmd() *cobra.Command {
 	var product, email, orderID, before, after, pageKey string
-	var all bool
+	var all, csvOutput bool
 
 	cmd := &cobra.Command{
 		Use:   "list",
@@ -36,10 +46,14 @@ func newListCmd() *cobra.Command {
 		Args:  cmdutil.ExactArgs(0),
 		Example: `  gumroad sales list
   gumroad sales list --product <id> --after 2024-01-01
+  gumroad sales list --after 2024-01-01 --csv
   gumroad sales list --all
   gumroad sales list --json --jq '.sales[0].id'`,
 		RunE: func(c *cobra.Command, args []string) error {
 			opts := cmdutil.OptionsFrom(c)
+			if err := validateSalesCSVOutput(c, opts, csvOutput); err != nil {
+				return err
+			}
 			if err := cmdutil.RequireDateFlag(c, "before", before); err != nil {
 				return err
 			}
@@ -67,11 +81,11 @@ func newListCmd() *cobra.Command {
 				params.Set("page_key", pageKey)
 			}
 			if all {
-				return streamSalesListAll(opts, params)
+				return streamSalesListAll(opts, params, csvOutput)
 			}
 
 			return cmdutil.RunRequestDecoded[salesListResponse](opts, "Fetching sales...", "GET", "/sales", params, func(resp salesListResponse) error {
-				return renderSalesList(opts, resp, product, email, orderID, before, after)
+				return renderSalesList(opts, resp, product, email, orderID, before, after, csvOutput)
 			})
 		},
 	}
@@ -83,12 +97,27 @@ func newListCmd() *cobra.Command {
 	cmd.Flags().StringVar(&after, "after", "", "Filter sales after date (YYYY-MM-DD)")
 	cmd.Flags().StringVar(&pageKey, "page-key", "", "Pagination cursor")
 	cmd.Flags().BoolVar(&all, "all", false, "Fetch all pages")
+	cmd.Flags().BoolVar(&csvOutput, "csv", false, "Output as CSV")
 	cmd.MarkFlagsMutuallyExclusive("all", "page-key")
 
 	return cmd
 }
 
-func renderSalesList(opts cmdutil.Options, resp salesListResponse, product, email, orderID, before, after string) error {
+func validateSalesCSVOutput(cmd *cobra.Command, opts cmdutil.Options, csvOutput bool) error {
+	if !csvOutput {
+		return nil
+	}
+	if opts.JSONOutput || opts.JQExpr != "" || opts.PlainOutput {
+		return cmdutil.NewUsageError(cmd, "--csv cannot be combined with --json, --jq, or --plain")
+	}
+	return nil
+}
+
+func renderSalesList(opts cmdutil.Options, resp salesListResponse, product, email, orderID, before, after string, csvOutput bool) error {
+	if csvOutput {
+		return writeSalesCSV(opts.Out(), resp.Sales)
+	}
+
 	if len(resp.Sales) == 0 {
 		return renderEmptySalesList(opts, product, email, orderID, before, after, resp.NextPageKey)
 	}
@@ -110,7 +139,7 @@ func renderSalesList(opts cmdutil.Options, resp salesListResponse, product, emai
 	})
 }
 
-func streamSalesListAll(opts cmdutil.Options, params url.Values) error {
+func streamSalesListAll(opts cmdutil.Options, params url.Values, csvOutput bool) error {
 	token, err := config.Token()
 	if err != nil {
 		return err
@@ -126,6 +155,10 @@ func streamSalesListAll(opts cmdutil.Options, params url.Values) error {
 	style := opts.Style()
 	walkPages := func(visit cmdutil.PageVisitor[salesListResponse]) error {
 		return walkSalesPages(opts, client, params, visit)
+	}
+
+	if csvOutput {
+		return streamSalesCSV(opts.Out(), walkPages)
 	}
 
 	return cmdutil.StreamPaginatedPages(opts, cmdutil.PaginatedPageOutputConfig[salesListResponse]{
@@ -168,6 +201,82 @@ func writeSalesPlain(w io.Writer, sales []saleListItem) error {
 		rows = append(rows, []string{s.ID, s.Email, s.ProductName, s.FormattedTotal, s.CreatedAt})
 	}
 	return output.PrintPlain(w, rows)
+}
+
+var salesCSVHeader = []string{"id", "email", "product_name", "total_cents", "currency", "refunded", "refunded_cents", "created_at"}
+
+func writeSalesCSV(w io.Writer, sales []saleListItem) error {
+	cw := csv.NewWriter(w)
+	if err := writeSalesCSVHeader(cw); err != nil {
+		return err
+	}
+	if err := writeSalesCSVRows(cw, sales); err != nil {
+		return err
+	}
+	cw.Flush()
+	return cw.Error()
+}
+
+func streamSalesCSV(w io.Writer, walkPages func(cmdutil.PageVisitor[salesListResponse]) error) error {
+	cw := csv.NewWriter(w)
+	if err := writeSalesCSVHeader(cw); err != nil {
+		return err
+	}
+	err := walkPages(func(page salesListResponse) (bool, error) {
+		return false, writeSalesCSVRows(cw, page.Sales)
+	})
+	cw.Flush()
+	if err != nil {
+		return err
+	}
+	return cw.Error()
+}
+
+func writeSalesCSVHeader(cw *csv.Writer) error {
+	return cw.Write(salesCSVHeader)
+}
+
+func writeSalesCSVRows(cw *csv.Writer, sales []saleListItem) error {
+	for _, s := range sales {
+		if err := cw.Write([]string{
+			s.ID,
+			s.Email,
+			s.ProductName,
+			formatJSONInt(firstJSONInt(s.TotalCents, s.Price)),
+			s.csvCurrency(),
+			strconv.FormatBool(s.Refunded),
+			formatJSONInt(firstJSONInt(s.RefundedCents, s.AmountRefundedCents)),
+			s.CreatedAt,
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s saleListItem) csvCurrency() string {
+	for _, value := range []string{s.Currency, s.CurrencyType, s.PriceCurrencyType} {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
+}
+
+func firstJSONInt(values ...*api.JSONInt) *api.JSONInt {
+	for _, value := range values {
+		if value != nil {
+			return value
+		}
+	}
+	return nil
+}
+
+func formatJSONInt(value *api.JSONInt) string {
+	if value == nil {
+		return "0"
+	}
+	return strconv.Itoa(int(*value))
 }
 
 func writeSalesTable(w io.Writer, style output.Styler, sales []saleListItem) error {
