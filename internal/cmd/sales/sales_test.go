@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/url"
 	"reflect"
 	"strings"
 	"testing"
@@ -223,6 +224,139 @@ func TestList_EmptyCSVOutputWritesHeader(t *testing.T) {
 	records := readCSVRecords(t, out)
 	want := [][]string{{"id", "email", "product_name", "total_cents", "currency", "refunded", "refunded_cents", "created_at"}}
 	assertCSVRecords(t, records, want)
+}
+
+func TestExport_QueuesSalesExportWithFilters(t *testing.T) {
+	var gotMethod, gotPath string
+	var gotForm url.Values
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
+		gotPath = r.URL.Path
+		if err := r.ParseForm(); err != nil {
+			t.Fatalf("ParseForm failed: %v", err)
+		}
+		gotForm = r.PostForm
+		testutil.JSON(t, w, map[string]any{
+			"status":          "queued",
+			"recipient_email": "seller@example.com",
+		})
+	})
+
+	cmd := testutil.Command(newExportCmd(), testutil.Quiet(false))
+	cmd.SetArgs([]string{"--from", "2026-01-01", "--to", "2026-05-21", "--product", "prod_123"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	if gotMethod != http.MethodPost || gotPath != "/sales/exports" {
+		t.Fatalf("got %s %s, want POST /sales/exports", gotMethod, gotPath)
+	}
+	for key, want := range map[string]string{
+		"from":       "2026-01-01",
+		"to":         "2026-05-21",
+		"product_id": "prod_123",
+	} {
+		if got := gotForm.Get(key); got != want {
+			t.Fatalf("got %s=%q, want %q", key, got, want)
+		}
+	}
+	if !strings.Contains(out, "CSV will be emailed to seller@example.com when ready.") {
+		t.Fatalf("unexpected output: %q", out)
+	}
+}
+
+func TestExport_QueuesSalesExportWithoutFilters(t *testing.T) {
+	var gotForm url.Values
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			t.Fatalf("ParseForm failed: %v", err)
+		}
+		gotForm = r.PostForm
+		testutil.JSON(t, w, map[string]any{
+			"status":          "queued",
+			"recipient_email": "seller@example.com",
+		})
+	})
+
+	cmd := testutil.Command(newExportCmd(), testutil.Quiet(false))
+	cmd.SetArgs([]string{})
+	testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	if len(gotForm) != 0 {
+		t.Fatalf("expected no form filters, got %#v", gotForm)
+	}
+}
+
+func TestExport_JSON(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{
+			"status":          "queued",
+			"recipient_email": "seller@example.com",
+		})
+	})
+
+	cmd := testutil.Command(newExportCmd(), testutil.JSONOutput())
+	cmd.SetArgs([]string{"--from", "2026-01-01"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	var resp struct {
+		Success        bool   `json:"success"`
+		Status         string `json:"status"`
+		RecipientEmail string `json:"recipient_email"`
+	}
+	if err := json.Unmarshal([]byte(out), &resp); err != nil {
+		t.Fatalf("not valid JSON: %v\n%s", err, out)
+	}
+	if !resp.Success || resp.Status != "queued" || resp.RecipientEmail != "seller@example.com" {
+		t.Fatalf("unexpected JSON response: %+v", resp)
+	}
+}
+
+func TestExport_Plain(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{
+			"status":          "queued",
+			"recipient_email": "seller@example.com",
+		})
+	})
+
+	cmd := testutil.Command(newExportCmd(), testutil.PlainOutput())
+	cmd.SetArgs([]string{})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	if strings.TrimSpace(out) != "queued\tseller@example.com" {
+		t.Fatalf("unexpected plain output: %q", out)
+	}
+}
+
+func TestExport_InvalidDate(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Error("should not reach API with invalid date")
+	})
+
+	cmd := newExportCmd()
+	cmd.SetArgs([]string{"--from", "2026-13-01"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected validation error")
+	}
+	if !strings.Contains(err.Error(), "--from must be a valid date in YYYY-MM-DD format") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestExport_DryRunSkipsNetwork(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Error("dry-run should not reach API")
+	})
+
+	cmd := testutil.Command(newExportCmd(), testutil.DryRun(true))
+	cmd.SetArgs([]string{"--from", "2026-01-01", "--to", "2026-05-21", "--product", "prod_123"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	for _, want := range []string{"Dry run", "POST /sales/exports", "from: 2026-01-01", "to: 2026-05-21", "product_id: prod_123"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing %q in %q", want, out)
+		}
+	}
 }
 
 func TestList_AllFetchesAllPages(t *testing.T) {
@@ -1038,7 +1172,7 @@ func TestNewSalesCmd_Subcommands(t *testing.T) {
 	if cmd.Use != "sales" {
 		t.Fatalf("got use=%q, want %q", cmd.Use, "sales")
 	}
-	for _, name := range []string{"list", "view", "refund", "ship", "resend-receipt"} {
+	for _, name := range []string{"list", "export", "view", "refund", "ship", "resend-receipt"} {
 		if child, _, err := cmd.Find([]string{name}); err != nil || child == nil || child.Name() != name {
 			t.Fatalf("expected subcommand %q to be registered, got child=%v err=%v", name, child, err)
 		}

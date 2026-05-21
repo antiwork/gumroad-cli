@@ -66,6 +66,9 @@ gumroad sales list --all --json --jq '.sales[] | {email, formatted_total_price}'
 # Export a small filtered sales CSV
 gumroad sales list --after 2024-01-01 --before 2024-01-31 --csv > sales.csv
 
+# Request a larger sales CSV by email
+gumroad sales export --from 2026-01-01 --to 2026-05-21
+
 # Preview a refund without executing it
 gumroad sales refund abc123 --amount 5.00 --dry-run
 ```
@@ -92,7 +95,7 @@ gumroad auth          login, status, logout
 gumroad admin         Internal admin API commands
 gumroad user          View your account info
 gumroad products      create, update, list, view, delete, publish, unpublish, skus
-gumroad sales         list, view, refund, ship, resend-receipt
+gumroad sales         list, export, view, refund, ship, resend-receipt
 gumroad payouts       list, view, upcoming
 gumroad subscribers   list, view
 gumroad licenses      verify, enable, disable, decrement, rotate
