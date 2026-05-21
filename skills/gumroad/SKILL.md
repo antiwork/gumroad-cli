@@ -206,6 +206,7 @@ gumroad sales list --json --jq '.sales[] | select(.email == "user@example.com")'
 
 # Request an emailed CSV export for larger ranges
 gumroad sales export --from 2026-01-01 --to 2026-05-21 --no-input
+gumroad sales export --after 2026-01-01 --before 2026-05-21 --no-input
 gumroad sales export --product <id> --json --no-input
 
 # View a sale
@@ -220,7 +221,7 @@ gumroad sales resend-receipt <id> --json --no-input
 ```
 
 **List filters/output:** `--product`, `--order`, `--email`, `--after` (YYYY-MM-DD), `--before` (YYYY-MM-DD), `--all`, `--page-key`, `--csv`.
-**Export filters:** `--from` (YYYY-MM-DD), `--to` (YYYY-MM-DD), `--product`.
+**Export filters:** `--from`/`--after` (YYYY-MM-DD), `--to`/`--before` (YYYY-MM-DD), `--product`.
 
 ### payouts — View payouts
 

@@ -68,6 +68,7 @@ gumroad sales list --after 2024-01-01 --before 2024-01-31 --csv > sales.csv
 
 # Request a larger sales CSV by email
 gumroad sales export --from 2026-01-01 --to 2026-05-21
+gumroad sales export --after 2026-01-01 --before 2026-05-21
 
 # Preview a refund without executing it
 gumroad sales refund abc123 --amount 5.00 --dry-run

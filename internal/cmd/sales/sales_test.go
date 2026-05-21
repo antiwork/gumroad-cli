@@ -285,6 +285,34 @@ func TestExport_QueuesSalesExportWithoutFilters(t *testing.T) {
 	}
 }
 
+func TestExport_AcceptsListStyleDateAliases(t *testing.T) {
+	var gotForm url.Values
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			t.Fatalf("ParseForm failed: %v", err)
+		}
+		gotForm = r.PostForm
+		testutil.JSON(t, w, map[string]any{
+			"status":          "queued",
+			"recipient_email": "seller@example.com",
+		})
+	})
+
+	cmd := testutil.Command(newExportCmd(), testutil.Quiet(false))
+	cmd.SetArgs([]string{"--after", "2026-01-01", "--before", "2026-05-21"})
+	testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	if got := gotForm.Get("from"); got != "2026-01-01" {
+		t.Fatalf("got from=%q, want 2026-01-01", got)
+	}
+	if got := gotForm.Get("to"); got != "2026-05-21" {
+		t.Fatalf("got to=%q, want 2026-05-21", got)
+	}
+	if gotForm.Has("after") || gotForm.Has("before") {
+		t.Fatalf("alias flags must not be sent to the server, got %#v", gotForm)
+	}
+}
+
 func TestExport_JSON(t *testing.T) {
 	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
 		testutil.JSON(t, w, map[string]any{
@@ -339,6 +367,22 @@ func TestExport_InvalidDate(t *testing.T) {
 		t.Fatal("expected validation error")
 	}
 	if !strings.Contains(err.Error(), "--from must be a valid date in YYYY-MM-DD format") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestExport_DuplicateDateAliasesRejected(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Error("should not reach API with duplicate date flags")
+	})
+
+	cmd := newExportCmd()
+	cmd.SetArgs([]string{"--from", "2026-01-01", "--after", "2026-01-02"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected duplicate date flag error")
+	}
+	if !strings.Contains(err.Error(), "--after cannot be combined with --from") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
