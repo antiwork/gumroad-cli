@@ -115,6 +115,36 @@ func TestList_CSVOutput(t *testing.T) {
 	assertCSVRecords(t, records, want)
 }
 
+func TestList_CSVOutputWarnsWhenMorePagesExist(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{
+			"sales": []map[string]any{
+				{"id": "s1", "email": "a@b.com", "product_name": "Art", "price": 1000, "currency_type": "usd", "created_at": "2024-01-15"},
+			},
+			"next_page_key": "cursor123",
+		})
+	})
+
+	cmd := testutil.Command(newListCmd(), testutil.Quiet(false))
+	cmd.SetArgs([]string{"--product", "p1", "--after", "2024-01-01", "--csv"})
+	stdout, stderr := testutil.CaptureOutput(func() { testutil.MustExecute(t, cmd) })
+
+	records := readCSVRecords(t, stdout)
+	want := [][]string{
+		{"id", "email", "product_name", "total_cents", "currency", "refunded", "refunded_cents", "created_at"},
+		{"s1", "a@b.com", "Art", "1000", "usd", "false", "0", "2024-01-15"},
+	}
+	assertCSVRecords(t, records, want)
+	if strings.Contains(stdout, "More results available") {
+		t.Fatalf("CSV stdout must not include pagination warning, got %q", stdout)
+	}
+
+	wantHint := "More results available: gumroad sales list --product p1 --after 2024-01-01 --all --csv"
+	if !strings.Contains(stderr, wantHint) {
+		t.Fatalf("stderr missing pagination hint %q in %q", wantHint, stderr)
+	}
+}
+
 func TestList_CSVOutputUsesCurrentSalesAPIFields(t *testing.T) {
 	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
 		testutil.JSON(t, w, map[string]any{

@@ -115,7 +115,10 @@ func validateSalesCSVOutput(cmd *cobra.Command, opts cmdutil.Options, csvOutput 
 
 func renderSalesList(opts cmdutil.Options, resp salesListResponse, product, email, orderID, before, after string, csvOutput bool) error {
 	if csvOutput {
-		return writeSalesCSV(opts.Out(), resp.Sales)
+		if err := writeSalesCSV(opts.Out(), resp.Sales); err != nil {
+			return err
+		}
+		return renderSalesCSVPageHint(opts, product, email, orderID, before, after, resp.NextPageKey)
 	}
 
 	if len(resp.Sales) == 0 {
@@ -137,6 +140,15 @@ func renderSalesList(opts cmdutil.Options, resp salesListResponse, product, emai
 		}
 		return nil
 	})
+}
+
+func renderSalesCSVPageHint(opts cmdutil.Options, product, email, orderID, before, after, nextPageKey string) error {
+	if nextPageKey == "" || opts.Quiet {
+		return nil
+	}
+
+	hint := salesCSVAllHint(product, email, orderID, before, after)
+	return output.Writeln(opts.Err(), opts.Style().Dim("More results available: "+hint))
 }
 
 func streamSalesListAll(opts cmdutil.Options, params url.Values, csvOutput bool) error {
@@ -314,5 +326,17 @@ func salesPaginationHint(product, email, orderID, before, after, nextPageKey str
 		cmdutil.CommandArg{Flag: "--before", Value: before},
 		cmdutil.CommandArg{Flag: "--after", Value: after},
 		cmdutil.CommandArg{Flag: "--page-key", Value: nextPageKey},
+	)
+}
+
+func salesCSVAllHint(product, email, orderID, before, after string) string {
+	return cmdutil.ReplayCommand("gumroad sales list",
+		cmdutil.CommandArg{Flag: "--product", Value: product},
+		cmdutil.CommandArg{Flag: "--email", Value: email},
+		cmdutil.CommandArg{Flag: "--order", Value: orderID},
+		cmdutil.CommandArg{Flag: "--before", Value: before},
+		cmdutil.CommandArg{Flag: "--after", Value: after},
+		cmdutil.CommandArg{Flag: "--all", Boolean: true},
+		cmdutil.CommandArg{Flag: "--csv", Boolean: true},
 	)
 }
