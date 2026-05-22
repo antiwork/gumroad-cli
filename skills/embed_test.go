@@ -37,7 +37,7 @@ func TestSkillMarkdown_ContainsAllCommands(t *testing.T) {
 	}
 }
 
-func TestSkillMarkdown_ContainsSalesCSVExample(t *testing.T) {
+func TestSkillMarkdown_ContainsSalesExamples(t *testing.T) {
 	data, err := SkillMarkdown()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -46,10 +46,15 @@ func TestSkillMarkdown_ContainsSalesCSVExample(t *testing.T) {
 	content := string(data)
 	for _, example := range []string{
 		"gumroad sales list --after 2024-01-01 --before 2024-01-31 --csv --no-input",
+		"gumroad sales export --from 2026-01-01 --to 2026-05-21 --no-input",
+		"gumroad sales export --after 2026-01-01 --before 2026-05-21 --no-input",
+		"gumroad sales export --product <id> --json --no-input",
+		"`sales export` → `.status`, `.recipient_email`",
 		"`--product`, `--order`, `--email`, `--after` (YYYY-MM-DD), `--before` (YYYY-MM-DD), `--all`, `--page-key`, `--csv`",
+		"`--from`/`--after` (YYYY-MM-DD), `--to`/`--before` (YYYY-MM-DD), `--product`",
 	} {
 		if !strings.Contains(content, example) {
-			t.Errorf("expected skill to mention sales CSV example %q", example)
+			t.Errorf("expected skill to mention sales example %q", example)
 		}
 	}
 }
