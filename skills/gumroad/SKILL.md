@@ -8,7 +8,7 @@ description: >
   Also trigger on "check my Gumroad", "look up a sale", "verify a license",
   "list my products", "how much have I made", "who bought", "recent sales",
   "refund a sale", "create a product", "upload a file", "attach a file to a product",
-  "finish a failed upload", "abort an upload", "manage webhooks",
+  "attach a file to a variant", "finish a failed upload", "abort an upload", "manage webhooks",
   "check my earnings", "see my revenue", "who subscribed", "manage my store",
   "discount code", "coupon", "shipping status", "payout schedule", or any
   request to query or act on Gumroad data — even if the user doesn't say
@@ -175,6 +175,8 @@ gumroad products skus <id> --json --no-input
 
 **Update flags:** `--file` (repeatable), `--file-name`, `--file-description`, `--remove-file` (repeatable), `--replace-files`, `--keep-file` (repeatable with `--replace-files`). Updates preserve existing files by default unless `--replace-files` is set.
 
+Use `products update --file` for shared product Content. For products with per-variant Content, use `variants update ... --file` for the specific variant you want to change.
+
 ### files — Upload and recover file attachments
 
 ```sh
@@ -321,10 +323,13 @@ gumroad variants create --product <id> --category <cat_id> --name "Large" --json
 gumroad variants create --product <id> --category <cat_id> --name "XL" --price-difference 5.00 --json --no-input
 gumroad variants view <var_id> --product <id> --category <cat_id> --json --no-input
 gumroad variants update <var_id> --product <id> --category <cat_id> --name "Medium" --json --no-input
+gumroad variants update <var_id> --product <id> --category <cat_id> --file ./license.pdf --json --no-input
 gumroad variants delete <var_id> --product <id> --category <cat_id> --yes --json --no-input
 ```
 
 **All subcommands require** `--product` and `--category`.
+
+**Update flags:** `--name`, `--description`, `--price-difference`, `--max-purchase-count`, `--file` (repeatable), `--file-name`, `--file-description`. Use `variants update --file` only for products with per-variant Content; for shared Content, attach at the product level with `products update --file`.
 
 ### custom-fields — Manage custom fields
 

@@ -39,13 +39,23 @@ type productFileUpdatePlan struct {
 }
 
 type productFileUpdateState struct {
-	Files       []existingProductFile `json:"files"`
-	RichContent []map[string]any      `json:"rich_content"`
+	Files                            []existingProductFile        `json:"files"`
+	RichContent                      []map[string]any             `json:"rich_content"`
+	HasSameRichContentForAllVariants bool                         `json:"has_same_rich_content_for_all_variants"`
+	Variants                         *[]productVariantCategoryRef `json:"variants"`
 }
 
 type productFileSelections struct {
 	Keep   map[string]struct{}
 	Remove map[string]struct{}
+}
+
+type productVariantCategoryRef struct {
+	Options []productVariantOptionRef `json:"options"`
+}
+
+type productVariantOptionRef struct {
+	Name string `json:"name"`
 }
 
 type productFilesResponse struct {
@@ -109,6 +119,25 @@ func fetchExistingProductFileState(client *api.Client, productID string) (produc
 		return productFileUpdateState{}, err
 	}
 	return resp.Product, nil
+}
+
+func productUsesPerVariantRichContent(state productFileUpdateState) bool {
+	if state.HasSameRichContentForAllVariants {
+		return false
+	}
+	if state.Variants == nil {
+		return true
+	}
+	return productHasVariants(*state.Variants)
+}
+
+func productHasVariants(variants []productVariantCategoryRef) bool {
+	for _, category := range variants {
+		if len(category.Options) > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 func planProductFileUpdate(

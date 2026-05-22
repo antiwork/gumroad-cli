@@ -11,12 +11,16 @@ import (
 func newUpdateCmd() *cobra.Command {
 	var product, category, name, description, priceDifference string
 	var maxPurchaseCount int
+	var files []string
+	var fileNames []string
+	var fileDescriptions []string
 
 	cmd := &cobra.Command{
 		Use:   "update <variant_id>",
 		Short: "Update a variant",
 		Args:  cmdutil.ExactArgs(1),
 		RunE: func(c *cobra.Command, args []string) error {
+			opts := cmdutil.OptionsFrom(c)
 			if err := cmdutil.RequireNonNegativeIntFlag(c, "max-purchase-count", maxPurchaseCount); err != nil {
 				return err
 			}
@@ -26,11 +30,19 @@ func newUpdateCmd() *cobra.Command {
 			if category == "" {
 				return cmdutil.MissingFlagError(c, "--category")
 			}
-			if err := cmdutil.RequireAnyFlagChanged(c, "name", "description", "price-difference", "max-purchase-count"); err != nil {
+			if err := cmdutil.RequireAnyFlagChanged(c,
+				"name", "description", "price-difference", "max-purchase-count",
+				"file", "file-name", "file-description",
+			); err != nil {
 				return err
 			}
 
 			flags := c.Flags()
+			requestedUploads, err := collectRequestedVariantUploads(c, files, fileNames, fileDescriptions)
+			if err != nil {
+				return err
+			}
+
 			params := url.Values{}
 			if flags.Changed("name") {
 				if name == "" {
@@ -53,7 +65,17 @@ func newUpdateCmd() *cobra.Command {
 			}
 
 			path := cmdutil.JoinPath("products", product, "variant_categories", category, "variants", args[0])
-			return cmdutil.RunRequestWithSuccess(cmdutil.OptionsFrom(c), "Updating variant...", "PUT", path, params, args[0], "Variant "+args[0]+" updated.")
+			fileFlagsChanged := flags.Changed("file") ||
+				flags.Changed("file-name") ||
+				flags.Changed("file-description")
+			if !fileFlagsChanged {
+				return cmdutil.RunRequestWithSuccess(opts, "Updating variant...", "PUT", path, params, args[0], "Variant "+args[0]+" updated.")
+			}
+			if len(requestedUploads) == 0 {
+				return cmdutil.UsageErrorf(c, "--file-name and --file-description require at least one --file")
+			}
+
+			return runVariantUpdateWithFiles(opts, product, category, args[0], path, params, requestedUploads)
 		},
 	}
 
@@ -63,6 +85,9 @@ func newUpdateCmd() *cobra.Command {
 	cmd.Flags().StringVar(&description, "description", "", "New description")
 	cmd.Flags().StringVar(&priceDifference, "price-difference", "", "New price difference (e.g. 5.00, -1.50)")
 	cmd.Flags().IntVar(&maxPurchaseCount, "max-purchase-count", 0, "New max purchase count")
+	cmd.Flags().StringArrayVar(&files, "file", nil, "Attach a new local file to this variant's content (repeatable)")
+	cmd.Flags().StringArrayVar(&fileNames, "file-name", nil, "Display name for the matching --file (repeatable)")
+	cmd.Flags().StringArrayVar(&fileDescriptions, "file-description", nil, "Description for the matching --file (repeatable)")
 
 	return cmd
 }

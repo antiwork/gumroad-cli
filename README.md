@@ -151,11 +151,14 @@ gumroad products create --name "Art Pack" --price 10.00 --file ./pack.zip --file
 # Add a new file to a product while keeping its current attachments
 gumroad products update <product_id> --file ./pack.zip
 
+# Attach a file to one variant's per-variant Content
+gumroad variants update <variant_id> --product <product_id> --category <cat_id> --file ./license.pdf
+
 # Replace the current file set, preserving only the IDs you keep explicitly
 gumroad products update <product_id> --replace-files --keep-file <file_id> --file ./new-pack.zip
 ```
 
-`gumroad files upload` and `gumroad files complete` both print the canonical `file_url`. Product create/update accept repeatable `--file` flags, with matching `--file-name` and `--file-description` values when you need custom attachment metadata. `gumroad products update` also supports `--remove-file`, and `--replace-files` with `--keep-file`, when you need to remove existing attachments.
+`gumroad files upload` and `gumroad files complete` both print the canonical `file_url`. Product create/update and variant update accept repeatable `--file` flags, with matching `--file-name` and `--file-description` values when you need custom attachment metadata. For products that use per-variant Content, use `gumroad variants update ... --file`; product-level `--file` is for shared Content. `gumroad products update` also supports `--remove-file`, and `--replace-files` with `--keep-file`, when you need to remove existing attachments.
 
 ## Output modes
 

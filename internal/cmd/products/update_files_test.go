@@ -19,8 +19,10 @@ import (
 )
 
 type productUpdateFileServers struct {
-	existingFiles       []existingProductFile
-	existingRichContent []map[string]any
+	existingFiles                    []existingProductFile
+	existingRichContent              []map[string]any
+	hasSameRichContentForAllVariants bool
+	variants                         []map[string]any
 
 	s3 *httptest.Server
 
@@ -42,7 +44,8 @@ func newProductUpdateFileServers(t *testing.T) *productUpdateFileServers {
 	t.Helper()
 
 	s := &productUpdateFileServers{
-		presignBody: map[string]string{},
+		hasSameRichContentForAllVariants: true,
+		presignBody:                      map[string]string{},
 	}
 	s.s3 = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		s.s3Calls.Add(1)
@@ -75,9 +78,11 @@ func (s *productUpdateFileServers) dispatch(t *testing.T) http.HandlerFunc {
 				s.getCalls.Add(1)
 				testutil.JSON(t, w, map[string]any{
 					"product": map[string]any{
-						"id":           "prod1",
-						"files":        s.existingFiles,
-						"rich_content": s.existingRichContent,
+						"id":                                     "prod1",
+						"files":                                  s.existingFiles,
+						"rich_content":                           s.existingRichContent,
+						"has_same_rich_content_for_all_variants": s.hasSameRichContentForAllVariants,
+						"variants":                               s.variants,
 					},
 				})
 			case http.MethodPut:
@@ -370,6 +375,70 @@ func TestUpdate_FilePreservesExistingByDefault(t *testing.T) {
 	}
 	if ids := richContentFileEmbedIDsFromBody(t, srv.putJSON); !reflect.DeepEqual(ids, []string{"file_a", "file_b", newFileID}) {
 		t.Fatalf("rich_content fileEmbed ids = %#v, want preserved files and new upload", ids)
+	}
+}
+
+func TestUpdate_FileRejectsPerVariantContentWithoutAttachFlag(t *testing.T) {
+	srv := newProductUpdateFileServers(t)
+	srv.hasSameRichContentForAllVariants = false
+	srv.variants = []map[string]any{{
+		"title":   "Size",
+		"options": []map[string]any{{"name": "Large"}},
+	}}
+	testutil.Setup(t, srv.dispatch(t))
+
+	path := writeProductUploadFixture(t, "license bytes")
+	cmd := testutil.Command(newUpdateCmd(), testutil.Yes(true))
+	cmd.SetArgs([]string{
+		"prod1",
+		"--file", path,
+		"--file-name", "License.pdf",
+	})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected per-variant content error")
+	}
+	if !strings.Contains(err.Error(), "per-variant content") || !strings.Contains(err.Error(), "gumroad variants update") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if srv.s3Calls.Load() != 0 {
+		t.Fatalf("S3 calls = %d, want 0", srv.s3Calls.Load())
+	}
+	if srv.putCalls.Load() != 0 {
+		t.Fatalf("PUT calls = %d, want 0", srv.putCalls.Load())
+	}
+}
+
+func TestProductUsesPerVariantRichContentIsConservativeWhenVariantsOmitted(t *testing.T) {
+	state := productFileUpdateState{
+		HasSameRichContentForAllVariants: false,
+	}
+	if !productUsesPerVariantRichContent(state) {
+		t.Fatal("expected omitted variants to be treated as per-variant content")
+	}
+}
+
+func TestProductUsesPerVariantRichContentAllowsExplicitEmptyVariants(t *testing.T) {
+	variants := []productVariantCategoryRef{}
+	state := productFileUpdateState{
+		HasSameRichContentForAllVariants: false,
+		Variants:                         &variants,
+	}
+	if productUsesPerVariantRichContent(state) {
+		t.Fatal("expected explicit empty variants to allow product-level content")
+	}
+}
+
+func TestProductUsesPerVariantRichContentDetectsVariantOptions(t *testing.T) {
+	variants := []productVariantCategoryRef{{
+		Options: []productVariantOptionRef{{Name: "Large"}},
+	}}
+	state := productFileUpdateState{
+		HasSameRichContentForAllVariants: false,
+		Variants:                         &variants,
+	}
+	if !productUsesPerVariantRichContent(state) {
+		t.Fatal("expected variant options to require variant-level content")
 	}
 }
 

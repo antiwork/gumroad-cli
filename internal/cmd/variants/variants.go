@@ -9,7 +9,8 @@ func NewVariantsCmd() *cobra.Command {
 		Use:   "variants",
 		Short: "Manage variants",
 		Example: `  gumroad variants list --product <id> --category <cat_id>
-  gumroad variants create --product <id> --category <cat_id> --name "Large"`,
+  gumroad variants create --product <id> --category <cat_id> --name "Large"
+  gumroad variants update <variant_id> --product <id> --category <cat_id> --file ./license.pdf`,
 	}
 
 	cmd.AddCommand(newListCmd())
