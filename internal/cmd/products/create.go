@@ -238,9 +238,11 @@ func newCreateCmd() *cobra.Command {
 					return err
 				}
 				if opts.UsesJSONOutput() {
-					data, err = mergeProductMediaResult(data, mediaResults)
-					if err != nil {
-						return err
+					if len(mediaResults) > 0 {
+						data, err = mergeProductMediaResult(data, mediaResults)
+						if err != nil {
+							return err
+						}
 					}
 					return cmdutil.PrintJSONResponse(opts, data)
 				}

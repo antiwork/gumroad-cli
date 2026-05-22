@@ -22,6 +22,7 @@ type createUploadServers struct {
 	mu               sync.Mutex
 	presignFilenames []string
 	productJSON      map[string]any
+	productResponse  json.RawMessage
 	productStatus    int
 	s3Calls          int
 	completeCalls    int
@@ -113,6 +114,17 @@ func (srv *createUploadServers) dispatch(t *testing.T) http.HandlerFunc {
 			srv.mu.Unlock()
 			if status != 0 {
 				http.Error(w, "product failed", status)
+				return
+			}
+
+			srv.mu.Lock()
+			response := append(json.RawMessage(nil), srv.productResponse...)
+			srv.mu.Unlock()
+			if len(response) > 0 {
+				w.Header().Set("Content-Type", "application/json")
+				if _, err := w.Write(response); err != nil {
+					t.Fatalf("write product response: %v", err)
+				}
 				return
 			}
 
@@ -299,6 +311,28 @@ func TestCreate_WithFiles_UploadsAndPostsIndexedFields(t *testing.T) {
 	}
 	if !strings.Contains(out, "Created draft product:") || !strings.Contains(out, "prod-upload") {
 		t.Fatalf("unexpected output: %q", out)
+	}
+}
+
+func TestCreate_WithFilesJSONPreservesRawProductResponseWithoutMedia(t *testing.T) {
+	srv := newCreateUploadServers(t)
+	srv.productResponse = json.RawMessage(`{"product":{"id":"prod-upload","rank":1.0}}`)
+	testutil.Setup(t, srv.dispatch(t))
+
+	firstPath := writeCreateFixture(t, "first")
+	cmd := testutil.Command(newCreateCmd(), testutil.JSONOutput())
+	cmd.SetArgs([]string{
+		"--name", "Art Pack",
+		"--price", "10.00",
+		"--file", firstPath,
+	})
+
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+	if !strings.Contains(out, `"rank": 1.0`) {
+		t.Fatalf("expected raw numeric formatting to be preserved, got:\n%s", out)
+	}
+	if strings.Contains(out, `"media"`) {
+		t.Fatalf("file-only create should not add media output, got:\n%s", out)
 	}
 }
 

@@ -146,7 +146,7 @@ func newUpdateCmd() *cobra.Command {
 					var data []byte
 					completedAction := ""
 					if productFieldsChanged {
-						data, err = client.Put(path, params)
+						data, err = runProductUpdateFormData(opts, client, path, params)
 						if err != nil {
 							return err
 						}

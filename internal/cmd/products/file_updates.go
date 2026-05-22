@@ -503,6 +503,30 @@ func runProductUpdateJSONData(
 	body map[string]any,
 	uploadedURLs []string,
 ) (json.RawMessage, error) {
+	data, err := runProductUpdateData(opts, func() (json.RawMessage, error) {
+		return client.PutJSON(path, body)
+	})
+	if err != nil {
+		return nil, wrapPartialUploadError(err, uploadedURLs)
+	}
+	return data, nil
+}
+
+func runProductUpdateFormData(
+	opts cmdutil.Options,
+	client *api.Client,
+	path string,
+	params url.Values,
+) (json.RawMessage, error) {
+	return runProductUpdateData(opts, func() (json.RawMessage, error) {
+		return client.Put(path, params)
+	})
+}
+
+func runProductUpdateData(
+	opts cmdutil.Options,
+	run func() (json.RawMessage, error),
+) (json.RawMessage, error) {
 	var sp *output.Spinner
 	if cmdutil.ShouldShowSpinner(opts) {
 		sp = output.NewSpinnerTo("Updating product...", opts.Err())
@@ -510,9 +534,9 @@ func runProductUpdateJSONData(
 		defer sp.Stop()
 	}
 
-	data, err := client.PutJSON(path, body)
+	data, err := run()
 	if err != nil {
-		return nil, wrapPartialUploadError(err, uploadedURLs)
+		return nil, err
 	}
 	if sp != nil {
 		sp.Stop()
