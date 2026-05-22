@@ -335,16 +335,6 @@ func renderProductUpdateDryRunWithMedia(
 	}
 }
 
-func renderProductUpdateDryRunJSON(
-	opts cmdutil.Options,
-	path string,
-	plan productFileUpdatePlan,
-	uploads []plannedProductUpload,
-	body map[string]any,
-) error {
-	return renderProductUpdateDryRunJSONWithMedia(opts, path, plan, uploads, body, nil, nil)
-}
-
 func renderProductUpdateMediaOnlyDryRunJSON(opts cmdutil.Options, media []plannedProductMedia, requests []dryRunCreateRequest) error {
 	payload := dryRunUpdateBody{
 		DryRun:    true,

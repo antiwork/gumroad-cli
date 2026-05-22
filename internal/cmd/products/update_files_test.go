@@ -1500,13 +1500,13 @@ func TestProductFileRemovalMessageIncludesNames(t *testing.T) {
 	}
 }
 
-func TestRenderProductUpdateDryRunJSON_Direct(t *testing.T) {
+func TestRenderProductUpdateDryRun_JSONDirect(t *testing.T) {
 	var buf bytes.Buffer
 	opts := testutil.TestOptions(testutil.Stdout(&buf), testutil.JSONOutput())
 	body := map[string]any{"files": []map[string]any{}}
 
-	if err := renderProductUpdateDryRunJSON(opts, "/products/prod1", productFileUpdatePlan{}, nil, body); err != nil {
-		t.Fatalf("renderProductUpdateDryRunJSON: %v", err)
+	if err := renderProductUpdateDryRun(opts, "/products/prod1", productFileUpdatePlan{}, nil, body); err != nil {
+		t.Fatalf("renderProductUpdateDryRun: %v", err)
 	}
 	var payload dryRunUpdateBody
 	if err := json.Unmarshal(buf.Bytes(), &payload); err != nil {
