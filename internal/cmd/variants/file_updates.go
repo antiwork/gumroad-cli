@@ -126,7 +126,7 @@ func alignVariantUploadValues(cmd *cobra.Command, flagName string, values []stri
 
 func runVariantUpdateWithFiles(
 	opts cmdutil.Options,
-	productID, categoryID, variantID, variantPath string,
+	productID, variantID, variantPath string,
 	params url.Values,
 	requestedUploads []requestedVariantUpload,
 ) error {

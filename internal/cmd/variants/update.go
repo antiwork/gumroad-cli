@@ -75,7 +75,7 @@ func newUpdateCmd() *cobra.Command {
 				return cmdutil.UsageErrorf(c, "--file-name and --file-description require at least one --file")
 			}
 
-			return runVariantUpdateWithFiles(opts, product, category, args[0], path, params, requestedUploads)
+			return runVariantUpdateWithFiles(opts, product, args[0], path, params, requestedUploads)
 		},
 	}
 
