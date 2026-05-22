@@ -241,9 +241,11 @@ func newUpdateCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			data, err = mergeProductMediaResult(data, mediaResults)
-			if err != nil {
-				return err
+			if len(mediaResults) > 0 {
+				data, err = mergeProductMediaResult(data, mediaResults)
+				if err != nil {
+					return err
+				}
 			}
 			return cmdutil.PrintMutationSuccess(opts, data, args[0], "Product "+args[0]+" updated.")
 		},

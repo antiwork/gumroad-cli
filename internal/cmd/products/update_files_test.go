@@ -35,9 +35,10 @@ type productUpdateFileServers struct {
 	putStatus            int
 	rejectUnknownFileIDs bool
 
-	putForm     url.Values
-	putJSON     map[string]any
-	presignBody map[string]string
+	putForm         url.Values
+	putJSON         map[string]any
+	putJSONResponse json.RawMessage
+	presignBody     map[string]string
 }
 
 func newProductUpdateFileServers(t *testing.T) *productUpdateFileServers {
@@ -103,6 +104,10 @@ func (s *productUpdateFileServers) dispatch(t *testing.T) http.HandlerFunc {
 				}
 				if s.putStatus != 0 {
 					http.Error(w, "update failed", s.putStatus)
+					return
+				}
+				if len(s.putJSONResponse) > 0 {
+					testutil.RawJSON(t, w, string(s.putJSONResponse))
 					return
 				}
 				testutil.JSON(t, w, map[string]any{})
@@ -375,6 +380,24 @@ func TestUpdate_FilePreservesExistingByDefault(t *testing.T) {
 	}
 	if ids := richContentFileEmbedIDsFromBody(t, srv.putJSON); !reflect.DeepEqual(ids, []string{"file_a", "file_b", newFileID}) {
 		t.Fatalf("rich_content fileEmbed ids = %#v, want preserved files and new upload", ids)
+	}
+}
+
+func TestUpdate_WithFilesJSONPreservesRawProductResponseWithoutMedia(t *testing.T) {
+	srv := newProductUpdateFileServers(t)
+	srv.putJSONResponse = json.RawMessage(`{"success":true,"product":{"id":"prod1","rank":1.0}}`)
+	testutil.Setup(t, srv.dispatch(t))
+
+	path := writeProductUploadFixture(t, "fresh bytes")
+	cmd := testutil.Command(newUpdateCmd(), testutil.Yes(true), testutil.JSONOutput())
+	cmd.SetArgs([]string{"prod1", "--file", path})
+
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+	if !strings.Contains(out, `"rank": 1.0`) {
+		t.Fatalf("expected raw numeric formatting to be preserved, got:\n%s", out)
+	}
+	if strings.Contains(out, `"media"`) {
+		t.Fatalf("file-only update should not add media output, got:\n%s", out)
 	}
 }
 
