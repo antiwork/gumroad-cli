@@ -23,12 +23,13 @@ import (
 type productMediaServers struct {
 	direct *httptest.Server
 
-	mu               sync.Mutex
-	apiSequence      []string
-	directUploadForm []map[string]string
-	directPUTHeaders []http.Header
-	attachSignedIDs  []string
-	productPUTCalls  int
+	mu                sync.Mutex
+	apiSequence       []string
+	productCreateForm []map[string]string
+	directUploadForm  []map[string]string
+	directPUTHeaders  []http.Header
+	attachSignedIDs   []string
+	productPUTCalls   int
 }
 
 func newProductMediaServers(t *testing.T) *productMediaServers {
@@ -64,6 +65,17 @@ func (s *productMediaServers) dispatch(t *testing.T) http.HandlerFunc {
 			if r.Method != http.MethodPost {
 				t.Errorf("/products got %s, want POST", r.Method)
 			}
+			if err := r.ParseForm(); err != nil {
+				t.Fatalf("ParseForm: %v", err)
+			}
+			s.mu.Lock()
+			s.productCreateForm = append(s.productCreateForm, map[string]string{
+				"content_type": r.Header.Get("Content-Type"),
+				"name":         r.PostForm.Get("name"),
+				"price":        r.PostForm.Get("price"),
+				"native_type":  r.PostForm.Get("native_type"),
+			})
+			s.mu.Unlock()
 			testutil.JSON(t, w, map[string]any{
 				"product": map[string]any{
 					"id":              "prod-media",
@@ -144,14 +156,15 @@ func (s *productMediaServers) dispatch(t *testing.T) http.HandlerFunc {
 	}
 }
 
-func (s *productMediaServers) snapshot() ([]string, []map[string]string, []http.Header, []string, int) {
+func (s *productMediaServers) snapshot() ([]string, []map[string]string, []http.Header, []string, int, []map[string]string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return append([]string(nil), s.apiSequence...),
 		append([]map[string]string(nil), s.directUploadForm...),
 		append([]http.Header(nil), s.directPUTHeaders...),
 		append([]string(nil), s.attachSignedIDs...),
-		s.productPUTCalls
+		s.productPUTCalls,
+		append([]map[string]string(nil), s.productCreateForm...)
 }
 
 func writeMediaFixture(t *testing.T, name, contents string) string {
@@ -184,7 +197,7 @@ func TestCreate_WithCoverAndThumbnail_CreatesThenUploadsAndAttachesMedia(t *test
 	})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
-	sequence, forms, puts, signedIDs, _ := srv.snapshot()
+	sequence, forms, puts, signedIDs, _, productCreateForms := srv.snapshot()
 	wantSequence := []string{
 		"POST /products",
 		"POST /direct_uploads",
@@ -210,6 +223,15 @@ func TestCreate_WithCoverAndThumbnail_CreatesThenUploadsAndAttachesMedia(t *test
 	if !reflect.DeepEqual(signedIDs, []string{"signed-1", "signed-2"}) {
 		t.Fatalf("attached signed IDs = %#v", signedIDs)
 	}
+	if len(productCreateForms) != 1 {
+		t.Fatalf("product create forms = %d, want 1", len(productCreateForms))
+	}
+	if !strings.HasPrefix(productCreateForms[0]["content_type"], "application/x-www-form-urlencoded") {
+		t.Fatalf("product create content type = %q, want form encoded", productCreateForms[0]["content_type"])
+	}
+	if productCreateForms[0]["name"] != "Art Pack" || productCreateForms[0]["price"] != "1000" || productCreateForms[0]["native_type"] != "digital" {
+		t.Fatalf("product create form = %#v", productCreateForms[0])
+	}
 
 	var payload struct {
 		Product struct {
@@ -234,7 +256,7 @@ func TestUpdate_WithPreviewImageOnly_DoesNotPutProduct(t *testing.T) {
 	cmd.SetArgs([]string{"prod1", "--preview-image", previewPath})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
-	sequence, forms, _, signedIDs, productPUTCalls := srv.snapshot()
+	sequence, forms, _, signedIDs, productPUTCalls, _ := srv.snapshot()
 	wantSequence := []string{
 		"POST /direct_uploads",
 		"POST /products/prod1/covers",
@@ -556,7 +578,7 @@ func TestCoversAdd_WithImageUploadsAndAttaches(t *testing.T) {
 	cmd.SetArgs([]string{"prod1", "--image", path})
 	testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
-	sequence, forms, _, signedIDs, _ := srv.snapshot()
+	sequence, forms, _, signedIDs, _, _ := srv.snapshot()
 	if !reflect.DeepEqual(sequence, []string{"POST /direct_uploads", "POST /products/prod1/covers"}) {
 		t.Fatalf("API sequence = %#v", sequence)
 	}
@@ -618,7 +640,7 @@ func TestCoversRemoveAndThumbnailRemove(t *testing.T) {
 	thumbnailCmd.SetArgs([]string{"prod1"})
 	testutil.CaptureStdout(func() { testutil.MustExecute(t, thumbnailCmd) })
 
-	sequence, _, _, _, _ := srv.snapshot()
+	sequence, _, _, _, _, _ := srv.snapshot()
 	if !reflect.DeepEqual(sequence, []string{"DELETE /products/prod1/covers/cover-1", "DELETE /products/prod1/thumbnail"}) {
 		t.Fatalf("API sequence = %#v", sequence)
 	}
@@ -633,7 +655,7 @@ func TestThumbnailSet_WithImageUploadsAndAttaches(t *testing.T) {
 	cmd.SetArgs([]string{"prod1", "--image", path})
 	testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
-	sequence, forms, _, signedIDs, _ := srv.snapshot()
+	sequence, forms, _, signedIDs, _, _ := srv.snapshot()
 	if !reflect.DeepEqual(sequence, []string{"POST /direct_uploads", "POST /products/prod1/thumbnail"}) {
 		t.Fatalf("API sequence = %#v", sequence)
 	}

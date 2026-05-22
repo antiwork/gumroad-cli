@@ -218,16 +218,27 @@ func newCreateCmd() *cobra.Command {
 					}
 					filesPayload = buildCreateUploadFilesPayload(plannedUploads, fileURLs, fileRefs)
 				}
-				body := buildProductJSONBody(params, filesPayload)
-				if len(fileRefs) > 0 {
-					body["rich_content"] = buildFileRichContent(fileRefs)
-				}
-				data, err := cmdutil.RunWithTokenData(opts, token, "Creating product...",
-					func(client *api.Client) (json.RawMessage, error) {
-						return client.PostJSON("/products", body)
-					})
-				if err != nil {
-					return wrapPartialUploadError(err, fileURLs)
+				var data json.RawMessage
+				if len(plannedUploads) > 0 {
+					body := buildProductJSONBody(params, filesPayload)
+					if len(fileRefs) > 0 {
+						body["rich_content"] = buildFileRichContent(fileRefs)
+					}
+					data, err = cmdutil.RunWithTokenData(opts, token, "Creating product...",
+						func(client *api.Client) (json.RawMessage, error) {
+							return client.PostJSON("/products", body)
+						})
+					if err != nil {
+						return wrapPartialUploadError(err, fileURLs)
+					}
+				} else {
+					data, err = cmdutil.RunWithTokenData(opts, token, "Creating product...",
+						func(client *api.Client) (json.RawMessage, error) {
+							return client.Post("/products", params)
+						})
+					if err != nil {
+						return err
+					}
 				}
 				resp, err := cmdutil.DecodeJSON[createProductResponse](data)
 				if err != nil {

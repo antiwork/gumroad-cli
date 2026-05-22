@@ -2,10 +2,7 @@ package products
 
 import (
 	"encoding/json"
-	"net/http"
 )
-
-var directUploadHTTPClientForTesting *http.Client
 
 type productMediaKind string
 

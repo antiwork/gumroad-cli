@@ -62,11 +62,7 @@ func putDirectUpload(opts cmdutil.Options, media plannedProductMedia, uploadURL 
 		req.Header.Set("Content-MD5", media.Checksum)
 	}
 
-	httpClient := directUploadHTTPClientForTesting
-	if httpClient == nil {
-		httpClient = http.DefaultClient
-	}
-	resp, err := httpClient.Do(req)
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("direct upload failed: %w", err)
 	}
