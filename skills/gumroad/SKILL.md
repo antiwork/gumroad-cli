@@ -57,8 +57,10 @@ Responses are wrapped in `{"success": true, ...}` with resource-specific keys:
 - `variant-categories list` → `.variant_categories[]`
 - `variants list` → `.variants[]`
 - `files upload` / `files complete` → `.file_url`
-- `products create/update` with media flags → `.product`/mutation result plus `.media[]`
-- `products covers add`, `products thumbnail set` → `.result.media[].response`
+- `products create` with media flags → `.product` plus `.media[]`
+- `products update` with media flags → mutation envelope with `.result.media[]`
+- `products covers add --image`, `products thumbnail set` → `.result.media[].response`
+- `products covers add --url` → `.result.covers[]`, `.result.main_cover_id`
 - `webhooks list` → `.resource_subscriptions[]`
 - `admin users info` → `.user`
 - `admin users affiliates` → `.affiliates[]`
