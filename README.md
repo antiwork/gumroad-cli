@@ -66,6 +66,9 @@ gumroad sales list --all --json --jq '.sales[] | {email, formatted_total_price}'
 # Export a small filtered sales CSV
 gumroad sales list --after 2024-01-01 --before 2024-01-31 --csv > sales.csv
 
+# Show sales totals
+gumroad sales summary --group-by month --from 2026-01-01 --to 2026-05-21
+
 # Request a larger sales CSV by email
 gumroad sales export --from 2026-01-01 --to 2026-05-21
 gumroad sales export --after 2026-01-01 --before 2026-05-21
@@ -167,6 +170,8 @@ gumroad products update <product_id> --replace-files --keep-file <file_id> --fil
 Paginated commands (`sales list`, `payouts list`, `subscribers list`) accept `--all` to fetch every page. Use `--page-delay 200ms` to pace large fetches.
 
 `gumroad sales list --csv` writes `id,email,product_name,total_cents,currency,refunded,refunded_cents,created_at` for small filtered exports.
+
+`gumroad sales summary` shows gross, net, unit, and refund totals for the server's default 30-day range, or for a filtered range with optional `--group-by product|day|week|month`.
 
 ## AI agents
 

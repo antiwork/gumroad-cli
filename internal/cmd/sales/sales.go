@@ -9,12 +9,14 @@ func NewSalesCmd() *cobra.Command {
 		Use:   "sales",
 		Short: "Manage sales",
 		Example: `  gumroad sales list
+  gumroad sales summary
   gumroad sales export --from 2026-01-01 --to 2026-05-21
   gumroad sales view <id>
   gumroad sales refund <id>`,
 	}
 
 	cmd.AddCommand(newListCmd())
+	cmd.AddCommand(newSummaryCmd())
 	cmd.AddCommand(newExportCmd())
 	cmd.AddCommand(newViewCmd())
 	cmd.AddCommand(newRefundCmd())

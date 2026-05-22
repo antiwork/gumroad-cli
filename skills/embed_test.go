@@ -46,11 +46,15 @@ func TestSkillMarkdown_ContainsSalesExamples(t *testing.T) {
 	content := string(data)
 	for _, example := range []string{
 		"gumroad sales list --after 2024-01-01 --before 2024-01-31 --csv --no-input",
+		"gumroad sales summary --group-by product --json --no-input",
+		"gumroad sales summary --group-by month --from 2026-01-01 --to 2026-05-21 --json --no-input",
 		"gumroad sales export --from 2026-01-01 --to 2026-05-21 --no-input",
 		"gumroad sales export --after 2026-01-01 --before 2026-05-21 --no-input",
 		"gumroad sales export --product <id> --json --no-input",
+		"`sales summary` → `.gross_cents`, `.net_cents`, `.breakdown[]`",
 		"`sales export` → `.status`, `.recipient_email`",
 		"`--product`, `--order`, `--email`, `--after` (YYYY-MM-DD), `--before` (YYYY-MM-DD), `--all`, `--page-key`, `--csv`",
+		"`--from` (YYYY-MM-DD), `--to` (YYYY-MM-DD), `--group-by` (product|day|week|month)",
 		"`--from`/`--after` (YYYY-MM-DD), `--to`/`--before` (YYYY-MM-DD), `--product`",
 	} {
 		if !strings.Contains(content, example) {

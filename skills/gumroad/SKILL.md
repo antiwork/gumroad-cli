@@ -47,6 +47,7 @@ Responses are wrapped in `{"success": true, ...}` with resource-specific keys:
 - `sales list` → `.sales[]`
 - `sales view` → `.sale`
 - `sales export` → `.status`, `.recipient_email`
+- `sales summary` → `.gross_cents`, `.net_cents`, `.breakdown[]`
 - `payouts list` → `.payouts[]`, `payouts view/upcoming` → `.payout`
 - `subscribers list` → `.subscribers[]`, `subscribers view` → `.subscriber`
 - `licenses verify` → `.purchase`
@@ -204,6 +205,12 @@ gumroad sales list --after 2024-01-01 --before 2024-01-31 --csv --no-input
 # Find a sale by email
 gumroad sales list --json --jq '.sales[] | select(.email == "user@example.com")' --no-input
 
+# Show sales totals
+gumroad sales summary --json --no-input
+gumroad sales summary --from 2026-01-01 --to 2026-05-21 --json --no-input
+gumroad sales summary --group-by product --json --no-input
+gumroad sales summary --group-by month --from 2026-01-01 --to 2026-05-21 --json --no-input
+
 # Request an emailed CSV export for larger ranges
 gumroad sales export --from 2026-01-01 --to 2026-05-21 --no-input
 gumroad sales export --after 2026-01-01 --before 2026-05-21 --no-input
@@ -221,6 +228,7 @@ gumroad sales resend-receipt <id> --json --no-input
 ```
 
 **List filters/output:** `--product`, `--order`, `--email`, `--after` (YYYY-MM-DD), `--before` (YYYY-MM-DD), `--all`, `--page-key`, `--csv`.
+**Summary filters:** `--from` (YYYY-MM-DD), `--to` (YYYY-MM-DD), `--group-by` (product|day|week|month).
 **Export filters:** `--from`/`--after` (YYYY-MM-DD), `--to`/`--before` (YYYY-MM-DD), `--product`.
 
 ### payouts — View payouts

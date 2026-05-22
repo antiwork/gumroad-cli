@@ -403,6 +403,235 @@ func TestExport_DryRunSkipsNetwork(t *testing.T) {
 	}
 }
 
+func TestSummary_RequestWithFilters(t *testing.T) {
+	var gotMethod, gotPath string
+	var gotQuery url.Values
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
+		gotPath = r.URL.Path
+		gotQuery = r.URL.Query()
+		testutil.JSON(t, w, map[string]any{
+			"success":        true,
+			"gross_cents":    10000,
+			"net_cents":      8500,
+			"units":          12,
+			"refunded_cents": 1500,
+			"refunded_units": 3,
+			"currency":       "usd",
+			"from":           "2026-01-01",
+			"to":             "2026-05-21",
+		})
+	})
+
+	cmd := testutil.Command(newSummaryCmd(), testutil.Quiet(false), testutil.NoColor(true))
+	cmd.SetArgs([]string{"--from", "2026-01-01", "--to", "2026-05-21", "--group-by", "month"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	if gotMethod != http.MethodGet || gotPath != "/sales/summary" {
+		t.Fatalf("got %s %s, want GET /sales/summary", gotMethod, gotPath)
+	}
+	for key, want := range map[string]string{
+		"from":     "2026-01-01",
+		"to":       "2026-05-21",
+		"group_by": "month",
+	} {
+		if got := gotQuery.Get(key); got != want {
+			t.Fatalf("got %s=%q, want %q", key, got, want)
+		}
+	}
+	for _, want := range []string{"2026-01-01..2026-05-21", "$100.00", "$85.00", "$15.00", "12", "3"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing %q in %q", want, out)
+		}
+	}
+}
+
+func TestSummary_DefaultsToServerDateRange(t *testing.T) {
+	var gotQuery url.Values
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.Query()
+		testutil.JSON(t, w, map[string]any{
+			"success":        true,
+			"gross_cents":    0,
+			"net_cents":      0,
+			"units":          0,
+			"refunded_cents": 0,
+			"refunded_units": 0,
+			"currency":       "usd",
+			"from":           "2026-04-22",
+			"to":             "2026-05-21",
+		})
+	})
+
+	cmd := testutil.Command(newSummaryCmd())
+	cmd.SetArgs([]string{})
+	testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	if len(gotQuery) != 0 {
+		t.Fatalf("expected no query params, got %#v", gotQuery)
+	}
+}
+
+func TestSummary_GroupByProductRendersBreakdown(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		if got := r.URL.Query().Get("group_by"); got != "product" {
+			t.Fatalf("got group_by=%q, want product", got)
+		}
+		testutil.JSON(t, w, map[string]any{
+			"success":        true,
+			"gross_cents":    6000,
+			"net_cents":      5500,
+			"units":          3,
+			"refunded_cents": 500,
+			"refunded_units": 1,
+			"currency":       "usd",
+			"from":           "2026-01-01",
+			"to":             "2026-01-31",
+			"breakdown": []map[string]any{
+				{"key": "prod_1", "label": "Course", "gross_cents": 5000, "net_cents": 4500, "units": 2, "refunded_cents": 500, "refunded_units": 1},
+				{"key": "prod_2", "label": "Book", "gross_cents": 1000, "net_cents": 1000, "units": 1, "refunded_cents": 0, "refunded_units": 0},
+			},
+		})
+	})
+
+	cmd := testutil.Command(newSummaryCmd(), testutil.Quiet(false), testutil.NoColor(true))
+	cmd.SetArgs([]string{"--group-by", "product"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	for _, want := range []string{"PRODUCT", "prod_1", "Course", "$50.00", "$45.00", "prod_2", "Book"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing %q in %q", want, out)
+		}
+	}
+}
+
+func TestSummary_JSON(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{
+			"success":        true,
+			"gross_cents":    10000,
+			"net_cents":      8500,
+			"units":          12,
+			"refunded_cents": 1500,
+			"refunded_units": 3,
+			"currency":       "usd",
+			"from":           "2026-01-01",
+			"to":             "2026-05-21",
+		})
+	})
+
+	cmd := testutil.Command(newSummaryCmd(), testutil.JSONOutput())
+	cmd.SetArgs([]string{"--from", "2026-01-01"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	var resp struct {
+		Success    bool   `json:"success"`
+		GrossCents int    `json:"gross_cents"`
+		From       string `json:"from"`
+	}
+	if err := json.Unmarshal([]byte(out), &resp); err != nil {
+		t.Fatalf("not valid JSON: %v\n%s", err, out)
+	}
+	if !resp.Success || resp.GrossCents != 10000 || resp.From != "2026-01-01" {
+		t.Fatalf("unexpected JSON response: %+v", resp)
+	}
+}
+
+func TestSummary_Plain(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{
+			"success":        true,
+			"gross_cents":    6000,
+			"net_cents":      5500,
+			"units":          3,
+			"refunded_cents": 500,
+			"refunded_units": 1,
+			"currency":       "usd",
+			"from":           "2026-01-01",
+			"to":             "2026-01-31",
+			"breakdown": []map[string]any{
+				{"key": "2026-01", "label": "2026-01", "gross_cents": 6000, "net_cents": 5500, "units": 3, "refunded_cents": 500, "refunded_units": 1},
+			},
+		})
+	})
+
+	cmd := testutil.Command(newSummaryCmd(), testutil.PlainOutput())
+	cmd.SetArgs([]string{"--group-by", "month"})
+	out := strings.TrimSpace(testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) }))
+
+	want := strings.Join([]string{
+		"summary\t2026-01-01..2026-01-31\t\tusd\t6000\t5500\t3\t500\t1",
+		"month\t2026-01\t2026-01\tusd\t6000\t5500\t3\t500\t1",
+	}, "\n")
+	if out != want {
+		t.Fatalf("got plain output %q, want %q", out, want)
+	}
+}
+
+func TestSummary_InvalidDate(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Error("should not reach API with invalid date")
+	})
+
+	cmd := newSummaryCmd()
+	cmd.SetArgs([]string{"--from", "2026-13-01"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected validation error")
+	}
+	if !strings.Contains(err.Error(), "--from must be a valid date in YYYY-MM-DD format") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestSummary_InvalidGroupBy(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Error("should not reach API with invalid group-by")
+	})
+
+	cmd := newSummaryCmd()
+	cmd.SetArgs([]string{"--group-by", "email"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected validation error")
+	}
+	if !strings.Contains(err.Error(), "--group-by must be one of: product, day, week, month") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestSummary_FromAfterToRejected(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Error("should not reach API with invalid range")
+	})
+
+	cmd := newSummaryCmd()
+	cmd.SetArgs([]string{"--from", "2026-05-22", "--to", "2026-05-21"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected validation error")
+	}
+	if !strings.Contains(err.Error(), "--from must be on or before --to") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestSummary_DateRangeTooWideRejected(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Error("should not reach API with too-wide range")
+	})
+
+	cmd := newSummaryCmd()
+	cmd.SetArgs([]string{"--from", "2025-01-01", "--to", "2026-05-21"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected validation error")
+	}
+	if !strings.Contains(err.Error(), "date range cannot exceed 366 days") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestList_AllFetchesAllPages(t *testing.T) {
 	requests := 0
 	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
@@ -1216,7 +1445,7 @@ func TestNewSalesCmd_Subcommands(t *testing.T) {
 	if cmd.Use != "sales" {
 		t.Fatalf("got use=%q, want %q", cmd.Use, "sales")
 	}
-	for _, name := range []string{"list", "export", "view", "refund", "ship", "resend-receipt"} {
+	for _, name := range []string{"list", "summary", "export", "view", "refund", "ship", "resend-receipt"} {
 		if child, _, err := cmd.Find([]string{name}); err != nil || child == nil || child.Name() != name {
 			t.Fatalf("expected subcommand %q to be registered, got child=%v err=%v", name, child, err)
 		}
