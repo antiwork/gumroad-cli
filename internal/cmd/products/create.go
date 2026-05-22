@@ -53,12 +53,15 @@ type createUploadInput struct {
 }
 
 type dryRunCreateUpload struct {
-	Action    string `json:"action"`
-	Path      string `json:"path"`
-	Filename  string `json:"filename"`
-	Size      int64  `json:"size"`
-	PartSize  int64  `json:"part_size"`
-	PartCount int    `json:"part_count"`
+	Action      string `json:"action"`
+	Kind        string `json:"kind,omitempty"`
+	Path        string `json:"path"`
+	Filename    string `json:"filename"`
+	Size        int64  `json:"size"`
+	PartSize    int64  `json:"part_size"`
+	PartCount   int    `json:"part_count"`
+	ContentType string `json:"content_type,omitempty"`
+	Checksum    string `json:"checksum,omitempty"`
 }
 
 type dryRunCreateRequest struct {
@@ -68,9 +71,10 @@ type dryRunCreateRequest struct {
 }
 
 type dryRunCreatePayload struct {
-	DryRun  bool                 `json:"dry_run"`
-	Uploads []dryRunCreateUpload `json:"uploads"`
-	Request dryRunCreateRequest  `json:"request"`
+	DryRun           bool                  `json:"dry_run"`
+	Uploads          []dryRunCreateUpload  `json:"uploads"`
+	Request          dryRunCreateRequest   `json:"request"`
+	FollowUpRequests []dryRunCreateRequest `json:"follow_up_requests,omitempty"`
 }
 
 func newCreateCmd() *cobra.Command {
@@ -81,12 +85,15 @@ func newCreateCmd() *cobra.Command {
 	var payWhatYouWant bool
 	var tags []string
 	var files, fileNames, fileDescriptions []string
+	var coverImage, thumbnail string
+	var previewImages []string
 
 	cmd := &cobra.Command{
 		Use:   "create",
 		Short: "Create a new product (as draft)",
 		Example: `  gumroad products create --name "Art Pack" --price 10.00
   gumroad products create --name "Art Pack" --file ./pack.zip --file-name "Art Pack.zip"
+  gumroad products create --name "Art Pack" --cover-image ./cover.jpg --thumbnail ./thumb.jpg
   gumroad products create --name "Newsletter" --type membership --subscription-duration monthly
   gumroad products create --name "E-Book" --type ebook --price 5 --tag art --tag digital`,
 		Args: cmdutil.ExactArgs(0),
@@ -116,6 +123,13 @@ func newCreateCmd() *cobra.Command {
 			}
 
 			plannedUploads, err := planCreateUploads(c, files, fileNames, fileDescriptions)
+			if err != nil {
+				return err
+			}
+			if err := validateProductMediaFlagPaths(c, coverImage, previewImages, thumbnail); err != nil {
+				return err
+			}
+			media, err := describeProductMedia(collectProductMedia(coverImage, previewImages, thumbnail))
 			if err != nil {
 				return err
 			}
@@ -169,20 +183,26 @@ func newCreateCmd() *cobra.Command {
 				params.Add("tags[]", t)
 			}
 
-			if len(plannedUploads) > 0 {
+			if len(plannedUploads) > 0 || len(media) > 0 {
 				fileRefs, err := newRichContentFileRefs(len(plannedUploads))
 				if err != nil {
 					return err
 				}
 
+				var filesPayload []map[string]any
 				if opts.DryRun {
-					fileURLs := make([]string, len(plannedUploads))
-					for i := range plannedUploads {
-						fileURLs[i] = dryRunFilePlaceholder(i)
+					if len(plannedUploads) > 0 {
+						fileURLs := make([]string, len(plannedUploads))
+						for i := range plannedUploads {
+							fileURLs[i] = dryRunFilePlaceholder(i)
+						}
+						filesPayload = buildCreateUploadFilesPayload(plannedUploads, fileURLs, fileRefs)
 					}
-					body := buildProductJSONBody(params, buildCreateUploadFilesPayload(plannedUploads, fileURLs, fileRefs))
-					body["rich_content"] = buildFileRichContent(fileRefs)
-					return renderCreateDryRun(opts, plannedUploads, body)
+					body := buildProductJSONBody(params, filesPayload)
+					if len(fileRefs) > 0 {
+						body["rich_content"] = buildFileRichContent(fileRefs)
+					}
+					return renderCreateDryRun(opts, plannedUploads, media, body, productMediaDryRunRequests("created-product-id", media))
 				}
 
 				token, err := config.Token()
@@ -190,12 +210,18 @@ func newCreateCmd() *cobra.Command {
 					return err
 				}
 				client := cmdutil.NewAPIClient(opts, token)
-				fileURLs, err := uploadBatch(opts, client, createBatchUploadInputs(plannedUploads))
-				if err != nil {
-					return err
+				var fileURLs []string
+				if len(plannedUploads) > 0 {
+					fileURLs, err = uploadBatch(opts, client, createBatchUploadInputs(plannedUploads))
+					if err != nil {
+						return err
+					}
+					filesPayload = buildCreateUploadFilesPayload(plannedUploads, fileURLs, fileRefs)
 				}
-				body := buildProductJSONBody(params, buildCreateUploadFilesPayload(plannedUploads, fileURLs, fileRefs))
-				body["rich_content"] = buildFileRichContent(fileRefs)
+				body := buildProductJSONBody(params, filesPayload)
+				if len(fileRefs) > 0 {
+					body["rich_content"] = buildFileRichContent(fileRefs)
+				}
 				data, err := cmdutil.RunWithTokenData(opts, token, "Creating product...",
 					func(client *api.Client) (json.RawMessage, error) {
 						return client.PostJSON("/products", body)
@@ -203,12 +229,20 @@ func newCreateCmd() *cobra.Command {
 				if err != nil {
 					return wrapPartialUploadError(err, fileURLs)
 				}
-				if opts.UsesJSONOutput() {
-					return cmdutil.PrintJSONResponse(opts, data)
-				}
 				resp, err := cmdutil.DecodeJSON[createProductResponse](data)
 				if err != nil {
 					return err
+				}
+				mediaResults, err := uploadAndAttachProductMedia(opts, client, resp.Product.ID, media, "product create")
+				if err != nil {
+					return err
+				}
+				if opts.UsesJSONOutput() {
+					data, err = mergeProductMediaResult(data, mediaResults)
+					if err != nil {
+						return err
+					}
+					return cmdutil.PrintJSONResponse(opts, data)
 				}
 				return renderCreateProductResult(opts, resp)
 			}
@@ -238,6 +272,9 @@ func newCreateCmd() *cobra.Command {
 	cmd.Flags().StringArrayVar(&files, "file", nil, "Attach a local file to the new product (repeatable)")
 	cmd.Flags().StringArrayVar(&fileNames, "file-name", nil, "Display filename for the matching --file upload (repeatable; use an empty string to skip a slot)")
 	cmd.Flags().StringArrayVar(&fileDescriptions, "file-description", nil, "Description for the matching --file upload (repeatable; use an empty string to skip a slot)")
+	cmd.Flags().StringVar(&coverImage, "cover-image", "", "Local JPEG, PNG, or GIF cover image to upload after creating the product")
+	cmd.Flags().StringArrayVar(&previewImages, "preview-image", nil, "Additional local JPEG, PNG, or GIF preview image to upload as a product cover (repeatable)")
+	cmd.Flags().StringVar(&thumbnail, "thumbnail", "", "Local JPEG, PNG, or GIF thumbnail image to upload after creating the product")
 
 	return cmd
 }
@@ -346,11 +383,12 @@ func renderProductUploadDryRunPlain(opts cmdutil.Options, plan upload.Plan) erro
 	}})
 }
 
-func renderCreateDryRun(opts cmdutil.Options, uploads []createUploadInput, body map[string]any) error {
+func renderCreateDryRun(opts cmdutil.Options, uploads []createUploadInput, media []plannedProductMedia, body map[string]any, followUps []dryRunCreateRequest) error {
 	if opts.UsesJSONOutput() {
 		payload := dryRunCreatePayload{
-			DryRun:  true,
-			Uploads: make([]dryRunCreateUpload, 0, len(uploads)),
+			DryRun:           true,
+			Uploads:          make([]dryRunCreateUpload, 0, len(uploads)+len(media)),
+			FollowUpRequests: followUps,
 			Request: dryRunCreateRequest{
 				Method: "POST",
 				Path:   "/products",
@@ -360,6 +398,7 @@ func renderCreateDryRun(opts cmdutil.Options, uploads []createUploadInput, body 
 		for _, planned := range uploads {
 			payload.Uploads = append(payload.Uploads, dryRunProductUpload(planned.Plan))
 		}
+		payload.Uploads = append(payload.Uploads, productMediaDryRunUploads(media)...)
 		data, err := json.Marshal(payload)
 		if err != nil {
 			return fmt.Errorf("could not encode dry-run output: %w", err)
@@ -373,15 +412,28 @@ func renderCreateDryRun(opts cmdutil.Options, uploads []createUploadInput, body 
 				return err
 			}
 		}
+		for _, planned := range media {
+			if err := renderProductMediaDryRunPlain(opts, planned); err != nil {
+				return err
+			}
+		}
 		data, err := json.Marshal(body)
 		if err != nil {
 			return fmt.Errorf("could not encode dry-run output: %w", err)
 		}
-		return output.PrintPlain(opts.Out(), [][]string{{"POST", "/products", string(data)}})
+		if err := output.PrintPlain(opts.Out(), [][]string{{"POST", "/products", string(data)}}); err != nil {
+			return err
+		}
+		return renderDryRunRequestsPlain(opts, followUps)
 	}
 
 	for _, planned := range uploads {
 		if err := renderProductUploadDryRun(opts, planned.Plan); err != nil {
+			return err
+		}
+	}
+	for _, planned := range media {
+		if err := renderProductMediaDryRun(opts, planned); err != nil {
 			return err
 		}
 	}
@@ -393,7 +445,10 @@ func renderCreateDryRun(opts cmdutil.Options, uploads []createUploadInput, body 
 	if err != nil {
 		return fmt.Errorf("could not encode dry-run output: %w", err)
 	}
-	return output.Writeln(opts.Out(), string(data))
+	if err := output.Writeln(opts.Out(), string(data)); err != nil {
+		return err
+	}
+	return renderDryRunRequestsHuman(opts, followUps)
 }
 
 func renderProductUploadDryRun(opts cmdutil.Options, plan upload.Plan) error {

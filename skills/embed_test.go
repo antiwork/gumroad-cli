@@ -81,6 +81,28 @@ func TestSkillMarkdown_ContainsVariantFileAttachExamples(t *testing.T) {
 	}
 }
 
+func TestSkillMarkdown_ContainsProductMediaAndBulkGuidance(t *testing.T) {
+	data, err := SkillMarkdown()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	content := string(data)
+	for _, example := range []string{
+		"gumroad products create --name \"Art Pack\" --price 10.00 --cover-image ./cover.jpg --thumbnail ./thumb.jpg --json --no-input",
+		"gumroad products update <id> --preview-image ./gallery-1.jpg --preview-image ./gallery-2.jpg --json --no-input",
+		"gumroad products covers add <id> --image ./cover.jpg --json --no-input",
+		"gumroad products thumbnail set <id> --image ./thumb.jpg --json --no-input",
+		"WebP is not supported by the API",
+		"Check existing products and permalinks first",
+		"Continue past per-product errors",
+	} {
+		if !strings.Contains(content, example) {
+			t.Errorf("expected skill to mention product media or bulk guidance %q", example)
+		}
+	}
+}
+
 func TestSkillMarkdown_ContainsAdminRolloutCommands(t *testing.T) {
 	data, err := SkillMarkdown()
 	if err != nil {

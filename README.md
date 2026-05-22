@@ -98,7 +98,7 @@ For CI and agents, set `GUMROAD_ACCESS_TOKEN` instead — it takes precedence ov
 gumroad auth          login, status, logout
 gumroad admin         Internal admin API commands
 gumroad user          View your account info
-gumroad products      create, update, list, view, delete, publish, unpublish, skus
+gumroad products      create, update, list, view, delete, publish, unpublish, covers, thumbnail, skus
 gumroad sales         list, export, view, refund, ship, resend-receipt
 gumroad payouts       list, view, upcoming
 gumroad subscribers   list, view
@@ -159,6 +159,26 @@ gumroad products update <product_id> --replace-files --keep-file <file_id> --fil
 ```
 
 `gumroad files upload` and `gumroad files complete` both print the canonical `file_url`. Product create/update and variant update accept repeatable `--file` flags, with matching `--file-name` and `--file-description` values when you need custom attachment metadata. For products that use per-variant Content, use `gumroad variants update ... --file`; product-level `--file` is for shared Content. `gumroad products update` also supports `--remove-file`, and `--replace-files` with `--keep-file`, when you need to remove existing attachments.
+
+## Product media
+
+```sh
+# Create a draft product, then attach cover and thumbnail images
+gumroad products create --name "Art Pack" --price 10.00 --cover-image ./cover.jpg --thumbnail ./thumb.jpg
+
+# Add preview/gallery images to an existing product
+gumroad products update <product_id> --preview-image ./gallery-1.jpg --preview-image ./gallery-2.jpg
+
+# Full-control resource commands
+gumroad products covers add <product_id> --image ./cover.jpg
+gumroad products covers add <product_id> --url https://www.youtube.com/watch?v=qKebcV1jv3A
+gumroad products covers reorder <product_id> <cover_id> <cover_id>
+gumroad products covers remove <product_id> <cover_id> --yes
+gumroad products thumbnail set <product_id> --image ./thumb.jpg
+gumroad products thumbnail remove <product_id> --yes
+```
+
+Product media upload supports JPEG, PNG, and GIF. WebP is rejected client-side because the Gumroad API does not accept it for product media.
 
 ## Output modes
 

@@ -8,6 +8,7 @@ description: >
   Also trigger on "check my Gumroad", "look up a sale", "verify a license",
   "list my products", "how much have I made", "who bought", "recent sales",
   "refund a sale", "create a product", "upload a file", "attach a file to a product",
+  "add a cover image", "set a product thumbnail", "upload product media",
   "attach a file to a variant", "finish a failed upload", "abort an upload", "manage webhooks",
   "check my earnings", "see my revenue", "who subscribed", "manage my store",
   "discount code", "coupon", "shipping status", "payout schedule", or any
@@ -34,6 +35,7 @@ Always follow these rules:
 - Use `--page-delay 200ms` with `--all` to avoid rate limits on large datasets.
 - Prices are in whole currency units (e.g. `--price 10.00` for $10), not cents. The CLI converts internally. Use `--currency eur` to change currency.
 - Products are created as drafts — use `gumroad products publish <id>` to make them live.
+- Product cover and thumbnail uploads support JPEG, PNG, and GIF. WebP is not supported by the API and the CLI rejects it before upload.
 - If a command fails with a seller auth error, tell the user to run `gumroad auth login` interactively — agents cannot do this step.
 - For admin commands in agents/CI, pass `--non-interactive` and set `GUMROAD_ADMIN_TOKEN`; interactive shells can store an admin token with `gumroad auth login`.
 
@@ -55,6 +57,8 @@ Responses are wrapped in `{"success": true, ...}` with resource-specific keys:
 - `variant-categories list` → `.variant_categories[]`
 - `variants list` → `.variants[]`
 - `files upload` / `files complete` → `.file_url`
+- `products create/update` with media flags → `.product`/mutation result plus `.media[]`
+- `products covers add`, `products thumbnail set` → `.result.media[].response`
 - `webhooks list` → `.resource_subscriptions[]`
 - `admin users info` → `.user`
 - `admin users affiliates` → `.affiliates[]`
@@ -75,6 +79,16 @@ Admin pagination models differ by command:
 - Page-paginated: `admin products list` returns `.pagination.next` as an integer page number. Pass it back with `--page`; use `--per-page` for page size.
 - Capped, not continuable: `admin users related` returns at most 50 related users per signal. Always inspect `.truncated`; when any signal is `true`, the result hit the cap and there is no cursor/page to fetch the rest.
 - Capped, not continuable: `admin purchases search` returns `.has_more` when the server capped results. `--limit` is server-capped at 25 and there is no continuation token.
+
+## Bulk operations
+
+When creating or updating many products:
+
+- Check existing products and permalinks first, then skip duplicates on re-runs.
+- Derive custom permalinks deterministically from source data so retries are idempotent.
+- Use `--dry-run --json` to preview generated requests, and ask the user to confirm before mutating more than 5 products.
+- Continue past per-product errors, collect each failure with its product/permalink, and summarize successes and failures at the end.
+- For product media failures after creation, retry with the command printed in the error, such as `gumroad products covers add <id> --image ./cover.jpg`.
 
 ## Commands
 
@@ -150,6 +164,7 @@ gumroad products view <id> --json --no-input
 # Create a product (created as draft)
 gumroad products create --name "Art Pack" --price 10.00 --json --no-input
 gumroad products create --name "Art Pack" --price 10.00 --file ./pack.zip --file-name "Art Pack.zip" --json --no-input
+gumroad products create --name "Art Pack" --price 10.00 --cover-image ./cover.jpg --thumbnail ./thumb.jpg --json --no-input
 gumroad products create --name "Newsletter" --type membership --subscription-duration monthly --json --no-input
 gumroad products create --name "E-Book" --type ebook --price 5 --tag art --tag digital --json --no-input
 
@@ -157,8 +172,19 @@ gumroad products create --name "E-Book" --type ebook --price 5 --tag art --tag d
 gumroad products update <id> --name "New Name" --json --no-input
 gumroad products update <id> --price 15.00 --currency eur --json --no-input
 gumroad products update <id> --file ./pack.zip --json --no-input
+gumroad products update <id> --cover-image ./cover.jpg --json --no-input
+gumroad products update <id> --preview-image ./gallery-1.jpg --preview-image ./gallery-2.jpg --json --no-input
+gumroad products update <id> --thumbnail ./thumb.jpg --json --no-input
 gumroad products update <id> --replace-files --keep-file file_123 --file ./new-pack.zip --yes --json --no-input
 gumroad products update <id> --remove-file file_456 --yes --json --no-input
+
+# Product covers and thumbnail
+gumroad products covers add <id> --image ./cover.jpg --json --no-input
+gumroad products covers add <id> --url https://www.youtube.com/watch?v=qKebcV1jv3A --json --no-input
+gumroad products covers reorder <id> <cover_id> <cover_id> --json --no-input
+gumroad products covers remove <id> <cover_id> --yes --json --no-input
+gumroad products thumbnail set <id> --image ./thumb.jpg --json --no-input
+gumroad products thumbnail remove <id> --yes --json --no-input
 
 # Publish / unpublish
 gumroad products publish <id> --json --no-input
@@ -171,11 +197,13 @@ gumroad products delete <id> --yes --json --no-input
 gumroad products skus <id> --json --no-input
 ```
 
-**Create flags:** `--name` (required), `--price`, `--type` (digital|course|ebook|membership|bundle|coffee|call|commission), `--currency`, `--pay-what-you-want`, `--suggested-price`, `--description`, `--custom-summary`, `--custom-permalink`, `--custom-receipt`, `--max-purchase-count`, `--taxonomy-id`, `--tag` (repeatable), `--file` (repeatable), `--file-name` (repeatable, aligned to `--file`), `--file-description` (repeatable, aligned to `--file`).
+**Create flags:** `--name` (required), `--price`, `--type` (digital|course|ebook|membership|bundle|coffee|call|commission), `--currency`, `--pay-what-you-want`, `--suggested-price`, `--description`, `--custom-summary`, `--custom-permalink`, `--custom-receipt`, `--max-purchase-count`, `--taxonomy-id`, `--tag` (repeatable), `--file` (repeatable), `--file-name` (repeatable, aligned to `--file`), `--file-description` (repeatable, aligned to `--file`), `--cover-image`, `--preview-image` (repeatable), `--thumbnail`.
 
-**Update flags:** `--file` (repeatable), `--file-name`, `--file-description`, `--remove-file` (repeatable), `--replace-files`, `--keep-file` (repeatable with `--replace-files`). Updates preserve existing files by default unless `--replace-files` is set.
+**Update flags:** `--name`, `--price`, `--currency`, `--description`, `--custom-summary`, `--custom-permalink`, `--custom-receipt`, `--max-purchase-count`, `--taxonomy-id`, `--tag` (repeatable), `--file` (repeatable), `--file-name`, `--file-description`, `--remove-file` (repeatable), `--replace-files`, `--keep-file` (repeatable with `--replace-files`), `--cover-image`, `--preview-image` (repeatable), `--thumbnail`. Updates preserve existing files by default unless `--replace-files` is set.
 
 Use `products update --file` for shared product Content. For products with per-variant Content, use `variants update ... --file` for the specific variant you want to change.
+
+Use `--cover-image` for the primary cover, repeat `--preview-image` for additional gallery/preview images, and `--thumbnail` for the card/library thumbnail. These media flags run the required two-step API flow: direct upload first, then attach by signed blob ID.
 
 ### files — Upload and recover file attachments
 

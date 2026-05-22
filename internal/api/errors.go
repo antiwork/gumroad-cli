@@ -58,10 +58,17 @@ func parseAPIError(statusCode int, body []byte) error {
 	var resp struct {
 		Success bool   `json:"success"`
 		Message string `json:"message"`
+		Error   string `json:"error"`
 	}
-	if err := json.Unmarshal(body, &resp); err == nil && resp.Message != "" {
-		msg, hint := rewriteError(statusCode, resp.Message)
-		return &APIError{StatusCode: statusCode, Message: msg, Hint: hint}
+	if err := json.Unmarshal(body, &resp); err == nil {
+		message := resp.Message
+		if message == "" {
+			message = resp.Error
+		}
+		if message != "" {
+			msg, hint := rewriteError(statusCode, message)
+			return &APIError{StatusCode: statusCode, Message: msg, Hint: hint}
+		}
 	}
 
 	msg, hint := rewriteError(statusCode, "")

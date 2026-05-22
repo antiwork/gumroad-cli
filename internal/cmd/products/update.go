@@ -23,6 +23,8 @@ func newUpdateCmd() *cobra.Command {
 	var keepFileIDs []string
 	var removeFileIDs []string
 	var replaceFiles bool
+	var coverImage, thumbnail string
+	var previewImages []string
 
 	cmd := &cobra.Command{
 		Use:   "update <product_id>",
@@ -30,6 +32,8 @@ func newUpdateCmd() *cobra.Command {
 		Example: `  gumroad products update <id> --name "New Name"
   gumroad products update <id> --price 15.00 --currency eur
   gumroad products update <id> --tag art --tag digital
+  gumroad products update <id> --cover-image ./cover.jpg
+  gumroad products update <id> --preview-image ./gallery-1.jpg --preview-image ./gallery-2.jpg
   gumroad products update <id> --file ./pack.zip
   gumroad products update <id> --replace-files --keep-file file_123 --file ./new-pack.zip`,
 		Args: cmdutil.ExactArgs(1),
@@ -44,6 +48,7 @@ func newUpdateCmd() *cobra.Command {
 				"taxonomy-id", "tag",
 				"file", "file-name", "file-description",
 				"keep-file", "remove-file", "replace-files",
+				"cover-image", "preview-image", "thumbnail",
 			); err != nil {
 				return err
 			}
@@ -55,6 +60,13 @@ func newUpdateCmd() *cobra.Command {
 				return err
 			}
 			requestedUploads, err := collectRequestedProductUploads(c, files, fileNames, fileDescriptions)
+			if err != nil {
+				return err
+			}
+			if err := validateProductMediaFlagPaths(c, coverImage, previewImages, thumbnail); err != nil {
+				return err
+			}
+			media, err := describeProductMedia(collectProductMedia(coverImage, previewImages, thumbnail))
 			if err != nil {
 				return err
 			}
@@ -107,6 +119,7 @@ func newUpdateCmd() *cobra.Command {
 			}
 
 			path := cmdutil.JoinPath("products", args[0])
+			productFieldsChanged := productUpdateFieldFlagsChanged(c)
 			fileFlagsChanged := flags.Changed("file") ||
 				flags.Changed("file-name") ||
 				flags.Changed("file-description") ||
@@ -114,6 +127,39 @@ func newUpdateCmd() *cobra.Command {
 				flags.Changed("remove-file") ||
 				flags.Changed("replace-files")
 			if !fileFlagsChanged {
+				if len(media) > 0 {
+					if opts.DryRun {
+						requests := productMediaDryRunRequests(args[0], media)
+						if !productFieldsChanged {
+							if opts.UsesJSONOutput() {
+								return renderProductUpdateMediaOnlyDryRunJSON(opts, media, requests)
+							}
+							return renderStandaloneProductMediaDryRun(opts, media, requests)
+						}
+						return renderProductUpdateDryRunWithMedia(opts, path, productFileUpdatePlan{}, nil, buildProductJSONBody(params, nil), media, requests)
+					}
+					token, err := config.Token()
+					if err != nil {
+						return err
+					}
+					client := cmdutil.NewAPIClient(opts, token)
+					var data []byte
+					if productFieldsChanged {
+						data, err = client.Put(path, params)
+						if err != nil {
+							return err
+						}
+					}
+					mediaResults, err := uploadAndAttachProductMedia(opts, client, args[0], media, "product update")
+					if err != nil {
+						return err
+					}
+					data, err = mergeProductMediaResult(data, mediaResults)
+					if err != nil {
+						return err
+					}
+					return cmdutil.PrintMutationSuccess(opts, data, args[0], "Product "+args[0]+" updated.")
+				}
 				if opts.DryRun && opts.UsesJSONOutput() {
 					return renderProductUpdateDryRun(opts, path, productFileUpdatePlan{}, nil, buildProductJSONBody(params, nil))
 				}
@@ -171,7 +217,7 @@ func newUpdateCmd() *cobra.Command {
 
 			if opts.DryRun {
 				payload := buildProductUpdateJSONBody(params, filePlan, placeholderUploadURLs(len(plannedUploads)), fileRefs, richContent, includeRichContent)
-				return renderProductUpdateDryRun(opts, path, filePlan, plannedUploads, payload)
+				return renderProductUpdateDryRunWithMedia(opts, path, filePlan, plannedUploads, payload, media, productMediaDryRunRequests(args[0], media))
 			}
 
 			uploadedURLs, err := uploadBatch(opts, client, productBatchUploadInputs(plannedUploads))
@@ -179,7 +225,19 @@ func newUpdateCmd() *cobra.Command {
 				return err
 			}
 			payload := buildProductUpdateJSONBody(params, filePlan, uploadedURLs, fileRefs, richContent, includeRichContent)
-			return runProductUpdateJSON(opts, client, path, args[0], payload, uploadedURLs)
+			data, err := runProductUpdateJSONData(opts, client, path, payload, uploadedURLs)
+			if err != nil {
+				return err
+			}
+			mediaResults, err := uploadAndAttachProductMedia(opts, client, args[0], media, "product update")
+			if err != nil {
+				return err
+			}
+			data, err = mergeProductMediaResult(data, mediaResults)
+			if err != nil {
+				return err
+			}
+			return cmdutil.PrintMutationSuccess(opts, data, args[0], "Product "+args[0]+" updated.")
 		},
 	}
 
@@ -201,6 +259,23 @@ func newUpdateCmd() *cobra.Command {
 	cmd.Flags().StringArrayVar(&keepFileIDs, "keep-file", nil, "Existing file ID to preserve when using --replace-files (repeatable)")
 	cmd.Flags().StringArrayVar(&removeFileIDs, "remove-file", nil, "Existing file ID to remove (repeatable)")
 	cmd.Flags().BoolVar(&replaceFiles, "replace-files", false, "Replace the current file set instead of preserving existing files by default")
+	cmd.Flags().StringVar(&coverImage, "cover-image", "", "Local JPEG, PNG, or GIF cover image to upload")
+	cmd.Flags().StringArrayVar(&previewImages, "preview-image", nil, "Additional local JPEG, PNG, or GIF preview image to upload as a product cover (repeatable)")
+	cmd.Flags().StringVar(&thumbnail, "thumbnail", "", "Local JPEG, PNG, or GIF thumbnail image to upload")
 
 	return cmd
+}
+
+func productUpdateFieldFlagsChanged(cmd *cobra.Command) bool {
+	for _, flag := range []string{
+		"name", "price", "currency", "description",
+		"custom-permalink", "custom-summary", "custom-receipt",
+		"pay-what-you-want", "suggested-price", "max-purchase-count",
+		"taxonomy-id", "tag",
+	} {
+		if cmd.Flags().Changed(flag) {
+			return true
+		}
+	}
+	return false
 }

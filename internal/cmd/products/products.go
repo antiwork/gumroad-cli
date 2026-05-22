@@ -15,7 +15,11 @@ func NewProductsCmd() *cobra.Command {
 		Example: `  gumroad products list
   gumroad products create --name "Art Pack" --price 10.00
   gumroad products create --name "Art Pack" --file ./pack.zip --file-name "Art Pack.zip"
+  gumroad products create --name "Art Pack" --cover-image ./cover.jpg --thumbnail ./thumb.jpg
   gumroad products update <product_id> --name "New Name"
+  gumroad products update <product_id> --preview-image ./gallery.jpg
+  gumroad products covers add <product_id> --image ./cover.jpg
+  gumroad products thumbnail set <product_id> --image ./thumb.jpg
   gumroad products update <product_id> --file ./pack.zip
   gumroad products update <product_id> --replace-files --keep-file file_123 --file ./new-pack.zip
   gumroad products view <id>
@@ -32,6 +36,8 @@ func NewProductsCmd() *cobra.Command {
 	cmd.AddCommand(newDeleteCmd())
 	cmd.AddCommand(newPublishCmd())
 	cmd.AddCommand(newUnpublishCmd())
+	cmd.AddCommand(newCoversCmd())
+	cmd.AddCommand(newThumbnailCmd())
 	cmd.AddCommand(skus.NewProductSKUsCmd())
 
 	return cmd
