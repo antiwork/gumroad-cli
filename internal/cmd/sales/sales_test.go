@@ -632,6 +632,22 @@ func TestSummary_DateRangeTooWideRejected(t *testing.T) {
 	}
 }
 
+func TestSummary_FromOnlyDateRangeTooWideRejected(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Error("should not reach API with too-wide range")
+	})
+
+	cmd := newSummaryCmd()
+	cmd.SetArgs([]string{"--from", "2020-01-01"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected validation error")
+	}
+	if !strings.Contains(err.Error(), "date range cannot exceed 366 days") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestList_AllFetchesAllPages(t *testing.T) {
 	requests := 0
 	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {

@@ -98,19 +98,27 @@ func validateSalesSummaryFlags(cmd *cobra.Command, from, to, groupBy string) err
 	if cmd.Flags().Changed("group-by") && !salesSummaryGroups[groupBy] {
 		return cmdutil.UsageErrorf(cmd, "--group-by must be one of: product, day, week, month")
 	}
-	if from == "" || to == "" {
+	if from == "" {
 		return nil
 	}
 
 	fromDate, _ := time.Parse("2006-01-02", from)
-	toDate, _ := time.Parse("2006-01-02", to)
+	toDate := salesSummaryToday()
+	if to != "" {
+		toDate, _ = time.Parse("2006-01-02", to)
+	}
 	if fromDate.After(toDate) {
 		return cmdutil.UsageErrorf(cmd, "--from must be on or before --to")
 	}
-	if int(toDate.Sub(fromDate).Hours()/24) > salesSummaryMaxDateRangeDays {
+	if int(toDate.Sub(fromDate)/(24*time.Hour)) > salesSummaryMaxDateRangeDays {
 		return cmdutil.UsageErrorf(cmd, "date range cannot exceed %d days", salesSummaryMaxDateRangeDays)
 	}
 	return nil
+}
+
+func salesSummaryToday() time.Time {
+	today, _ := time.Parse("2006-01-02", time.Now().Format("2006-01-02"))
+	return today
 }
 
 func renderSalesSummary(opts cmdutil.Options, resp salesSummaryResponse, groupBy string) error {
