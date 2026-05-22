@@ -12,17 +12,26 @@ import (
 )
 
 type productMediaAttachError struct {
-	cause           error
-	productID       string
-	completedAction string
-	retryCommand    string
+	cause                error
+	productID            string
+	completedAction      string
+	partialMediaAttached bool
+	retryCommands        []string
 }
 
 func (e *productMediaAttachError) Error() string {
-	if e.completedAction == "" {
-		return e.cause.Error()
+	retry := strings.Join(e.retryCommands, "; ")
+	if e.completedAction != "" {
+		context := fmt.Sprintf("%s completed for product %s", e.completedAction, e.productID)
+		if e.partialMediaAttached {
+			context += "; some media was already attached"
+		}
+		return fmt.Sprintf("%v (%s; retry remaining media with: %s)", e.cause, context, retry)
 	}
-	return fmt.Sprintf("%v (%s completed for product %s; retry media with: %s)", e.cause, e.completedAction, e.productID, e.retryCommand)
+	if e.partialMediaAttached {
+		return fmt.Sprintf("%v (some media was already attached to product %s; retry remaining media with: %s)", e.cause, e.productID, retry)
+	}
+	return e.cause.Error()
 }
 
 func (e *productMediaAttachError) Unwrap() error {
@@ -37,10 +46,10 @@ func uploadAndAttachProductMedia(
 	completedAction string,
 ) ([]productMediaAttachmentResult, error) {
 	results := make([]productMediaAttachmentResult, 0, len(media))
-	for _, current := range media {
+	for i, current := range media {
 		signedID, err := directUploadProductMedia(opts, client, current)
 		if err != nil {
-			return results, wrapProductMediaAttachError(err, productID, completedAction, current)
+			return results, wrapProductMediaAttachError(err, productID, completedAction, len(results) > 0, media[i:])
 		}
 
 		path := productMediaAttachPath(productID, current.Kind)
@@ -48,7 +57,7 @@ func uploadAndAttachProductMedia(
 		params.Set("signed_blob_id", signedID)
 		data, err := client.Post(path, params)
 		if err != nil {
-			return results, wrapProductMediaAttachError(err, productID, completedAction, current)
+			return results, wrapProductMediaAttachError(err, productID, completedAction, len(results) > 0, media[i:])
 		}
 		results = append(results, productMediaAttachmentResult{
 			Kind:     string(current.Kind),
@@ -60,15 +69,20 @@ func uploadAndAttachProductMedia(
 	return results, nil
 }
 
-func wrapProductMediaAttachError(err error, productID, completedAction string, media plannedProductMedia) error {
-	if completedAction == "" {
+func wrapProductMediaAttachError(err error, productID, completedAction string, partialMediaAttached bool, media []plannedProductMedia) error {
+	if completedAction == "" && !partialMediaAttached {
+		return err
+	}
+	retryCommands := productMediaRetryCommands(productID, media)
+	if len(retryCommands) == 0 {
 		return err
 	}
 	return &productMediaAttachError{
-		cause:           err,
-		productID:       productID,
-		completedAction: completedAction,
-		retryCommand:    productMediaRetryCommand(productID, media),
+		cause:                err,
+		productID:            productID,
+		completedAction:      completedAction,
+		partialMediaAttached: partialMediaAttached,
+		retryCommands:        retryCommands,
 	}
 }
 
@@ -89,6 +103,14 @@ func productMediaRetryCommand(productID string, media plannedProductMedia) strin
 	default:
 		return fmt.Sprintf("gumroad products covers add %s --image %s", productID, quotedPath)
 	}
+}
+
+func productMediaRetryCommands(productID string, media []plannedProductMedia) []string {
+	commands := make([]string, 0, len(media))
+	for _, current := range media {
+		commands = append(commands, productMediaRetryCommand(productID, current))
+	}
+	return commands
 }
 
 func shellQuote(value string) string {

@@ -281,6 +281,49 @@ func TestUpdate_WithPreviewImageOnlyFailureDoesNotClaimProductUpdateCompleted(t 
 	}
 }
 
+func TestCreate_WithMultipleMediaFailureShowsRetryForFailedAndSkippedMedia(t *testing.T) {
+	var sequence []string
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		sequence = append(sequence, r.Method+" "+r.URL.Path)
+		switch r.URL.Path {
+		case "/products":
+			testutil.JSON(t, w, map[string]any{
+				"product": map[string]any{"id": "prod-media"},
+			})
+		case "/direct_uploads":
+			http.Error(w, "direct upload unavailable", http.StatusBadGateway)
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	})
+
+	coverPath := writeMediaFixture(t, "cover.jpg", "cover bytes")
+	thumbPath := writeMediaFixture(t, "thumb.png", "thumb bytes")
+	cmd := testutil.Command(newCreateCmd(), testutil.JSONOutput())
+	cmd.SetArgs([]string{
+		"--name", "Art Pack",
+		"--cover-image", coverPath,
+		"--thumbnail", thumbPath,
+	})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected direct upload error")
+	}
+	for _, want := range []string{
+		"product create completed for product prod-media",
+		"retry remaining media with:",
+		"gumroad products covers add prod-media --image",
+		"gumroad products thumbnail set prod-media --image",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("expected %q in error: %v", want, err)
+		}
+	}
+	if !reflect.DeepEqual(sequence, []string{"POST /products", "POST /direct_uploads"}) {
+		t.Fatalf("API sequence = %#v", sequence)
+	}
+}
+
 func TestUpdate_WithPreviewImageDryRunJSONShowsDirectUploadAndAttachRequests(t *testing.T) {
 	testutil.Setup(t, func(http.ResponseWriter, *http.Request) {
 		t.Fatal("dry run must not reach the API")
@@ -425,11 +468,15 @@ func TestProductMediaPlanningAndRetryHelpers(t *testing.T) {
 	if got := productMediaRetryCommand("prod1", plannedProductMedia{requestedProductMedia: requestedProductMedia{Kind: productMediaCover, Path: "cover.jpg"}}); got != "gumroad products covers add prod1 --image cover.jpg" {
 		t.Fatalf("cover retry command = %q", got)
 	}
-	wrapped := wrapProductMediaAttachError(fmt.Errorf("upload failed"), "prod1", "product create", plannedProductMedia{
-		requestedProductMedia: requestedProductMedia{Kind: productMediaCover, Path: "cover.jpg"},
+	wrapped := wrapProductMediaAttachError(fmt.Errorf("upload failed"), "prod1", "product create", false, []plannedProductMedia{
+		{requestedProductMedia: requestedProductMedia{Kind: productMediaCover, Path: "cover.jpg"}},
+		{requestedProductMedia: requestedProductMedia{Kind: productMediaThumbnail, Path: "thumb.jpg"}},
 	})
 	if !strings.Contains(wrapped.Error(), "product create completed for product prod1") {
 		t.Fatalf("wrapped error did not include retry context: %v", wrapped)
+	}
+	if !strings.Contains(wrapped.Error(), "gumroad products thumbnail set prod1 --image thumb.jpg") {
+		t.Fatalf("wrapped error did not include skipped media retry context: %v", wrapped)
 	}
 }
 
