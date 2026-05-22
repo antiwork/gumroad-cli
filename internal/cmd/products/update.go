@@ -144,13 +144,15 @@ func newUpdateCmd() *cobra.Command {
 					}
 					client := cmdutil.NewAPIClient(opts, token)
 					var data []byte
+					completedAction := ""
 					if productFieldsChanged {
 						data, err = client.Put(path, params)
 						if err != nil {
 							return err
 						}
+						completedAction = "product update"
 					}
-					mediaResults, err := uploadAndAttachProductMedia(opts, client, args[0], media, "product update")
+					mediaResults, err := uploadAndAttachProductMedia(opts, client, args[0], media, completedAction)
 					if err != nil {
 						return err
 					}

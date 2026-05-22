@@ -256,6 +256,31 @@ func TestUpdate_WithPreviewImageOnly_DoesNotPutProduct(t *testing.T) {
 	}
 }
 
+func TestUpdate_WithPreviewImageOnlyFailureDoesNotClaimProductUpdateCompleted(t *testing.T) {
+	var sequence []string
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		sequence = append(sequence, r.Method+" "+r.URL.Path)
+		if r.URL.Path == "/products/prod1" {
+			t.Fatal("media-only update must not PUT product fields")
+		}
+		http.Error(w, "direct upload unavailable", http.StatusBadGateway)
+	})
+
+	previewPath := writeMediaFixture(t, "preview.gif", "gif bytes")
+	cmd := testutil.Command(newUpdateCmd(), testutil.JSONOutput())
+	cmd.SetArgs([]string{"prod1", "--preview-image", previewPath})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected direct upload error")
+	}
+	if strings.Contains(err.Error(), "product update completed") {
+		t.Fatalf("unexpected completed product update context: %v", err)
+	}
+	if !reflect.DeepEqual(sequence, []string{"POST /direct_uploads"}) {
+		t.Fatalf("API sequence = %#v", sequence)
+	}
+}
+
 func TestUpdate_WithPreviewImageDryRunJSONShowsDirectUploadAndAttachRequests(t *testing.T) {
 	testutil.Setup(t, func(http.ResponseWriter, *http.Request) {
 		t.Fatal("dry run must not reach the API")
