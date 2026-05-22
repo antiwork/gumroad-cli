@@ -156,6 +156,12 @@ func newUpdateCmd() *cobra.Command {
 					if err != nil {
 						return err
 					}
+					if !productFieldsChanged {
+						data, err = productMediaOnlyUpdateResult(args[0])
+						if err != nil {
+							return err
+						}
+					}
 					data, err = mergeProductMediaResult(data, mediaResults)
 					if err != nil {
 						return err

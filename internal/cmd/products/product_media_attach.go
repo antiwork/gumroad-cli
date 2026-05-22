@@ -140,6 +140,13 @@ func mergeProductMediaResult(data json.RawMessage, media []productMediaAttachmen
 	return json.Marshal(body)
 }
 
+func productMediaOnlyUpdateResult(productID string) (json.RawMessage, error) {
+	return json.Marshal(map[string]any{
+		"success": true,
+		"product": map[string]string{"id": productID},
+	})
+}
+
 func normalizeJSONForEmbedding(data json.RawMessage) json.RawMessage {
 	if len(bytes.TrimSpace(data)) == 0 {
 		return json.RawMessage("null")

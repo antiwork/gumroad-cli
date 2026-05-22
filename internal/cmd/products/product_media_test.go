@@ -251,8 +251,20 @@ func TestUpdate_WithPreviewImageOnly_DoesNotPutProduct(t *testing.T) {
 	if !reflect.DeepEqual(signedIDs, []string{"signed-1"}) {
 		t.Fatalf("attached signed IDs = %#v", signedIDs)
 	}
-	if !strings.Contains(out, `"media"`) {
-		t.Fatalf("expected media result in JSON output, got %s", out)
+	var payload struct {
+		Result struct {
+			Success bool `json:"success"`
+			Product struct {
+				ID string `json:"id"`
+			} `json:"product"`
+			Media []productMediaAttachmentResult `json:"media"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal([]byte(out), &payload); err != nil {
+		t.Fatalf("parse JSON output: %v\n%s", err, out)
+	}
+	if !payload.Result.Success || payload.Result.Product.ID != "prod1" || len(payload.Result.Media) != 1 {
+		t.Fatalf("unexpected JSON output: %+v", payload)
 	}
 }
 
