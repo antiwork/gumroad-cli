@@ -126,7 +126,6 @@ func newUpdateCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-
 			plannedUploads, err := describeProductUploads(requestedUploads)
 			if err != nil {
 				return err
@@ -150,6 +149,11 @@ func newUpdateCmd() *cobra.Command {
 			fileRefs, err := newRichContentFileRefs(len(plannedUploads))
 			if err != nil {
 				return err
+			}
+			if len(fileRefs) > 0 && productUsesPerVariantRichContent(existingState) {
+				return cmdutil.UsageErrorf(c,
+					"product %s uses per-variant content, so product-level --file cannot update rich_content; use gumroad variants update <variant_id> --product %s --category <cat_id> --file <path>",
+					args[0], args[0])
 			}
 
 			richContent, includeRichContent, err := buildProductUpdateRichContent(c, existingState.RichContent, filePlan, fileRefs)

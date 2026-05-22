@@ -63,6 +63,24 @@ func TestSkillMarkdown_ContainsSalesExamples(t *testing.T) {
 	}
 }
 
+func TestSkillMarkdown_ContainsVariantFileAttachExamples(t *testing.T) {
+	data, err := SkillMarkdown()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	content := string(data)
+	for _, example := range []string{
+		"gumroad variants update <var_id> --product <id> --category <cat_id> --file ./license.pdf --json --no-input",
+		"`products update --file` for shared product Content",
+		"`variants update --file` only for products with per-variant Content",
+	} {
+		if !strings.Contains(content, example) {
+			t.Errorf("expected skill to mention variant file attach example %q", example)
+		}
+	}
+}
+
 func TestSkillMarkdown_ContainsAdminRolloutCommands(t *testing.T) {
 	data, err := SkillMarkdown()
 	if err != nil {
