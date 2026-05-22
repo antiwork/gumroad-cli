@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/antiwork/gumroad-cli/internal/cmdutil"
 	"github.com/antiwork/gumroad-cli/internal/config"
@@ -34,6 +35,9 @@ func newThumbnailSetCmd() *cobra.Command {
 			opts := cmdutil.OptionsFrom(c)
 			if !c.Flags().Changed("image") {
 				return cmdutil.MissingFlagError(c, "--image")
+			}
+			if strings.TrimSpace(imagePath) == "" {
+				return cmdutil.UsageErrorf(c, "--image cannot be empty")
 			}
 			productID := args[0]
 			media, err := describeProductMedia([]requestedProductMedia{{Kind: productMediaThumbnail, Path: imagePath}})

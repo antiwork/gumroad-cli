@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strings"
 
 	"github.com/antiwork/gumroad-cli/internal/cmdutil"
 	"github.com/antiwork/gumroad-cli/internal/config"
@@ -42,6 +43,9 @@ func newCoversAddCmd() *cobra.Command {
 			}
 			if flags.Changed("image") && flags.Changed("url") {
 				return cmdutil.UsageErrorf(c, "--image and --url cannot be used together")
+			}
+			if flags.Changed("image") && strings.TrimSpace(imagePath) == "" {
+				return cmdutil.UsageErrorf(c, "--image cannot be empty")
 			}
 			productID := args[0]
 			path := productMediaAttachPath(productID, productMediaCover)

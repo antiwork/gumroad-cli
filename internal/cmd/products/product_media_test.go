@@ -578,6 +578,22 @@ func TestCoversAdd_WithURLSendsURL(t *testing.T) {
 	}
 }
 
+func TestCoversAdd_WithEmptyImageReturnsUsageError(t *testing.T) {
+	testutil.Setup(t, func(http.ResponseWriter, *http.Request) {
+		t.Fatal("empty image must not reach the API")
+	})
+
+	cmd := testutil.Command(newCoversAddCmd())
+	cmd.SetArgs([]string{"prod1", "--image", ""})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected empty image error")
+	}
+	if !strings.Contains(err.Error(), "--image cannot be empty") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestCoversRemoveAndThumbnailRemove(t *testing.T) {
 	srv := newProductMediaServers(t)
 	testutil.Setup(t, srv.dispatch(t))
@@ -614,6 +630,22 @@ func TestThumbnailSet_WithImageUploadsAndAttaches(t *testing.T) {
 	}
 	if !reflect.DeepEqual(signedIDs, []string{"signed-1"}) {
 		t.Fatalf("attached signed IDs = %#v", signedIDs)
+	}
+}
+
+func TestThumbnailSet_WithEmptyImageReturnsUsageError(t *testing.T) {
+	testutil.Setup(t, func(http.ResponseWriter, *http.Request) {
+		t.Fatal("empty image must not reach the API")
+	})
+
+	cmd := testutil.Command(newThumbnailSetCmd())
+	cmd.SetArgs([]string{"prod1", "--image", ""})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected empty image error")
+	}
+	if !strings.Contains(err.Error(), "--image cannot be empty") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 

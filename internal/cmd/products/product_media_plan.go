@@ -1,7 +1,7 @@
 package products
 
 import (
-	"crypto/md5" // #nosec G501 -- Rails Active Storage direct uploads require a base64 Content-MD5 checksum.
+	"crypto/md5" // #nosec G501
 	"encoding/base64"
 	"fmt"
 	"io"
@@ -163,7 +163,7 @@ func checksumFileMD5(file *os.File) (string, error) {
 	if _, err := file.Seek(0, io.SeekStart); err != nil {
 		return "", err
 	}
-	hash := md5.New() // #nosec G401 -- Rails Active Storage direct uploads require Content-MD5, not a security hash.
+	hash := md5.New() // #nosec G401
 	if _, err := io.Copy(hash, file); err != nil {
 		return "", err
 	}
