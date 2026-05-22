@@ -107,25 +107,6 @@ func fileEmbedIDs(richContent []map[string]any) []string {
 	return richcontent.FileEmbedIDs(richContent)
 }
 
-func collectFileEmbedIDs(node any, ids *[]string) {
-	current, ok := node.(map[string]any)
-	if !ok {
-		return
-	}
-	if current["type"] == "fileEmbed" {
-		if attrs, ok := current["attrs"].(map[string]any); ok {
-			if id, ok := attrs["id"].(string); ok && id != "" {
-				*ids = append(*ids, id)
-			}
-		}
-	}
-	if children, ok := current["content"].([]any); ok {
-		for _, child := range children {
-			collectFileEmbedIDs(child, ids)
-		}
-	}
-}
-
 func replaceFileEmbedID(richContent []map[string]any, oldID, newID string) {
 	richcontent.ReplaceFileEmbedID(richContent, oldID, newID)
 }

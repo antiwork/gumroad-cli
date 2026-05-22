@@ -845,8 +845,7 @@ func TestUpdate_FileAppendsInsideExistingFileEmbedGroup(t *testing.T) {
 	if !ok || group["type"] != "fileEmbedGroup" {
 		t.Fatalf("first rich_content node = %#v, want fileEmbedGroup", content[0])
 	}
-	var groupIDs []string
-	collectFileEmbedIDs(group, &groupIDs)
+	groupIDs := fileEmbedIDs([]map[string]any{{"description": group}})
 	if !reflect.DeepEqual(groupIDs, []string{"file_a", "file_b", newFileID}) {
 		t.Fatalf("fileEmbedGroup ids = %#v, want existing files then new upload", groupIDs)
 	}
