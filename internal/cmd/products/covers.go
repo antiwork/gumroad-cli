@@ -1,8 +1,6 @@
 package products
 
 import (
-	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
@@ -76,9 +74,9 @@ func newCoversAddCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			data, err := json.Marshal(map[string]any{"media": results})
+			data, err := productMediaSingleAttachResult(results)
 			if err != nil {
-				return fmt.Errorf("could not encode response: %w", err)
+				return err
 			}
 			return cmdutil.PrintMutationSuccess(opts, data, productID, "Cover added to product "+productID+".")
 		},

@@ -672,7 +672,7 @@ func TestCoversAdd_WithImageUploadsAndAttaches(t *testing.T) {
 	path := writeMediaFixture(t, "cover.jpg", jpegFixtureContents())
 	cmd := testutil.Command(newCoversAddCmd(), testutil.JSONOutput())
 	cmd.SetArgs([]string{"prod1", "--image", path})
-	testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
 	sequence, forms, _, signedIDs, _, _ := srv.snapshot()
 	if !reflect.DeepEqual(sequence, []string{"POST /direct_uploads", "POST /products/prod1/covers"}) {
@@ -683,6 +683,24 @@ func TestCoversAdd_WithImageUploadsAndAttaches(t *testing.T) {
 	}
 	if !reflect.DeepEqual(signedIDs, []string{"signed-1"}) {
 		t.Fatalf("attached signed IDs = %#v", signedIDs)
+	}
+	var payload struct {
+		Result struct {
+			Covers []struct {
+				ID string `json:"id"`
+			} `json:"covers"`
+			MainCoverID string                         `json:"main_cover_id"`
+			Media       []productMediaAttachmentResult `json:"media"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal([]byte(out), &payload); err != nil {
+		t.Fatalf("parse JSON output: %v\n%s", err, out)
+	}
+	if len(payload.Result.Covers) != 1 || payload.Result.Covers[0].ID != "cover-1" || payload.Result.MainCoverID != "cover-1" {
+		t.Fatalf("expected cover attach response fields, got %+v", payload.Result)
+	}
+	if len(payload.Result.Media) != 1 || payload.Result.Media[0].Kind != "cover" {
+		t.Fatalf("expected media metadata, got %+v", payload.Result.Media)
 	}
 }
 

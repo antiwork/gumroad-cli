@@ -143,6 +143,14 @@ func mergeProductMediaResult(data json.RawMessage, media []productMediaAttachmen
 	return appendJSONField(trimmed, "media", mediaData)
 }
 
+func productMediaSingleAttachResult(media []productMediaAttachmentResult) (json.RawMessage, error) {
+	var data json.RawMessage
+	if len(media) == 1 {
+		data = media[0].Response
+	}
+	return mergeProductMediaResult(data, media)
+}
+
 func appendJSONField(object json.RawMessage, key string, value json.RawMessage) (json.RawMessage, error) {
 	if len(object) == 0 {
 		keyData, err := json.Marshal(key)
