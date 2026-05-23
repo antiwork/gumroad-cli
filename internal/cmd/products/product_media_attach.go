@@ -127,17 +127,56 @@ func shellQuote(value string) string {
 }
 
 func mergeProductMediaResult(data json.RawMessage, media []productMediaAttachmentResult) (json.RawMessage, error) {
-	body := map[string]any{}
 	normalized := normalizeJSONForEmbedding(data)
-	if len(normalized) > 0 && string(normalized) != "null" {
-		if err := json.Unmarshal(normalized, &body); err != nil {
-			return nil, fmt.Errorf("could not parse response: %w", err)
+	if len(media) == 0 {
+		return normalized, nil
+	}
+
+	mediaData, err := json.Marshal(media)
+	if err != nil {
+		return nil, fmt.Errorf("could not encode media response: %w", err)
+	}
+	trimmed := bytes.TrimSpace(normalized)
+	if len(trimmed) == 0 || string(trimmed) == "null" {
+		return appendJSONField(nil, "media", mediaData)
+	}
+	return appendJSONField(trimmed, "media", mediaData)
+}
+
+func appendJSONField(object json.RawMessage, key string, value json.RawMessage) (json.RawMessage, error) {
+	if len(object) == 0 {
+		keyData, err := json.Marshal(key)
+		if err != nil {
+			return nil, fmt.Errorf("could not encode response key: %w", err)
 		}
+		out := make([]byte, 0, len(keyData)+len(value)+4)
+		out = append(out, '{')
+		out = append(out, keyData...)
+		out = append(out, ':')
+		out = append(out, value...)
+		out = append(out, '}')
+		return out, nil
 	}
-	if len(media) > 0 {
-		body["media"] = media
+
+	if !json.Valid(object) || len(object) < 2 || object[0] != '{' || object[len(object)-1] != '}' {
+		return nil, fmt.Errorf("could not parse response: expected JSON object")
 	}
-	return json.Marshal(body)
+	keyData, err := json.Marshal(key)
+	if err != nil {
+		return nil, fmt.Errorf("could not encode response key: %w", err)
+	}
+	inner := bytes.TrimSpace(object[1 : len(object)-1])
+	out := make([]byte, 0, len(object)+len(keyData)+len(value)+2)
+	out = append(out, '{')
+	if len(inner) > 0 {
+		out = append(out, inner...)
+		out = append(out, ',')
+	}
+	out = append(out, keyData...)
+	out = append(out, ':')
+	out = append(out, value...)
+	out = append(out, '}')
+	return out, nil
 }
 
 func productMediaOnlyUpdateResult(productID string) (json.RawMessage, error) {

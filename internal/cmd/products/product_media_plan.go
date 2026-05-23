@@ -5,7 +5,6 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
-	"mime"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -130,10 +129,6 @@ func detectProductImageContentType(path string, file *os.File) (string, error) {
 	detected := normalizeImageContentType(rawDetected)
 	if detected != "" {
 		return detected, nil
-	}
-
-	if byExt := normalizeImageContentType(mime.TypeByExtension(ext)); byExt != "" {
-		return byExt, nil
 	}
 
 	return "", fmt.Errorf("unsupported product media type for %s; use a JPEG, PNG, or GIF image", path)

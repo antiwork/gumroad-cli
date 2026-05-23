@@ -177,6 +177,18 @@ func writeMediaFixture(t *testing.T, name, contents string) string {
 	return path
 }
 
+func jpegFixtureContents() string {
+	return string([]byte{0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 'J', 'F', 'I', 'F', 0x00, 0x01})
+}
+
+func pngFixtureContents() string {
+	return string([]byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n', 0x00, 0x00, 0x00, 0x0d})
+}
+
+func gifFixtureContents() string {
+	return "GIF89a0000000000"
+}
+
 func webPFixtureContents() string {
 	return string([]byte{'R', 'I', 'F', 'F', 0, 0, 0, 0, 'W', 'E', 'B', 'P', 'V', 'P', '8', ' '})
 }
@@ -185,8 +197,8 @@ func TestCreate_WithCoverAndThumbnail_CreatesThenUploadsAndAttachesMedia(t *test
 	srv := newProductMediaServers(t)
 	testutil.Setup(t, srv.dispatch(t))
 
-	coverPath := writeMediaFixture(t, "cover.jpg", "cover bytes")
-	thumbPath := writeMediaFixture(t, "thumb.png", "thumb bytes")
+	coverPath := writeMediaFixture(t, "cover.jpg", jpegFixtureContents())
+	thumbPath := writeMediaFixture(t, "thumb.png", pngFixtureContents())
 
 	cmd := testutil.Command(newCreateCmd(), testutil.JSONOutput())
 	cmd.SetArgs([]string{
@@ -247,11 +259,35 @@ func TestCreate_WithCoverAndThumbnail_CreatesThenUploadsAndAttachesMedia(t *test
 	}
 }
 
+func TestMergeProductMediaResultPreservesRawResponseFormatting(t *testing.T) {
+	data := json.RawMessage(`{"product":{"id":"prod-media","rank":1.0}}`)
+	media := []productMediaAttachmentResult{{
+		Kind:     "cover",
+		Path:     "cover.jpg",
+		Endpoint: "/products/prod-media/covers",
+		Response: json.RawMessage(`{"success":true}`),
+	}}
+
+	merged, err := mergeProductMediaResult(data, media)
+	if err != nil {
+		t.Fatalf("mergeProductMediaResult: %v", err)
+	}
+	if !json.Valid(merged) {
+		t.Fatalf("merged result is not valid JSON: %s", merged)
+	}
+	if !strings.Contains(string(merged), `"rank":1.0`) {
+		t.Fatalf("expected raw numeric formatting to be preserved, got:\n%s", merged)
+	}
+	if !strings.Contains(string(merged), `"media":[`) {
+		t.Fatalf("expected media to be appended, got:\n%s", merged)
+	}
+}
+
 func TestUpdate_WithPreviewImageOnly_DoesNotPutProduct(t *testing.T) {
 	srv := newProductMediaServers(t)
 	testutil.Setup(t, srv.dispatch(t))
 
-	previewPath := writeMediaFixture(t, "preview.gif", "gif bytes")
+	previewPath := writeMediaFixture(t, "preview.gif", gifFixtureContents())
 	cmd := testutil.Command(newUpdateCmd(), testutil.JSONOutput())
 	cmd.SetArgs([]string{"prod1", "--preview-image", previewPath})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
@@ -300,7 +336,7 @@ func TestUpdate_WithPreviewImageOnlyFailureDoesNotClaimProductUpdateCompleted(t 
 		http.Error(w, "direct upload unavailable", http.StatusBadGateway)
 	})
 
-	previewPath := writeMediaFixture(t, "preview.gif", "gif bytes")
+	previewPath := writeMediaFixture(t, "preview.gif", gifFixtureContents())
 	cmd := testutil.Command(newUpdateCmd(), testutil.JSONOutput())
 	cmd.SetArgs([]string{"prod1", "--preview-image", previewPath})
 	err := cmd.Execute()
@@ -331,8 +367,8 @@ func TestCreate_WithMultipleMediaFailureShowsRetryForFailedAndSkippedMedia(t *te
 		}
 	})
 
-	coverPath := writeMediaFixture(t, "cover.jpg", "cover bytes")
-	thumbPath := writeMediaFixture(t, "thumb.png", "thumb bytes")
+	coverPath := writeMediaFixture(t, "cover.jpg", jpegFixtureContents())
+	thumbPath := writeMediaFixture(t, "thumb.png", pngFixtureContents())
 	cmd := testutil.Command(newCreateCmd(), testutil.JSONOutput())
 	cmd.SetArgs([]string{
 		"--name", "Art Pack",
@@ -363,7 +399,7 @@ func TestUpdate_WithPreviewImageDryRunJSONShowsDirectUploadAndAttachRequests(t *
 		t.Fatal("dry run must not reach the API")
 	})
 
-	previewPath := writeMediaFixture(t, "preview.jpg", "preview bytes")
+	previewPath := writeMediaFixture(t, "preview.jpg", jpegFixtureContents())
 	cmd := testutil.Command(newUpdateCmd(), testutil.DryRun(true), testutil.JSONOutput())
 	cmd.SetArgs([]string{"prod1", "--preview-image", previewPath})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
@@ -412,7 +448,7 @@ func TestCreate_WithMediaDryRunPlainAndHumanShowsDirectUploadFlow(t *testing.T) 
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			path := writeMediaFixture(t, "cover.jpg", "cover bytes")
+			path := writeMediaFixture(t, "cover.jpg", jpegFixtureContents())
 			cmd := testutil.Command(newCreateCmd(), tc.mutators...)
 			cmd.SetArgs([]string{"--name", "Art Pack", "--cover-image", path})
 			out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
@@ -455,6 +491,23 @@ func TestProductMediaRejectsRenamedWebPClientSide(t *testing.T) {
 		t.Fatal("expected WebP validation error")
 	}
 	if !strings.Contains(err.Error(), "WebP images are not supported") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestProductMediaRejectsRenamedNonImageClientSide(t *testing.T) {
+	testutil.Setup(t, func(http.ResponseWriter, *http.Request) {
+		t.Fatal("unsupported media must not reach the API")
+	})
+
+	path := writeMediaFixture(t, "cover.jpg", "%PDF-1.7\nnot an image")
+	cmd := testutil.Command(newCreateCmd())
+	cmd.SetArgs([]string{"--name", "Art Pack", "--cover-image", path})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected non-image validation error")
+	}
+	if !strings.Contains(err.Error(), "unsupported product media type") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -515,7 +568,7 @@ func TestProductMediaPlanningAndRetryHelpers(t *testing.T) {
 }
 
 func TestDetectProductImageContentTypeSniffsExtensionlessImages(t *testing.T) {
-	path := writeMediaFixture(t, "cover", "GIF89a0000000000")
+	path := writeMediaFixture(t, "cover", gifFixtureContents())
 	file, err := os.Open(path)
 	if err != nil {
 		t.Fatalf("open fixture: %v", err)
@@ -541,7 +594,7 @@ func TestDirectUploadProductMediaRejectsIncompleteServerResponses(t *testing.T) 
 		})
 	})
 
-	path := writeMediaFixture(t, "cover.jpg", "cover bytes")
+	path := writeMediaFixture(t, "cover.jpg", jpegFixtureContents())
 	media, err := describeSingleProductMedia(requestedProductMedia{Kind: productMediaCover, Path: path})
 	if err != nil {
 		t.Fatalf("describeSingleProductMedia: %v", err)
@@ -558,7 +611,7 @@ func TestPutDirectUploadReportsServerBody(t *testing.T) {
 	}))
 	defer server.Close()
 
-	path := writeMediaFixture(t, "cover.jpg", "cover bytes")
+	path := writeMediaFixture(t, "cover.jpg", jpegFixtureContents())
 	media, err := describeSingleProductMedia(requestedProductMedia{Kind: productMediaCover, Path: path})
 	if err != nil {
 		t.Fatalf("describeSingleProductMedia: %v", err)
@@ -573,7 +626,7 @@ func TestCoversAdd_WithImageUploadsAndAttaches(t *testing.T) {
 	srv := newProductMediaServers(t)
 	testutil.Setup(t, srv.dispatch(t))
 
-	path := writeMediaFixture(t, "cover.jpg", "cover bytes")
+	path := writeMediaFixture(t, "cover.jpg", jpegFixtureContents())
 	cmd := testutil.Command(newCoversAddCmd(), testutil.JSONOutput())
 	cmd.SetArgs([]string{"prod1", "--image", path})
 	testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
@@ -650,7 +703,7 @@ func TestThumbnailSet_WithImageUploadsAndAttaches(t *testing.T) {
 	srv := newProductMediaServers(t)
 	testutil.Setup(t, srv.dispatch(t))
 
-	path := writeMediaFixture(t, "thumb.png", "thumb bytes")
+	path := writeMediaFixture(t, "thumb.png", pngFixtureContents())
 	cmd := testutil.Command(newThumbnailSetCmd(), testutil.JSONOutput())
 	cmd.SetArgs([]string{"prod1", "--image", path})
 	testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
