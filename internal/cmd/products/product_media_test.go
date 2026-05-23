@@ -283,6 +283,49 @@ func TestMergeProductMediaResultPreservesRawResponseFormatting(t *testing.T) {
 	}
 }
 
+func TestMergeProductMediaResultHandlesEmptyAndInvalidResponses(t *testing.T) {
+	media := []productMediaAttachmentResult{{
+		Kind:     "cover",
+		Path:     "cover.jpg",
+		Endpoint: "/products/prod-media/covers",
+		Response: json.RawMessage(`{"success":true}`),
+	}}
+
+	withoutMedia, err := mergeProductMediaResult(json.RawMessage(`{"product":{"rank":1.0}}`), nil)
+	if err != nil {
+		t.Fatalf("merge without media: %v", err)
+	}
+	if string(withoutMedia) != `{"product":{"rank":1.0}}` {
+		t.Fatalf("expected response without media to stay unchanged, got:\n%s", withoutMedia)
+	}
+
+	fromNil, err := mergeProductMediaResult(nil, media)
+	if err != nil {
+		t.Fatalf("merge nil response: %v", err)
+	}
+	if !json.Valid(fromNil) || !strings.Contains(string(fromNil), `"media":[`) {
+		t.Fatalf("expected nil response to become a media object, got:\n%s", fromNil)
+	}
+
+	fromEmptyObject, err := mergeProductMediaResult(json.RawMessage(`{}`), media)
+	if err != nil {
+		t.Fatalf("merge empty object response: %v", err)
+	}
+	if string(fromEmptyObject) == `{}` || !strings.Contains(string(fromEmptyObject), `"media":[`) {
+		t.Fatalf("expected media to be appended to empty object, got:\n%s", fromEmptyObject)
+	}
+
+	_, err = mergeProductMediaResult(json.RawMessage(`[]`), media)
+	if err == nil || !strings.Contains(err.Error(), "expected JSON object") {
+		t.Fatalf("expected non-object response error, got %v", err)
+	}
+
+	_, err = mergeProductMediaResult(json.RawMessage(`{`), media)
+	if err == nil || !strings.Contains(err.Error(), "expected JSON object") {
+		t.Fatalf("expected invalid response error, got %v", err)
+	}
+}
+
 func TestUpdate_WithPreviewImageOnly_DoesNotPutProduct(t *testing.T) {
 	srv := newProductMediaServers(t)
 	testutil.Setup(t, srv.dispatch(t))
