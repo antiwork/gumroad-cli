@@ -134,6 +134,43 @@ func TestRefundBalanceSendsPreviewedCountAndTotal(t *testing.T) {
 	}
 }
 
+func TestRefundBalanceSkipsZeroBalanceWithoutConfirmationOrPost(t *testing.T) {
+	var requests []string
+
+	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
+		requests = append(requests, r.Method+" "+r.URL.Path)
+		if r.Method == http.MethodPost {
+			t.Error("must not POST when preview has no unpaid purchases")
+		}
+		testutil.JSON(t, w, map[string]any{
+			"user_id":            "2245593582708",
+			"count":              0,
+			"total":              0,
+			"total_amount_cents": 0,
+			"currency":           "usd",
+		})
+	})
+
+	cmd := testutil.Command(newRefundBalanceCmd(), testutil.NoInput(true), testutil.Quiet(false))
+	cmd.SetArgs([]string{"--user-id", "2245593582708", "--expected-email", "seller@example.com"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	if strings.Join(requests, ",") != "GET /internal/admin/users/unpaid_balance" {
+		t.Fatalf("unexpected request sequence: %v", requests)
+	}
+	for _, want := range []string{
+		"No unpaid purchases to refund",
+		"User ID: 2245593582708",
+		"Status: skipped",
+		"Purchases: 0",
+		"Amount: 0 USD cents",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("output missing %q: %q", want, out)
+		}
+	}
+}
+
 func TestRefundBalanceDryRunPreviewsOnly(t *testing.T) {
 	var gotPost bool
 

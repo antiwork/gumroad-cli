@@ -21,7 +21,6 @@ type unpaidBalanceResponse struct {
 	Success          bool   `json:"success"`
 	UserID           string `json:"user_id"`
 	Count            int    `json:"count"`
-	Total            int    `json:"total"`
 	TotalAmountCents int    `json:"total_amount_cents"`
 	Currency         string `json:"currency"`
 }
@@ -39,7 +38,6 @@ type refundBalanceResponse struct {
 	Status           string `json:"status"`
 	Message          string `json:"message"`
 	Count            int    `json:"count"`
-	Total            int    `json:"total"`
 	TotalAmountCents int    `json:"total_amount_cents"`
 	Currency         string `json:"currency"`
 }
@@ -79,6 +77,9 @@ sent without queueing refunds.`,
 				if err != nil {
 					return err
 				}
+				if preview.Count == 0 {
+					return renderNoRefundBalance(opts, fallback(preview.UserID, target.UserID), preview)
+				}
 				req := refundBalanceRequest{
 					UserID:                   target.UserID,
 					ExpectedEmail:            target.ExpectedEmail,
@@ -102,6 +103,9 @@ sent without queueing refunds.`,
 			preview, err := fetchRefundBalancePreview(opts, client, target.UserID)
 			if err != nil {
 				return err
+			}
+			if preview.Count == 0 {
+				return renderNoRefundBalance(opts, fallback(preview.UserID, target.UserID), preview)
 			}
 			req := refundBalanceRequest{
 				UserID:                   target.UserID,
@@ -210,6 +214,18 @@ func renderRefundBalancePreview(opts cmdutil.Options, userID string, preview unp
 		return output.Writef(opts.Out(), "Currency: %s\n", preview.Currency)
 	}
 	return nil
+}
+
+func renderNoRefundBalance(opts cmdutil.Options, userID string, preview unpaidBalanceResponse) error {
+	return renderRefundBalanceResult(opts, userID, refundBalanceResponse{
+		Success:          true,
+		UserID:           userID,
+		Status:           "skipped",
+		Message:          "No unpaid purchases to refund",
+		Count:            preview.Count,
+		TotalAmountCents: preview.TotalAmountCents,
+		Currency:         preview.Currency,
+	})
 }
 
 func renderRefundBalanceResult(opts cmdutil.Options, userID string, resp refundBalanceResponse) error {
