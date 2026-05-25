@@ -73,6 +73,7 @@ Responses are wrapped in `{"success": true, ...}` with resource-specific keys:
 - `admin users related` → `.related_users[]`, `.truncated`, `.per_signal_limit`
 - `admin users mark-compliant`, `admin users suspend`, `admin users suspend-for-tos-violation` → `.status`, `.message`, `.user_id`
 - `admin products flag-for-tos-violation` → `.status`, `.message`, `.user_id`, `.product_id`
+- `admin payouts scheduled create` → `.message`, `.user_id`, `.scheduled_payout`
 - `admin purchases view` → `.purchase`
 - `admin purchases search` → `.purchases[]`, `.has_more`, `.limit`
 - `admin purchases lookup` → `.purchases[]`
@@ -148,6 +149,8 @@ gumroad admin users mark-compliant --user-id 2245593582708 --expected-email sell
 gumroad admin users suspend --user-id 2245593582708 --expected-email seller@example.com --note "Chargeback risk confirmed" --yes --json --non-interactive --no-input
 gumroad admin users suspend-for-tos-violation --user-id 2245593582708 --expected-email seller@example.com --note "DMCA takedown notice confirmed" --yes --json --non-interactive --no-input
 gumroad admin products flag-for-tos-violation <product-id> --user-id 2245593582708 --expected-email seller@example.com --yes --json --non-interactive --no-input
+gumroad admin payouts scheduled create --user-id 2245593582708 --expected-email seller@example.com --processor stripe --payout-date 2026-06-15 --note "Appeal window closes before payout." --yes --json --non-interactive --no-input
+gumroad admin payouts scheduled list --status pending --user-id 2245593582708 --json --non-interactive --no-input
 
 # Inspect purchase and product fraud context
 gumroad admin purchases view <purchase-id> --with-clusters --json --non-interactive --no-input

@@ -2,12 +2,238 @@ package payouts
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"strings"
 	"testing"
 
 	"github.com/antiwork/gumroad-cli/internal/testutil"
 )
+
+func TestScheduledCreate_RequiresUserID(t *testing.T) {
+	cmd := newScheduledCreateCmd()
+	cmd.SetArgs([]string{"--processor", "stripe"})
+
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "missing required flag: --user-id") {
+		t.Fatalf("expected missing user ID error, got %v", err)
+	}
+}
+
+func TestScheduledCreate_RequiresProcessor(t *testing.T) {
+	cmd := newScheduledCreateCmd()
+	cmd.SetArgs([]string{"--user-id", "2245593582708"})
+
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "--processor") {
+		t.Fatalf("expected missing processor error, got %v", err)
+	}
+}
+
+func TestScheduledCreate_RejectsInvalidProcessor(t *testing.T) {
+	cmd := newScheduledCreateCmd()
+	cmd.SetArgs([]string{"--user-id", "2245593582708", "--processor", "ach"})
+
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "--processor must be one of: stripe, paypal") {
+		t.Fatalf("expected processor validation error, got %v", err)
+	}
+}
+
+func TestScheduledCreate_RejectsBadPayoutDate(t *testing.T) {
+	cmd := newScheduledCreateCmd()
+	cmd.SetArgs([]string{"--user-id", "2245593582708", "--processor", "stripe", "--payout-date", "06/15/2026"})
+
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "YYYY-MM-DD") {
+		t.Fatalf("expected payout-date validation error, got %v", err)
+	}
+}
+
+func TestScheduledCreate_RequiresConfirmation(t *testing.T) {
+	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Error("must not reach API without confirmation")
+	})
+
+	cmd := testutil.Command(newScheduledCreateCmd(), testutil.NoInput(true))
+	cmd.SetArgs([]string{"--user-id", "2245593582708", "--processor", "stripe"})
+
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "--yes") {
+		t.Fatalf("expected --yes error, got %v", err)
+	}
+}
+
+func TestScheduledCreate_SendsRequestAndShowsResult(t *testing.T) {
+	var gotMethod, gotPath, gotQuery, gotAuth string
+	var body scheduledCreateRequest
+
+	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
+		gotPath = r.URL.Path
+		gotQuery = r.URL.RawQuery
+		gotAuth = r.Header.Get("Authorization")
+		raw, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("read body: %v", err)
+		}
+		if err := json.Unmarshal(raw, &body); err != nil {
+			t.Fatalf("decode body: %v", err)
+		}
+		testutil.JSON(t, w, map[string]any{
+			"success": true,
+			"user_id": "2245593582708",
+			"message": "Scheduled payout created",
+			"scheduled_payout": map[string]any{
+				"external_id":          "pay_abc",
+				"payout_amount_cents":  12345,
+				"status":               "pending",
+				"action":               "payout",
+				"scheduled_at":         "2026-06-15",
+				"processor":            "PAYPAL",
+				"unpaid_balance_cents": 12345,
+			},
+		})
+	})
+
+	cmd := testutil.Command(newScheduledCreateCmd(), testutil.Yes(true), testutil.Quiet(false))
+	cmd.SetArgs([]string{
+		"--user-id", "2245593582708",
+		"--expected-email", "seller@example.com",
+		"--processor", "PayPal",
+		"--payout-date", "2026-06-15",
+		"--note", "Appeal window closes before payout.",
+	})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	if gotMethod != "POST" || gotPath != "/internal/admin/scheduled_payouts" {
+		t.Fatalf("got %s %s, want POST /internal/admin/scheduled_payouts", gotMethod, gotPath)
+	}
+	if gotQuery != "" {
+		t.Fatalf("body fields must not appear in query string, got %q", gotQuery)
+	}
+	if gotAuth != "Bearer admin-token" {
+		t.Fatalf("got auth %q, want Bearer admin-token", gotAuth)
+	}
+	if body.UserID != "2245593582708" || body.ExpectedEmail != "seller@example.com" || body.Processor != "paypal" || body.PayoutDate != "2026-06-15" || body.Note != "Appeal window closes before payout." {
+		t.Fatalf("unexpected request body: %#v", body)
+	}
+	for _, want := range []string{
+		"Scheduled payout created",
+		"User ID: 2245593582708",
+		"Payout ID: pay_abc",
+		"Amount: 12345 cents",
+		"Status: pending",
+		"Scheduled: 2026-06-15",
+		"Processor: PAYPAL",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q: %q", want, out)
+		}
+	}
+}
+
+func TestScheduledCreate_DryRunDoesNotContactEndpoint(t *testing.T) {
+	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Error("dry-run must not POST to scheduled_payouts")
+	})
+
+	cmd := testutil.Command(newScheduledCreateCmd(), testutil.DryRun(true), testutil.NoInput(true))
+	cmd.SetArgs([]string{
+		"--user-id", "2245593582708",
+		"--expected-email", "seller@example.com",
+		"--processor", "stripe",
+		"--payout-date", "2026-06-15",
+		"--note", "Appeal window closes before payout.",
+	})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	for _, want := range []string{
+		"POST",
+		"/internal/admin/scheduled_payouts",
+		"user_id: 2245593582708",
+		"expected_email: seller@example.com",
+		"processor: stripe",
+		"payout_date: 2026-06-15",
+		"note: Appeal window closes before payout.",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("dry-run output missing %q: %q", want, out)
+		}
+	}
+}
+
+func TestScheduledCreate_JSONPreservesResponse(t *testing.T) {
+	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{
+			"success": true,
+			"user_id": "2245593582708",
+			"message": "Scheduled payout created",
+			"scheduled_payout": map[string]any{
+				"external_id":         "pay_abc",
+				"payout_amount_cents": 12345,
+				"status":              "pending",
+				"processor":           "stripe",
+			},
+		})
+	})
+
+	cmd := testutil.Command(newScheduledCreateCmd(), testutil.Yes(true), testutil.JSONOutput())
+	cmd.SetArgs([]string{"--user-id", "2245593582708", "--processor", "stripe"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	var resp scheduledCreateResponse
+	if err := json.Unmarshal([]byte(out), &resp); err != nil {
+		t.Fatalf("not valid JSON: %v\n%s", err, out)
+	}
+	if !resp.Success || resp.UserID != "2245593582708" || resp.ScheduledPayout.ExternalID != "pay_abc" || resp.ScheduledPayout.Processor != "stripe" {
+		t.Fatalf("unexpected JSON payload: %s", out)
+	}
+}
+
+func TestScheduledCreate_PlainOutput(t *testing.T) {
+	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{
+			"success": true,
+			"user_id": "2245593582708",
+			"message": "Scheduled payout created",
+			"scheduled_payout": map[string]any{
+				"external_id":         "pay_abc",
+				"payout_amount_cents": 12345,
+				"status":              "pending",
+				"scheduled_at":        "2026-06-15",
+				"processor":           "stripe",
+			},
+		})
+	})
+
+	cmd := testutil.Command(newScheduledCreateCmd(), testutil.Yes(true), testutil.PlainOutput())
+	cmd.SetArgs([]string{"--user-id", "2245593582708", "--processor", "stripe"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	want := "true\tScheduled payout created\t2245593582708\tpay_abc\t12345 cents\tpending\t2026-06-15\tstripe"
+	if strings.TrimSpace(out) != want {
+		t.Fatalf("unexpected plain output: %q", out)
+	}
+}
+
+func TestScheduledCreate_ServerErrorSurfacesMessage(t *testing.T) {
+	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"success": false,
+			"message": "User already has a scheduled payout in progress",
+		})
+	})
+
+	cmd := testutil.Command(newScheduledCreateCmd(), testutil.Yes(true))
+	cmd.SetArgs([]string{"--user-id", "2245593582708", "--processor", "stripe"})
+
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "User already has a scheduled payout in progress") {
+		t.Fatalf("expected server message in error, got %v", err)
+	}
+}
 
 func TestScheduledList_Default(t *testing.T) {
 	var gotMethod, gotPath, gotQuery string
@@ -416,7 +642,7 @@ func TestScheduledCancel_PlainOutput(t *testing.T) {
 
 func TestScheduledCmdWiresChildren(t *testing.T) {
 	cmd := newScheduledCmd()
-	want := map[string]bool{"list": false, "execute <external_id>": false, "cancel <external_id>": false}
+	want := map[string]bool{"list": false, "create": false, "execute <external_id>": false, "cancel <external_id>": false}
 	for _, sub := range cmd.Commands() {
 		if _, ok := want[sub.Use]; ok {
 			want[sub.Use] = true

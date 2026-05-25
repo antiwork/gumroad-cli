@@ -23,6 +23,7 @@ type scheduledPayout struct {
 	Status                 string                    `json:"status"`
 	Action                 string                    `json:"action"`
 	ScheduledAt            string                    `json:"scheduled_at"`
+	Processor              string                    `json:"processor"`
 	ExecutedAt             string                    `json:"executed_at"`
 	CreatedAt              string                    `json:"created_at"`
 	CreatedBy              scheduledPayoutCreator    `json:"created_by"`

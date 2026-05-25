@@ -12,6 +12,7 @@ func NewPayoutsCmd() *cobra.Command {
   gumroad admin payouts pause --user-id 2245593582708 --expected-email seller@example.com --reason "Verification pending"
   gumroad admin payouts resume --user-id 2245593582708
   gumroad admin payouts issue --user-id 2245593582708 --through 2026-04-30 --processor stripe --yes
+  gumroad admin payouts scheduled create --user-id 2245593582708 --processor stripe --yes
   gumroad admin payouts scheduled list --status flagged`,
 	}
 

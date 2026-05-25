@@ -8,11 +8,13 @@ func newScheduledCmd() *cobra.Command {
 		Short: "Inspect and act on ScheduledPayout records",
 		Example: `  gumroad admin payouts scheduled list
   gumroad admin payouts scheduled list --status flagged
+  gumroad admin payouts scheduled create --user-id 2245593582708 --processor stripe --yes
   gumroad admin payouts scheduled execute pay_abc123 --yes
   gumroad admin payouts scheduled cancel pay_abc123`,
 	}
 
 	cmd.AddCommand(newScheduledListCmd())
+	cmd.AddCommand(newScheduledCreateCmd())
 	cmd.AddCommand(newScheduledExecuteCmd())
 	cmd.AddCommand(newScheduledCancelCmd())
 

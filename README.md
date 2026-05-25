@@ -130,6 +130,8 @@ gumroad admin users mark-compliant --user-id 2245593582708 --expected-email sell
 gumroad admin users suspend --user-id 2245593582708 --expected-email seller@example.com --note "Chargeback risk confirmed"
 gumroad admin users suspend-for-tos-violation --user-id 2245593582708 --expected-email seller@example.com --note "DMCA takedown notice confirmed"
 gumroad admin products flag-for-tos-violation abc123 --user-id 2245593582708 --expected-email seller@example.com
+gumroad admin payouts scheduled create --user-id 2245593582708 --expected-email seller@example.com --processor stripe --payout-date 2026-06-15
+gumroad admin payouts scheduled list --status pending --user-id 2245593582708
 gumroad admin purchases lookup --stripe-fingerprint fp_abc --limit 25
 gumroad admin users watch --user-id 2245593582708 --expected-email seller@example.com --revenue-threshold 200 --note "Review next buyers"
 gumroad admin users update-watch --user-id 2245593582708 --expected-email seller@example.com --revenue-threshold 500
