@@ -2,45 +2,26 @@
 
 CLI for the [Gumroad API](https://app.gumroad.com/api). Designed for humans and AI agents alike.
 
-
 ## Install
 
 ```sh
 brew install antiwork/cli/gumroad
 ```
 
-If you previously installed the cask, switch once with:
-
-```sh
-brew uninstall --cask antiwork/cli/gumroad
-brew install antiwork/cli/gumroad
-```
-
 <details>
 <summary>Other installation methods</summary>
 
-**Shell script** (macOS, Linux, Windows via Git Bash):
-
 ```sh
+# Shell script
 curl -fsSL https://gumroad.com/install-cli.sh | bash
-```
 
-**Go**:
-
-```sh
+# Go
 go install github.com/antiwork/gumroad-cli/cmd/gumroad@latest
-```
 
-**From source** with man pages and completions:
-
-```sh
+# From source
 make install
-
-# Or install into a custom prefix
 make install PREFIX="$HOME/.local"
 ```
-
-Under the selected `PREFIX`, `make install` places the binary in `bin/`, man pages in `share/man/man1/`, and shell completions under `share/`.
 
 </details>
 
@@ -63,15 +44,8 @@ gumroad products view abc123
 # Fetch all sales, filter with jq
 gumroad sales list --all --json --jq '.sales[] | {email, formatted_total_price}'
 
-# Export a small filtered sales CSV
-gumroad sales list --after 2024-01-01 --before 2024-01-31 --csv > sales.csv
-
 # Show sales totals
 gumroad sales summary --group-by month --from 2026-01-01 --to 2026-05-21
-
-# Request a larger sales CSV by email
-gumroad sales export --from 2026-01-01 --to 2026-05-21
-gumroad sales export --after 2026-01-01 --before 2026-05-21
 
 # Preview a refund without executing it
 gumroad sales refund abc123 --amount 5.00 --dry-run
@@ -79,7 +53,7 @@ gumroad sales refund abc123 --amount 5.00 --dry-run
 
 ## Authentication
 
-`gumroad auth login` opens your browser for OAuth authorization. After you approve, the CLI stores the seller token locally. Team members can also check the admin box in the same browser approval; that stores a separate admin token in `admin.token`.
+`gumroad auth login` opens your browser for OAuth authorization. After you approve, the CLI stores the seller token locally.
 
 ```sh
 gumroad auth login          # Browser-based OAuth (default)
@@ -88,59 +62,13 @@ gumroad auth status         # Check seller auth and stored admin auth
 gumroad auth logout         # Revoke/delete stored tokens
 ```
 
-When a browser isn't available (SSH, containers), the CLI falls back to a manual flow: it prints the authorize URL and you paste the redirect URL back.
-
-For CI and agents, set `GUMROAD_ACCESS_TOKEN` instead — it takes precedence over stored seller config and needs no interactive login. Piped stdin also works: `echo $TOKEN | gumroad auth login`.
+When a browser isn't available, the CLI prints the authorize URL and you paste the redirect URL back. For CI and agents, set `GUMROAD_ACCESS_TOKEN`; it takes precedence over stored seller config and needs no interactive login.
 
 ## Commands
 
-```
-gumroad auth          login, status, logout
-gumroad admin         Internal admin API commands
-gumroad user          View your account info
-gumroad products      create, update, list, view, delete, publish, unpublish, covers, thumbnail, skus
-gumroad sales         list, export, view, refund, ship, resend-receipt
-gumroad payouts       list, view, upcoming
-gumroad subscribers   list, view
-gumroad licenses      verify, enable, disable, decrement, rotate
-gumroad offer-codes   list, view, create, update, delete
-gumroad variant-categories list, view, create, update, delete
-gumroad variants      list, view, create, update, delete
-gumroad custom-fields list, create, update, delete
-gumroad files         upload, complete, abort
-gumroad webhooks      list, create, delete
-gumroad skill         Install or refresh the Claude Code skill
-gumroad completion    bash, zsh, fish, powershell
-```
+Run `gumroad --help` and `gumroad <command> --help` for subcommands, usage details, and examples.
 
-Run `gumroad <command> --help` for usage details and examples.
-
-Admin commands use a separate internal token. Run `gumroad auth login` and check the admin box to store one locally. Mutating admin commands use that stored token in normal interactive runs so the acting admin can be shown before the request; CI and agents can pass `--non-interactive` with `GUMROAD_ADMIN_TOKEN`. For local testing, set `GUMROAD_ADMIN_API_BASE_URL`.
-
-`admin users refund-balance --dry-run` still calls the unpaid-balance preview endpoint, but skips the guarded refund POST.
-
-```sh
-gumroad admin users info --email seller@example.com --json
-gumroad admin users affiliates --user-id 2245593582708 --direction granted --limit 50
-gumroad admin users comments list --user-id 2245593582708 --type note --limit 50
-gumroad admin users comments add --user-id 2245593582708 --content "VAT exempt confirmed"
-gumroad admin users compliance --user-id 2245593582708
-gumroad admin users radar --user-id 2245593582708 --limit 50
-gumroad admin users purchases --user-id 2245593582708 --status successful --limit 50
-gumroad admin users related --email seller@example.com --signal ip --signal payment_address
-gumroad admin users mark-compliant --user-id 2245593582708 --expected-email seller@example.com --note "Cleared after review"
-gumroad admin users suspend --user-id 2245593582708 --expected-email seller@example.com --note "Chargeback risk confirmed"
-gumroad admin users suspend-for-tos-violation --user-id 2245593582708 --expected-email seller@example.com --note "DMCA takedown notice confirmed"
-gumroad admin products flag-for-tos-violation abc123 --user-id 2245593582708 --expected-email seller@example.com
-gumroad admin payouts scheduled create --user-id 2245593582708 --expected-email seller@example.com --processor stripe --payout-date 2026-06-15
-gumroad admin payouts scheduled list --status pending --user-id 2245593582708
-gumroad admin users refund-balance --user-id 2245593582708 --expected-email seller@example.com --dry-run
-gumroad admin users refund-balance --user-id 2245593582708 --expected-email seller@example.com
-gumroad admin purchases lookup --stripe-fingerprint fp_abc --limit 25
-gumroad admin users watch --user-id 2245593582708 --expected-email seller@example.com --revenue-threshold 200 --note "Review next buyers"
-gumroad admin users update-watch --user-id 2245593582708 --expected-email seller@example.com --revenue-threshold 500
-gumroad admin users unwatch --user-id 2245593582708 --expected-email seller@example.com
-```
+Admin commands use a separate internal token. Run `gumroad auth login` and check the admin box to store one locally, or use `GUMROAD_ADMIN_TOKEN` with `--non-interactive` in CI and agent runs. For local testing, set `GUMROAD_ADMIN_API_BASE_URL`.
 
 ## File attachments
 
@@ -148,27 +76,14 @@ gumroad admin users unwatch --user-id 2245593582708 --expected-email seller@exam
 # Upload a file and print the canonical Gumroad URL
 gumroad files upload ./pack.zip
 
-# Recover an upload after a state-unknown complete failure
-gumroad files upload ./pack.zip --json > err.json
-jq '.error.recovery' err.json | gumroad files complete --recovery - --yes
-
-# Abort an orphaned multipart upload from saved recovery fields
-gumroad files abort --upload-id up-123 --key attachments/u/k/original/pack.zip
-
 # Create a product with an attached file
 gumroad products create --name "Art Pack" --price 10.00 --file ./pack.zip --file-name "Art Pack.zip"
 
 # Add a new file to a product while keeping its current attachments
 gumroad products update <product_id> --file ./pack.zip
-
-# Attach a file to one variant's per-variant Content
-gumroad variants update <variant_id> --product <product_id> --category <cat_id> --file ./license.pdf
-
-# Replace the current file set, preserving only the IDs you keep explicitly
-gumroad products update <product_id> --replace-files --keep-file <file_id> --file ./new-pack.zip
 ```
 
-`gumroad files upload` and `gumroad files complete` both print the canonical `file_url`. Product create/update and variant update accept repeatable `--file` flags, with matching `--file-name` and `--file-description` values when you need custom attachment metadata. For products that use per-variant Content, use `gumroad variants update ... --file`; product-level `--file` is for shared Content. `gumroad products update` also supports `--remove-file`, and `--replace-files` with `--keep-file`, when you need to remove existing attachments.
+`gumroad files upload` prints the canonical `file_url`; product create/update commands accept repeatable `--file` flags. Run command help for metadata, removal, replacement, and per-variant Content options.
 
 ## Product media
 
@@ -178,17 +93,9 @@ gumroad products create --name "Art Pack" --price 10.00 --cover-image ./cover.jp
 
 # Add preview/gallery images to an existing product
 gumroad products update <product_id> --preview-image ./gallery-1.jpg --preview-image ./gallery-2.jpg
-
-# Full-control resource commands
-gumroad products covers add <product_id> --image ./cover.jpg
-gumroad products covers add <product_id> --url https://www.youtube.com/watch?v=qKebcV1jv3A
-gumroad products covers reorder <product_id> <cover_id> <cover_id>
-gumroad products covers remove <product_id> <cover_id> --yes
-gumroad products thumbnail set <product_id> --image ./thumb.jpg
-gumroad products thumbnail remove <product_id> --yes
 ```
 
-Product media upload supports JPEG, PNG, and GIF. WebP is rejected client-side because the Gumroad API does not accept it for product media.
+Product media upload supports JPEG, PNG, and GIF. Use `gumroad products covers --help` and `gumroad products thumbnail --help` for full-control resource commands.
 
 ## Output modes
 
@@ -201,10 +108,6 @@ Product media upload supports JPEG, PNG, and GIF. WebP is rejected client-side b
 | `--quiet` | Minimal | Scripts |
 
 Paginated commands (`sales list`, `payouts list`, `subscribers list`) accept `--all` to fetch every page. Use `--page-delay 200ms` to pace large fetches.
-
-`gumroad sales list --csv` writes `id,email,product_name,total_cents,currency,refunded,refunded_cents,created_at` for small filtered exports.
-
-`gumroad sales summary` shows gross, net, unit, and refund totals for the server's default 30-day range, or for a filtered range with optional `--group-by product|day|week|month`.
 
 ## AI agents
 
@@ -229,7 +132,6 @@ Live smoke test:
 ```sh
 GUMROAD_ACCESS_TOKEN=your-token make test-smoke
 ```
-
 
 ## License
 
