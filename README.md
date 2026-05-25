@@ -113,7 +113,7 @@ Paginated commands (`sales list`, `payouts list`, `subscribers list`) accept `--
 
 `gumroad` is built to work with AI agents. The `--json`, `--jq`, `--no-input`, and `--non-interactive` flags make it easy to query Gumroad data programmatically, and `GUMROAD_ACCESS_TOKEN` gives agents a no-persistence seller auth path.
 
-A [Claude Code skill](skills/gumroad/SKILL.md) is included. Run `gumroad skill` to install or refresh it.
+An [agent skill](skills/gumroad/SKILL.md) is included. Run `gumroad skill` to install or refresh it.
 
 ## Development
 
