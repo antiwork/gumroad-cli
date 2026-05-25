@@ -1,12 +1,8 @@
 package users
 
 import (
-	"io"
-	"strings"
-
 	usercomments "github.com/antiwork/gumroad-cli/internal/cmd/admin/users/comments"
 	"github.com/antiwork/gumroad-cli/internal/cmd/admin/users/usertarget"
-	"github.com/antiwork/gumroad-cli/internal/output"
 	"github.com/spf13/cobra"
 )
 
@@ -58,13 +54,6 @@ func NewUsersCmd() *cobra.Command {
 
 func fallback(value, alt string) string {
 	return usertarget.Fallback(value, alt)
-}
-
-func writeIdentifierLine(w io.Writer, label, message, identifier string) error {
-	if identifier == "" || strings.Contains(message, identifier) {
-		return nil
-	}
-	return output.Writef(w, "%s: %s\n", label, identifier)
 }
 
 type userLookupFlags = usertarget.LookupFlags

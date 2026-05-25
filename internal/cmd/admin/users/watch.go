@@ -333,7 +333,7 @@ func renderWatchAction(opts cmdutil.Options, userID, message string, watchedUser
 	if err := output.Writeln(opts.Out(), opts.Style().Green(message)); err != nil {
 		return err
 	}
-	if err := writeIdentifierLine(opts.Out(), "User ID", message, userID); err != nil {
+	if err := cmdutil.WriteIdentifierLine(opts.Out(), "User ID", message, userID); err != nil {
 		return err
 	}
 	return writeWatchedUser(opts.Out(), watchedUser)
@@ -351,7 +351,7 @@ func renderUnwatchAction(opts cmdutil.Options, userID string, resp unwatchRespon
 	if err := output.Writeln(opts.Out(), opts.Style().Green(message)); err != nil {
 		return err
 	}
-	return writeIdentifierLine(opts.Out(), "User ID", message, userID)
+	return cmdutil.WriteIdentifierLine(opts.Out(), "User ID", message, userID)
 }
 
 func writeWatchedUser(w io.Writer, watchedUser *watchedUserInfo) error {

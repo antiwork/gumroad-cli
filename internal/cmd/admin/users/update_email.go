@@ -130,7 +130,7 @@ func renderUpdateEmail(opts cmdutil.Options, identifier, newEmail string, resp u
 	if err := output.Writeln(opts.Out(), opts.Style().Green(message)); err != nil {
 		return err
 	}
-	if err := writeIdentifierLine(opts.Out(), "User ID", message, identifier); err != nil {
+	if err := cmdutil.WriteIdentifierLine(opts.Out(), "User ID", message, identifier); err != nil {
 		return err
 	}
 	if resp.PendingConfirmation {

@@ -259,7 +259,7 @@ func TestProductsCmdRegistersSubcommands(t *testing.T) {
 	if cmd.Use != "products" {
 		t.Fatalf("got Use=%q, want products", cmd.Use)
 	}
-	want := map[string]bool{"list": false, "view": false}
+	want := map[string]bool{"list": false, "view": false, "flag-for-tos-violation": false}
 	for _, c := range cmd.Commands() {
 		if _, ok := want[c.Name()]; ok {
 			want[c.Name()] = true

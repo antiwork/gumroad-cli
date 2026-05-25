@@ -33,7 +33,8 @@ func NewAdminCmd() *cobra.Command {
   gumroad admin payouts list --email <email>
   gumroad admin payouts pause --user-id <user-id> --expected-email <email>
   gumroad admin products list --email <email>
-  gumroad admin products view <product-id>`,
+  gumroad admin products view <product-id>
+  gumroad admin products flag-for-tos-violation <product-id> --user-id <user-id>`,
 	}
 
 	cmd.AddCommand(adminpurchases.NewPurchasesCmd())

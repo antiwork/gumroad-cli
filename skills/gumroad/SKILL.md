@@ -29,7 +29,7 @@ Always follow these rules:
 - **Always** pass `--no-input` to prevent interactive prompts from blocking.
 - **Always** pass `--json` for programmatic access.
 - Use `--json --jq <expr>` together to extract exactly what you need.
-- For operations that can prompt for confirmation (delete, refund, `files abort`, `files complete` replay, or product updates that remove files), add `--yes` to skip confirmation.
+- For operations that can prompt for confirmation (delete, refund, mutating admin actions, `files abort`, `files complete` replay, or product updates that remove files), add `--yes` to skip confirmation.
 - Pass `--quiet` to suppress spinners and status messages.
 - Pass `--dry-run` to preview mutating requests without executing them.
 - Use `--page-delay 200ms` with `--all` to avoid rate limits on large datasets.
@@ -72,6 +72,7 @@ Responses are wrapped in `{"success": true, ...}` with resource-specific keys:
 - `admin users purchases` → `.purchases[]`
 - `admin users related` → `.related_users[]`, `.truncated`, `.per_signal_limit`
 - `admin users mark-compliant`, `admin users suspend`, `admin users suspend-for-tos-violation` → `.status`, `.message`, `.user_id`
+- `admin products flag-for-tos-violation` → `.status`, `.message`, `.user_id`, `.product_id`
 - `admin purchases view` → `.purchase`
 - `admin purchases search` → `.purchases[]`, `.has_more`, `.limit`
 - `admin purchases lookup` → `.purchases[]`
@@ -146,6 +147,7 @@ gumroad admin users related --email seller@example.com --json --jq '{related_use
 gumroad admin users mark-compliant --user-id 2245593582708 --expected-email seller@example.com --note "Cleared after review" --yes --json --non-interactive --no-input
 gumroad admin users suspend --user-id 2245593582708 --expected-email seller@example.com --note "Chargeback risk confirmed" --yes --json --non-interactive --no-input
 gumroad admin users suspend-for-tos-violation --user-id 2245593582708 --expected-email seller@example.com --note "DMCA takedown notice confirmed" --yes --json --non-interactive --no-input
+gumroad admin products flag-for-tos-violation <product-id> --user-id 2245593582708 --expected-email seller@example.com --yes --json --non-interactive --no-input
 
 # Inspect purchase and product fraud context
 gumroad admin purchases view <purchase-id> --with-clusters --json --non-interactive --no-input
