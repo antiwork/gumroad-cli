@@ -3,6 +3,7 @@ package payouts
 import (
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/antiwork/gumroad-cli/internal/adminapi"
@@ -136,7 +137,7 @@ func renderScheduledCreate(opts cmdutil.Options, userID string, resp scheduledCr
 
 	if opts.PlainOutput {
 		return output.PrintPlain(opts.Out(), [][]string{{
-			"true",
+			strconv.FormatBool(resp.Success),
 			headline,
 			userID,
 			payout.ExternalID,

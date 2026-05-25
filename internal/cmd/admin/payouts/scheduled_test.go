@@ -1,6 +1,7 @@
 package payouts
 
 import (
+	"bytes"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -214,6 +215,31 @@ func TestScheduledCreate_PlainOutput(t *testing.T) {
 	want := "true\tScheduled payout created\t2245593582708\tpay_abc\t12345 cents\tpending\t2026-06-15\tstripe"
 	if strings.TrimSpace(out) != want {
 		t.Fatalf("unexpected plain output: %q", out)
+	}
+}
+
+func TestScheduledCreate_PlainOutputUsesResponseSuccess(t *testing.T) {
+	var out bytes.Buffer
+	opts := testutil.TestOptions(testutil.PlainOutput(), testutil.Stdout(&out))
+
+	err := renderScheduledCreate(opts, "2245593582708", scheduledCreateResponse{
+		Success: false,
+		Message: "Not created",
+		ScheduledPayout: scheduledPayout{
+			ExternalID:  "pay_abc",
+			AmountCents: 12345,
+			Status:      "pending",
+			ScheduledAt: "2026-06-15",
+			Processor:   "stripe",
+		},
+	})
+	if err != nil {
+		t.Fatalf("render failed: %v", err)
+	}
+
+	want := "false\tNot created\t2245593582708\tpay_abc\t12345 cents\tpending\t2026-06-15\tstripe"
+	if strings.TrimSpace(out.String()) != want {
+		t.Fatalf("unexpected plain output: %q", out.String())
 	}
 }
 
