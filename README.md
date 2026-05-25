@@ -117,6 +117,8 @@ Run `gumroad <command> --help` for usage details and examples.
 
 Admin commands use a separate internal token. Run `gumroad auth login` and check the admin box to store one locally. Mutating admin commands use that stored token in normal interactive runs so the acting admin can be shown before the request; CI and agents can pass `--non-interactive` with `GUMROAD_ADMIN_TOKEN`. For local testing, set `GUMROAD_ADMIN_API_BASE_URL`.
 
+`admin users refund-balance --dry-run` still calls the unpaid-balance preview endpoint, but skips the guarded refund POST.
+
 ```sh
 gumroad admin users info --email seller@example.com --json
 gumroad admin users affiliates --user-id 2245593582708 --direction granted --limit 50
@@ -132,6 +134,8 @@ gumroad admin users suspend-for-tos-violation --user-id 2245593582708 --expected
 gumroad admin products flag-for-tos-violation abc123 --user-id 2245593582708 --expected-email seller@example.com
 gumroad admin payouts scheduled create --user-id 2245593582708 --expected-email seller@example.com --processor stripe --payout-date 2026-06-15
 gumroad admin payouts scheduled list --status pending --user-id 2245593582708
+gumroad admin users refund-balance --user-id 2245593582708 --expected-email seller@example.com --dry-run
+gumroad admin users refund-balance --user-id 2245593582708 --expected-email seller@example.com
 gumroad admin purchases lookup --stripe-fingerprint fp_abc --limit 25
 gumroad admin users watch --user-id 2245593582708 --expected-email seller@example.com --revenue-threshold 200 --note "Review next buyers"
 gumroad admin users update-watch --user-id 2245593582708 --expected-email seller@example.com --revenue-threshold 500

@@ -126,6 +126,8 @@ func TestSkillMarkdown_ContainsAdminRolloutCommands(t *testing.T) {
 		"`admin products flag-for-tos-violation` → `.status`, `.message`, `.user_id`, `.product_id`",
 		"gumroad admin payouts scheduled create --user-id",
 		"`admin payouts scheduled create` → `.message`, `.user_id`, `.scheduled_payout`",
+		"gumroad admin users refund-balance --user-id",
+		"`admin users refund-balance` → `.status`, `.message`, `.user_id`, `.count`, `.total_amount_cents`, `.currency`",
 		"gumroad admin purchases view <purchase-id> --with-clusters",
 		"gumroad admin purchases search --email",
 		"gumroad admin purchases lookup --stripe-fingerprint",

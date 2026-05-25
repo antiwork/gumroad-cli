@@ -88,6 +88,16 @@ func FetchPostJSON(opts cmdutil.Options, spinnerMessage, path string, payload an
 	})
 }
 
+// ResolveMutationToken resolves the token policy used by mutating admin commands.
+func ResolveMutationToken(opts cmdutil.Options) (adminconfig.TokenInfo, error) {
+	return resolveMutationToken(opts)
+}
+
+// WriteActorBanner prints the stored admin actor banner for mutating commands.
+func WriteActorBanner(opts cmdutil.Options, info adminconfig.TokenInfo) error {
+	return writeActorBanner(opts, info)
+}
+
 func runAuthenticatedData(opts cmdutil.Options, spinnerMessage string, run ClientRunner) (json.RawMessage, error) {
 	info, err := adminconfig.ResolveToken()
 	if err != nil {

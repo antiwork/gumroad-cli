@@ -74,6 +74,7 @@ Responses are wrapped in `{"success": true, ...}` with resource-specific keys:
 - `admin users mark-compliant`, `admin users suspend`, `admin users suspend-for-tos-violation` → `.status`, `.message`, `.user_id`
 - `admin products flag-for-tos-violation` → `.status`, `.message`, `.user_id`, `.product_id`
 - `admin payouts scheduled create` → `.message`, `.user_id`, `.scheduled_payout`
+- `admin users refund-balance` → `.status`, `.message`, `.user_id`, `.count`, `.total_amount_cents`, `.currency`
 - `admin purchases view` → `.purchase`
 - `admin purchases search` → `.purchases[]`, `.has_more`, `.limit`
 - `admin purchases lookup` → `.purchases[]`
@@ -151,6 +152,10 @@ gumroad admin users suspend-for-tos-violation --user-id 2245593582708 --expected
 gumroad admin products flag-for-tos-violation <product-id> --user-id 2245593582708 --expected-email seller@example.com --yes --json --non-interactive --no-input
 gumroad admin payouts scheduled create --user-id 2245593582708 --expected-email seller@example.com --processor stripe --payout-date 2026-06-15 --note "Appeal window closes before payout." --yes --json --non-interactive --no-input
 gumroad admin payouts scheduled list --status pending --user-id 2245593582708 --json --non-interactive --no-input
+
+# Refund-balance dry-run still calls the preview GET, but skips the guarded POST.
+gumroad admin users refund-balance --user-id 2245593582708 --expected-email seller@example.com --dry-run --json --non-interactive --no-input
+gumroad admin users refund-balance --user-id 2245593582708 --expected-email seller@example.com --yes --json --non-interactive --no-input
 
 # Inspect purchase and product fraud context
 gumroad admin purchases view <purchase-id> --with-clusters --json --non-interactive --no-input
