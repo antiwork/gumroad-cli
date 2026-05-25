@@ -18,8 +18,9 @@ curl -fsSL https://gumroad.com/install-cli.sh | bash
 # Go
 go install github.com/antiwork/gumroad-cli/cmd/gumroad@latest
 
-# From source
+# From source (default prefix)
 make install
+# From source (custom prefix)
 make install PREFIX="$HOME/.local"
 ```
 
