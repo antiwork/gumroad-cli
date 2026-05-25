@@ -171,6 +171,74 @@ func TestRefundBalanceSkipsZeroBalanceWithoutConfirmationOrPost(t *testing.T) {
 	}
 }
 
+func TestRefundBalanceSkipsZeroBalanceWithJSONOutput(t *testing.T) {
+	var requests []string
+
+	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
+		requests = append(requests, r.Method+" "+r.URL.Path)
+		if r.Method == http.MethodPost {
+			t.Error("must not POST when preview has no unpaid purchases")
+		}
+		testutil.JSON(t, w, map[string]any{
+			"user_id":            "2245593582708",
+			"count":              0,
+			"total":              0,
+			"total_amount_cents": 0,
+			"currency":           "usd",
+		})
+	})
+
+	cmd := testutil.Command(newRefundBalanceCmd(), testutil.NoInput(true), testutil.JSONOutput())
+	cmd.SetArgs([]string{"--user-id", "2245593582708", "--expected-email", "seller@example.com"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	if strings.Join(requests, ",") != "GET /internal/admin/users/unpaid_balance" {
+		t.Fatalf("unexpected request sequence: %v", requests)
+	}
+
+	var resp refundBalanceResponse
+	if err := json.Unmarshal([]byte(out), &resp); err != nil {
+		t.Fatalf("not valid JSON: %v\n%s", err, out)
+	}
+	if !resp.Success || resp.UserID != "2245593582708" || resp.Status != "skipped" || resp.Message != "No unpaid purchases to refund" || resp.Count != 0 || resp.TotalAmountCents != 0 || resp.Currency != "usd" {
+		t.Fatalf("unexpected JSON payload: %s", out)
+	}
+}
+
+func TestRefundBalanceDryRunSkipsZeroBalanceWithJSONOutput(t *testing.T) {
+	var requests []string
+
+	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
+		requests = append(requests, r.Method+" "+r.URL.Path)
+		if r.Method == http.MethodPost {
+			t.Error("dry-run must not POST when preview has no unpaid purchases")
+		}
+		testutil.JSON(t, w, map[string]any{
+			"user_id":            "2245593582708",
+			"count":              0,
+			"total":              0,
+			"total_amount_cents": 0,
+			"currency":           "usd",
+		})
+	})
+
+	cmd := testutil.Command(newRefundBalanceCmd(), testutil.DryRun(true), testutil.NoInput(true), testutil.JSONOutput())
+	cmd.SetArgs([]string{"--user-id", "2245593582708", "--expected-email", "seller@example.com"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	if strings.Join(requests, ",") != "GET /internal/admin/users/unpaid_balance" {
+		t.Fatalf("unexpected request sequence: %v", requests)
+	}
+
+	var resp refundBalanceResponse
+	if err := json.Unmarshal([]byte(out), &resp); err != nil {
+		t.Fatalf("not valid JSON: %v\n%s", err, out)
+	}
+	if !resp.Success || resp.UserID != "2245593582708" || resp.Status != "skipped" || resp.Message != "No unpaid purchases to refund" {
+		t.Fatalf("unexpected JSON payload: %s", out)
+	}
+}
+
 func TestRefundBalanceDryRunPreviewsOnly(t *testing.T) {
 	var gotPost bool
 

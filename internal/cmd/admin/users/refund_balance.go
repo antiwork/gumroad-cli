@@ -231,6 +231,14 @@ func renderNoRefundBalance(opts cmdutil.Options, userID string, preview unpaidBa
 func renderRefundBalanceResult(opts cmdutil.Options, userID string, resp refundBalanceResponse) error {
 	message := fallback(resp.Message, resp.Status)
 
+	if opts.UsesJSONOutput() {
+		data, err := json.Marshal(resp)
+		if err != nil {
+			return fmt.Errorf("could not encode refund balance response: %w", err)
+		}
+		return output.PrintJSON(opts.Out(), data, opts.JQExpr)
+	}
+
 	if opts.PlainOutput {
 		return output.PrintPlain(opts.Out(), [][]string{{
 			strconv.FormatBool(resp.Success),
