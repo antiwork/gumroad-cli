@@ -1328,10 +1328,10 @@ func TestUpload_ErrorBodyNotDrained(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error")
 	}
-	// Three attempts with 1 ms backoff in shortBackoff; each attempt should
-	// close on the 5xx snippet and retry. Total time must be far less than
+	// Three attempts can spend up to errorBodyReadTimeout reading the bounded
+	// snippet before retrying. A drain-to-EOF regression would still take about
 	// 3 s * 3 attempts = 9 s.
-	if elapsed > 2*time.Second {
+	if elapsed > 6*time.Second {
 		t.Errorf("took %s — error body drain appears to be blocking", elapsed)
 	}
 }
