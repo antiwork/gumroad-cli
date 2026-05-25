@@ -72,26 +72,6 @@ sent without queueing refunds.`,
 
 			path := "users/refund_balance"
 
-			if opts.DryRun {
-				preview, err := fetchRefundBalanceDryRunPreview(opts, target.UserID)
-				if err != nil {
-					return err
-				}
-				if preview.Count == 0 {
-					return renderNoRefundBalance(opts, fallback(preview.UserID, target.UserID), preview)
-				}
-				req := refundBalanceRequest{
-					UserID:                   target.UserID,
-					ExpectedEmail:            target.ExpectedEmail,
-					ExpectedPurchaseCount:    preview.Count,
-					ExpectedTotalAmountCents: preview.TotalAmountCents,
-				}
-				if err := renderRefundBalancePreview(opts, fallback(preview.UserID, target.UserID), preview); err != nil {
-					return err
-				}
-				return cmdutil.PrintDryRunRequest(opts, http.MethodPost, adminapi.AdminPath(path), refundBalanceDryRunParams(req))
-			}
-
 			info, err := admincmd.ResolveMutationToken(opts)
 			if err != nil {
 				return err
@@ -112,6 +92,12 @@ sent without queueing refunds.`,
 				ExpectedEmail:            target.ExpectedEmail,
 				ExpectedPurchaseCount:    preview.Count,
 				ExpectedTotalAmountCents: preview.TotalAmountCents,
+			}
+			if opts.DryRun {
+				if err := renderRefundBalancePreview(opts, fallback(preview.UserID, target.UserID), preview); err != nil {
+					return err
+				}
+				return cmdutil.PrintDryRunRequest(opts, http.MethodPost, adminapi.AdminPath(path), refundBalanceDryRunParams(req))
 			}
 
 			ok, err := cmdutil.ConfirmAction(opts, fmt.Sprintf(
@@ -146,10 +132,6 @@ sent without queueing refunds.`,
 	addUserMutationFlags(cmd, &targetFlags)
 
 	return cmd
-}
-
-func fetchRefundBalanceDryRunPreview(opts cmdutil.Options, userID string) (unpaidBalanceResponse, error) {
-	return admincmd.FetchGetDecoded[unpaidBalanceResponse](opts, "Checking unpaid balance...", "users/unpaid_balance", refundBalancePreviewParams(userID))
 }
 
 func fetchRefundBalancePreview(opts cmdutil.Options, client *adminapi.Client, userID string) (unpaidBalanceResponse, error) {

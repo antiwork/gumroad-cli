@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/antiwork/gumroad-cli/internal/adminconfig"
 	"github.com/antiwork/gumroad-cli/internal/testutil"
 )
 
@@ -281,6 +282,33 @@ func TestRefundBalanceDryRunPreviewsOnly(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("dry-run output missing %q: %q", want, out)
 		}
+	}
+}
+
+func TestRefundBalanceDryRunRequiresStoredMutationAuthWithEnvToken(t *testing.T) {
+	called := false
+	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
+		called = true
+	})
+	if err := adminconfig.Delete(); err != nil {
+		t.Fatalf("delete admin config: %v", err)
+	}
+	t.Setenv(adminconfig.EnvAccessToken, "env-admin-token")
+
+	cmd := testutil.Command(newRefundBalanceCmd(), testutil.DryRun(true), testutil.NoInput(true))
+	cmd.SetArgs([]string{"--user-id", "2245593582708", "--expected-email", "seller@example.com"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected stored-token policy error")
+	}
+	if !strings.Contains(err.Error(), "mutating admin commands require stored admin auth") ||
+		!strings.Contains(err.Error(), "--non-interactive") ||
+		!strings.Contains(err.Error(), adminconfig.EnvAccessToken) {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if called {
+		t.Fatal("request should not be sent")
 	}
 }
 
