@@ -190,6 +190,7 @@ func TestNewUsersCmdWiresSubcommands(t *testing.T) {
 		"update-watch",
 		"unwatch",
 		"suspend",
+		"suspend-for-tos-violation",
 		"reset-password",
 		"update-email",
 		"two-factor",

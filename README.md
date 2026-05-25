@@ -126,6 +126,9 @@ gumroad admin users compliance --user-id 2245593582708
 gumroad admin users radar --user-id 2245593582708 --limit 50
 gumroad admin users purchases --user-id 2245593582708 --status successful --limit 50
 gumroad admin users related --email seller@example.com --signal ip --signal payment_address
+gumroad admin users mark-compliant --user-id 2245593582708 --expected-email seller@example.com --note "Cleared after review"
+gumroad admin users suspend --user-id 2245593582708 --expected-email seller@example.com --note "Chargeback risk confirmed"
+gumroad admin users suspend-for-tos-violation --user-id 2245593582708 --expected-email seller@example.com --note "DMCA takedown notice confirmed"
 gumroad admin purchases lookup --stripe-fingerprint fp_abc --limit 25
 gumroad admin users watch --user-id 2245593582708 --expected-email seller@example.com --revenue-threshold 200 --note "Review next buyers"
 gumroad admin users update-watch --user-id 2245593582708 --expected-email seller@example.com --revenue-threshold 500

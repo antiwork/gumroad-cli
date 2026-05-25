@@ -71,6 +71,7 @@ Responses are wrapped in `{"success": true, ...}` with resource-specific keys:
 - `admin users radar` → `.radar_stats`, `.recent_efws[]`
 - `admin users purchases` → `.purchases[]`
 - `admin users related` → `.related_users[]`, `.truncated`, `.per_signal_limit`
+- `admin users mark-compliant`, `admin users suspend`, `admin users suspend-for-tos-violation` → `.status`, `.message`, `.user_id`
 - `admin purchases view` → `.purchase`
 - `admin purchases search` → `.purchases[]`, `.has_more`, `.limit`
 - `admin purchases lookup` → `.purchases[]`
@@ -140,6 +141,11 @@ gumroad admin users purchases --user-id 2245593582708 --status successful --has-
 # Find related accounts by risk signals
 gumroad admin users related --email seller@example.com --signal ip --signal payment_address --json --non-interactive --no-input
 gumroad admin users related --email seller@example.com --json --jq '{related_users, truncated, per_signal_limit}' --non-interactive --no-input
+
+# Mutate user compliance and suspension state
+gumroad admin users mark-compliant --user-id 2245593582708 --expected-email seller@example.com --note "Cleared after review" --yes --json --non-interactive --no-input
+gumroad admin users suspend --user-id 2245593582708 --expected-email seller@example.com --note "Chargeback risk confirmed" --yes --json --non-interactive --no-input
+gumroad admin users suspend-for-tos-violation --user-id 2245593582708 --expected-email seller@example.com --note "DMCA takedown notice confirmed" --yes --json --non-interactive --no-input
 
 # Inspect purchase and product fraud context
 gumroad admin purchases view <purchase-id> --with-clusters --json --non-interactive --no-input

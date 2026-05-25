@@ -29,6 +29,7 @@ func NewUsersCmd() *cobra.Command {
   gumroad admin users update-watch --user-id 2245593582708 --revenue-threshold 500
   gumroad admin users unwatch --user-id 2245593582708
   gumroad admin users suspend --user-id 2245593582708 --note "Chargeback risk confirmed"
+  gumroad admin users suspend-for-tos-violation --user-id 2245593582708 --note "DMCA takedown notice confirmed"
   gumroad admin users reset-password --user-id 2245593582708
   gumroad admin users update-email --user-id 2245593582708 --new-email new@example.com
   gumroad admin users two-factor disable --user-id 2245593582708`,
@@ -47,6 +48,7 @@ func NewUsersCmd() *cobra.Command {
 	cmd.AddCommand(newUpdateWatchCmd())
 	cmd.AddCommand(newUnwatchCmd())
 	cmd.AddCommand(newSuspendCmd())
+	cmd.AddCommand(newSuspendForTOSViolationCmd())
 	cmd.AddCommand(newResetPasswordCmd())
 	cmd.AddCommand(newUpdateEmailCmd())
 	cmd.AddCommand(newTwoFactorCmd())

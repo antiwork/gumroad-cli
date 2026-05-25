@@ -28,6 +28,7 @@ func NewAdminCmd() *cobra.Command {
   gumroad admin users purchases --user-id <user-id> --status successful
   gumroad admin users related --email <email> --signal ip
   gumroad admin users suspension --email <email>
+  gumroad admin users suspend-for-tos-violation --user-id <user-id> --expected-email <email>
   gumroad admin users watch --user-id <user-id> --expected-email <email> --revenue-threshold 200
   gumroad admin payouts list --email <email>
   gumroad admin payouts pause --user-id <user-id> --expected-email <email>
