@@ -12,8 +12,7 @@ import (
 )
 
 func TestPageRestorePutsSnapshotAndSnapshotsCurrentHTML(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
+	home := setSnapshotHome(t)
 	snapshotHTML := "<main>Snapshot</main>"
 	if _, err := pageutil.SaveSnapshot("products", "prod1", &snapshotHTML); err != nil {
 		t.Fatalf("SaveSnapshot failed: %v", err)

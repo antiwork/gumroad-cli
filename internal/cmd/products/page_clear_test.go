@@ -10,8 +10,7 @@ import (
 )
 
 func TestPageClearSendsNullAndSnapshotsPreviousHTML(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
+	home := setSnapshotHome(t)
 
 	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPut || r.URL.Path != "/products/prod1" {

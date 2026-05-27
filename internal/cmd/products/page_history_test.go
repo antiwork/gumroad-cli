@@ -10,7 +10,7 @@ import (
 )
 
 func TestPageHistoryPlainListsSnapshots(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	setSnapshotHome(t)
 	html := "<main>Old</main>"
 	if _, err := pageutil.SaveSnapshot("products", "prod1", &html); err != nil {
 		t.Fatalf("SaveSnapshot failed: %v", err)
@@ -26,7 +26,7 @@ func TestPageHistoryPlainListsSnapshots(t *testing.T) {
 }
 
 func TestPageHistoryJSONListsSnapshots(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	setSnapshotHome(t)
 	html := "<main>Old</main>"
 	if _, err := pageutil.SaveSnapshot("products", "prod1", &html); err != nil {
 		t.Fatalf("SaveSnapshot failed: %v", err)
@@ -49,7 +49,7 @@ func TestPageHistoryJSONListsSnapshots(t *testing.T) {
 }
 
 func TestPageHistoryJSONEmptySnapshotsUsesArray(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	setSnapshotHome(t)
 
 	cmd := testutil.Command(newPageHistoryCmd(), testutil.JSONOutput())
 	cmd.SetArgs([]string{"prod1"})

@@ -3,13 +3,13 @@ package pageutil
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
 
 func TestSaveSnapshotListsNewestFirstAndPrunes(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setSnapshotHome(t)
 	base := time.Date(2026, 5, 27, 12, 0, 0, 0, time.UTC)
 	i := 0
 	oldNow := nowUTC
@@ -43,8 +43,7 @@ func TestSaveSnapshotListsNewestFirstAndPrunes(t *testing.T) {
 }
 
 func TestReadSnapshotReturnsSelectedHTML(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setSnapshotHome(t)
 	oldNow := nowUTC
 	nowUTC = func() time.Time { return time.Date(2026, 5, 27, 12, 0, 0, 0, time.UTC) }
 	t.Cleanup(func() { nowUTC = oldNow })
@@ -64,4 +63,16 @@ func TestReadSnapshotReturnsSelectedHTML(t *testing.T) {
 	if _, err := os.Stat(snapshot.Path); err != nil {
 		t.Fatalf("snapshot path missing: %v", err)
 	}
+}
+
+func setSnapshotHome(t *testing.T) string {
+	t.Helper()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	if volume := filepath.VolumeName(home); volume != "" {
+		t.Setenv("HOMEDRIVE", volume)
+		t.Setenv("HOMEPATH", strings.TrimPrefix(home, volume))
+	}
+	return home
 }

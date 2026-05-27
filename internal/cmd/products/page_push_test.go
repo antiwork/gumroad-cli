@@ -12,8 +12,7 @@ import (
 )
 
 func TestPagePushPublishesHTMLAndSavesSnapshot(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
+	home := setSnapshotHome(t)
 	htmlPath := writePageHTML(t, "<main>New</main>")
 
 	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
@@ -191,4 +190,16 @@ func findSnapshotFiles(t *testing.T, home string) []string {
 		t.Fatalf("walk snapshots: %v", err)
 	}
 	return paths
+}
+
+func setSnapshotHome(t *testing.T) string {
+	t.Helper()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	if volume := filepath.VolumeName(home); volume != "" {
+		t.Setenv("HOMEDRIVE", volume)
+		t.Setenv("HOMEPATH", strings.TrimPrefix(home, volume))
+	}
+	return home
 }
