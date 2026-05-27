@@ -38,6 +38,7 @@ Always follow these rules:
 - Products are created as drafts — use `gumroad products publish <id>` to make them live.
 - Product cover and thumbnail uploads support JPEG, PNG, and GIF. WebP is not supported by the API and the CLI rejects it before upload.
 - Product custom HTML pages are managed with `gumroad products page ...`; use `page preview` before `page push` when iterating to avoid burning the lower PUT rate limit.
+- Custom HTML pages can use `data-gumroad-field="name"`, `data-gumroad-field="price"`, `data-gumroad-field="description"`, and `data-gumroad-action="buy"`. Prefer an `<a data-gumroad-action="buy" href="#">` for buy CTAs so production can add a checkout href; non-anchor buy elements also post to checkout.
 - If a command fails with a seller auth error, tell the user to run `gumroad auth login` interactively — agents cannot do this step.
 - For admin commands in agents/CI, pass `--non-interactive` and set `GUMROAD_ADMIN_TOKEN`; interactive shells can store an admin token with `gumroad auth login`.
 
@@ -232,6 +233,15 @@ gumroad products delete <id> --yes --json --no-input
 gumroad products skus <id> --json --no-input
 ```
 
+In custom HTML, use Gumroad data attributes for live product values and checkout:
+
+```html
+<h1 data-gumroad-field="name">Product name</h1>
+<span data-gumroad-field="price">$0</span>
+<p data-gumroad-field="description">Product description</p>
+<a data-gumroad-action="buy" href="#">Buy now</a>
+```
+
 **Create flags:** `--name` (required), `--price`, `--type` (digital|course|ebook|membership|bundle|coffee|call|commission), `--currency`, `--pay-what-you-want`, `--suggested-price`, `--description`, `--custom-summary`, `--custom-permalink`, `--custom-receipt`, `--max-purchase-count`, `--taxonomy-id`, `--tag` (repeatable), `--file` (repeatable), `--file-name` (repeatable, aligned to `--file`), `--file-description` (repeatable, aligned to `--file`), `--cover-image`, `--preview-image` (repeatable), `--thumbnail`.
 
 **Update flags:** `--name`, `--price`, `--currency`, `--description`, `--custom-summary`, `--custom-permalink`, `--custom-receipt`, `--max-purchase-count`, `--taxonomy-id`, `--tag` (repeatable), `--file` (repeatable), `--file-name`, `--file-description`, `--remove-file` (repeatable), `--replace-files`, `--keep-file` (repeatable with `--replace-files`), `--cover-image`, `--preview-image` (repeatable), `--thumbnail`. Updates preserve existing files by default unless `--replace-files` is set.
@@ -240,7 +250,7 @@ Use `products update --file` for shared product Content. For products with per-v
 
 Use `--cover-image` for the primary cover, repeat `--preview-image` for additional gallery/preview images, and `--thumbnail` for the card/library thumbnail. These media flags run the required two-step API flow: direct upload first, then attach by signed blob ID.
 
-Use `products page preview` to see the sanitized HTML and `sanitization_report` without writing. Use `products page push <id> [path]` to publish custom HTML; `path` defaults to `./landing.html`, and `-` reads stdin. `products page clear` and `products page restore` are mutating and can prompt, so pass `--yes --json --no-input` in agent runs. The CLI snapshots `previous_custom_html` locally when push/clear/restore responses include it; use `products page history` to inspect snapshots and `products page restore --snapshot N` to re-PUT one. `products page dev` is for interactive local browser iteration, not unattended agent runs.
+Use `products page preview` to see the sanitized HTML and `sanitization_report` without writing. Use `products page push <id> [path]` to publish custom HTML; `path` defaults to `./landing.html`, and `-` reads stdin. `products page clear` and `products page restore` are mutating and can prompt, so pass `--yes --json --no-input` in agent runs. The CLI snapshots `previous_custom_html` locally when push/clear/restore responses include it; use `products page history` to inspect snapshots and `products page restore --snapshot N` to re-PUT one. `products page dev` is for interactive local browser iteration, not unattended agent runs, and mirrors the `data-gumroad-action="buy"` checkout bridge locally.
 
 ### files — Upload and recover file attachments
 

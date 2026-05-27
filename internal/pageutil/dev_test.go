@@ -1,6 +1,7 @@
 package pageutil
 
 import (
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -41,6 +42,36 @@ func TestDevWrapperContainsCheckoutBridgeAndReloadStream(t *testing.T) {
 	} {
 		if !strings.Contains(doc, want) {
 			t.Fatalf("wrapper missing %q in %s", want, doc)
+		}
+	}
+}
+
+func TestDevEmbedWiresBuyActionElements(t *testing.T) {
+	state := &devState{html: `<a data-gumroad-action="buy" href="#">Buy</a><button data-gumroad-action="buy">Buy</button>`, clients: map[chan struct{}]struct{}{}}
+	srv := httptest.NewServer(devHandler(state, "landing.html", "https://creator.example/l/prod?wanted=true"))
+	t.Cleanup(srv.Close)
+
+	resp, err := http.Get(srv.URL + "/embed")
+	if err != nil {
+		t.Fatalf("GET /embed failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read response body: %v", err)
+	}
+	body := string(data)
+	for _, want := range []string{
+		`data-gumroad-action="buy"`,
+		`var checkoutURL = "https://creator.example/l/prod?wanted=true"`,
+		`document.querySelectorAll('[data-gumroad-action="buy"]')`,
+		`el.setAttribute("href", checkoutURL)`,
+		`parent.postMessage("gumroad:checkout", "*")`,
+		`return false`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("embed missing %q in %s", want, body)
 		}
 	}
 }

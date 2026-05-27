@@ -238,7 +238,7 @@ func devHandler(state *devState, title string, checkoutURL string) http.Handler 
 		w.Header().Set("X-Frame-Options", "SAMEORIGIN")
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_, _ = fmt.Fprint(w, customHTMLDocument(current))
+		_, _ = fmt.Fprint(w, customHTMLDocument(current, checkoutURL))
 	})
 	mux.HandleFunc("/events", func(w http.ResponseWriter, r *http.Request) {
 		flusher, ok := w.(http.Flusher)
@@ -275,7 +275,8 @@ func devHandler(state *devState, title string, checkoutURL string) http.Handler 
 	return mux
 }
 
-func customHTMLDocument(customHTML string) string {
+func customHTMLDocument(customHTML string, checkoutURL string) string {
+	checkout, _ := json.Marshal(checkoutURL)
 	return `<!doctype html>
 <html>
   <head>
@@ -285,6 +286,21 @@ func customHTMLDocument(customHTML string) string {
   </head>
   <body>
 ` + customHTML + `
+    <script>
+      (function () {
+        var checkoutURL = ` + string(checkout) + `;
+        document.querySelectorAll('[data-gumroad-action="buy"]').forEach(function (el) {
+          if (el.tagName && el.tagName.toLowerCase() === "a") {
+            el.setAttribute("href", checkoutURL);
+          }
+          el.onclick = function (event) {
+            if (event) event.preventDefault();
+            parent.postMessage("gumroad:checkout", "*");
+            return false;
+          };
+        });
+      })();
+    </script>
   </body>
 </html>
 `
