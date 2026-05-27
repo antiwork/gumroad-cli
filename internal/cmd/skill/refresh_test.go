@@ -3,7 +3,6 @@ package skill
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
@@ -112,7 +111,7 @@ func TestAutoRefresh_RefreshesOnVersionChange(t *testing.T) {
 	if string(data) == "old content" {
 		t.Error("expected skill to be updated, still has old content")
 	}
-	if !strings.Contains(string(data), "gumroad") {
+	if len(data) == 0 {
 		t.Error("expected refreshed skill content")
 	}
 

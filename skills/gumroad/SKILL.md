@@ -9,6 +9,7 @@ description: >
   "list my products", "how much have I made", "who bought", "recent sales",
   "refund a sale", "create a product", "upload a file", "attach a file to a product",
   "add a cover image", "set a product thumbnail", "upload product media",
+  "publish a product landing page", "preview custom HTML", "restore a product page",
   "attach a file to a variant", "finish a failed upload", "abort an upload", "manage webhooks",
   "check my earnings", "see my revenue", "who subscribed", "manage my store",
   "discount code", "coupon", "shipping status", "payout schedule", or any
@@ -36,6 +37,7 @@ Always follow these rules:
 - Prices are in whole currency units (e.g. `--price 10.00` for $10), not cents. The CLI converts internally. Use `--currency eur` to change currency.
 - Products are created as drafts — use `gumroad products publish <id>` to make them live.
 - Product cover and thumbnail uploads support JPEG, PNG, and GIF. WebP is not supported by the API and the CLI rejects it before upload.
+- Product custom HTML pages are managed with `gumroad products page ...`; use `page preview` before `page push` when iterating to avoid burning the lower PUT rate limit.
 - If a command fails with a seller auth error, tell the user to run `gumroad auth login` interactively — agents cannot do this step.
 - For admin commands in agents/CI, pass `--non-interactive` and set `GUMROAD_ADMIN_TOKEN`; interactive shells can store an admin token with `gumroad auth login`.
 
@@ -62,6 +64,10 @@ Responses are wrapped in `{"success": true, ...}` with resource-specific keys:
 - `products covers add --image` → `.result.covers[]`, `.result.main_cover_id`, plus `.result.media[]`
 - `products covers add --url` → `.result.covers[]`, `.result.main_cover_id`
 - `products thumbnail set` → `.result.media[].response`
+- `products page push`, `products page clear`, `products page restore` → `.product.custom_html`, `.product.landing_url`, `.previous_custom_html`, `.sanitization_report`
+- `products page preview` → `.custom_html`, `.sanitization_report`
+- `products page history` → `.snapshots[]`
+- `products page url` → `.product.landing_url`
 - `webhooks list` → `.resource_subscriptions[]`
 - `admin users info` → `.user`
 - `admin users affiliates` → `.affiliates[]`
@@ -205,6 +211,16 @@ gumroad products covers remove <id> <cover_id> --yes --json --no-input
 gumroad products thumbnail set <id> --image ./thumb.jpg --json --no-input
 gumroad products thumbnail remove <id> --yes --json --no-input
 
+# Product custom HTML page
+gumroad products page preview <id> ./landing.html --json --no-input
+cat ./landing.html | gumroad products page preview <id> - --json --no-input
+gumroad products page push <id> ./landing.html --json --no-input
+gumroad products page push <id> ./landing.html --dry-run --json --no-input
+gumroad products page url <id> --json --jq '.product.landing_url' --no-input
+gumroad products page history <id> --json --no-input
+gumroad products page clear <id> --yes --json --no-input
+gumroad products page restore <id> --snapshot 1 --yes --json --no-input
+
 # Publish / unpublish
 gumroad products publish <id> --json --no-input
 gumroad products unpublish <id> --json --no-input
@@ -223,6 +239,8 @@ gumroad products skus <id> --json --no-input
 Use `products update --file` for shared product Content. For products with per-variant Content, use `variants update ... --file` for the specific variant you want to change.
 
 Use `--cover-image` for the primary cover, repeat `--preview-image` for additional gallery/preview images, and `--thumbnail` for the card/library thumbnail. These media flags run the required two-step API flow: direct upload first, then attach by signed blob ID.
+
+Use `products page preview` to see the sanitized HTML and `sanitization_report` without writing. Use `products page push <id> [path]` to publish custom HTML; `path` defaults to `./landing.html`, and `-` reads stdin. `products page clear` and `products page restore` are mutating and can prompt, so pass `--yes --json --no-input` in agent runs. The CLI snapshots `previous_custom_html` locally when push/clear/restore responses include it; use `products page history` to inspect snapshots and `products page restore --snapshot N` to re-PUT one. `products page dev` is for interactive local browser iteration, not unattended agent runs.
 
 ### files — Upload and recover file attachments
 
