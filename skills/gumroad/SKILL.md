@@ -38,7 +38,7 @@ Always follow these rules:
 - Products are created as drafts — use `gumroad products publish <id>` to make them live.
 - Product cover and thumbnail uploads support JPEG, PNG, and GIF. WebP is not supported by the API and the CLI rejects it before upload.
 - Product custom HTML pages are managed with `gumroad products page ...`; use `page preview` before `page push` when iterating to avoid burning the lower PUT rate limit.
-- Custom HTML pages can use `data-gumroad-field="name"`, `data-gumroad-field="price"`, `data-gumroad-field="description"`, and `data-gumroad-action="buy"`. Prefer an `<a data-gumroad-action="buy" href="#">` for buy CTAs so production can add a checkout href; non-anchor buy elements also post to checkout.
+- Custom HTML pages can use `data-gumroad-field="name"`, `data-gumroad-field="price"`, `data-gumroad-field="description"`, and `data-gumroad-action="buy"`. To preselect checkout state, add `data-gumroad-option="<variant name>"`, `data-gumroad-quantity="<integer>"`, `data-gumroad-price="<decimal>"`, or `data-gumroad-recurrence="monthly|quarterly|biannually|yearly|every_two_years"`. Production validates these values and falls back to product defaults when invalid. Prefer anchors for buy CTAs so production can add a checkout href; non-anchor buy elements also post to checkout.
 - If a command fails with a seller auth error, tell the user to run `gumroad auth login` interactively — agents cannot do this step.
 - For admin commands in agents/CI, pass `--non-interactive` and set `GUMROAD_ADMIN_TOKEN`; interactive shells can store an admin token with `gumroad auth login`.
 
@@ -239,7 +239,10 @@ In custom HTML, use Gumroad data attributes for live product values and checkout
 <h1 data-gumroad-field="name">Product name</h1>
 <span data-gumroad-field="price">$0</span>
 <p data-gumroad-field="description">Product description</p>
-<a data-gumroad-action="buy" href="#">Buy now</a>
+<a data-gumroad-action="buy">Buy now</a>
+<a data-gumroad-action="buy" data-gumroad-option="Pro" data-gumroad-recurrence="yearly">Buy Pro - $99/year</a>
+<button data-gumroad-action="buy" data-gumroad-quantity="2">Buy 2 seats</button>
+<button data-gumroad-action="buy" data-gumroad-price="19.99">Pay $19.99</button>
 ```
 
 **Create flags:** `--name` (required), `--price`, `--type` (digital|course|ebook|membership|bundle|coffee|call|commission), `--currency`, `--pay-what-you-want`, `--suggested-price`, `--description`, `--custom-summary`, `--custom-permalink`, `--custom-receipt`, `--max-purchase-count`, `--taxonomy-id`, `--tag` (repeatable), `--file` (repeatable), `--file-name` (repeatable, aligned to `--file`), `--file-description` (repeatable, aligned to `--file`), `--cover-image`, `--preview-image` (repeatable), `--thumbnail`.

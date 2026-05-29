@@ -289,13 +289,41 @@ func customHTMLDocument(customHTML string, checkoutURL string) string {
     <script>
       (function () {
         var checkoutURL = ` + string(checkout) + `;
+        var checkoutParamAttributes = [
+          ["data-gumroad-option", "variant"],
+          ["data-gumroad-quantity", "quantity"],
+          ["data-gumroad-price", "price"],
+          ["data-gumroad-recurrence", "recurrence"]
+        ];
+        var checkoutKeys = ["variant", "option", "quantity", "price", "recurrence"];
+        function collectCheckoutParams(el) {
+          var params = {};
+          checkoutParamAttributes.forEach(function (pair) {
+            var value = el.getAttribute(pair[0]);
+            if (value !== null && value !== "") {
+              params[pair[1]] = value;
+            }
+          });
+          return params;
+        }
+        function buildCheckoutURL(params) {
+          var url = new URL(checkoutURL, window.location.href);
+          checkoutKeys.forEach(function (key) {
+            var value = params[key];
+            if (typeof value === "string" && value !== "") {
+              url.searchParams.set(key, value);
+            }
+          });
+          return url.toString();
+        }
         document.querySelectorAll('[data-gumroad-action="buy"]').forEach(function (el) {
+          var params = collectCheckoutParams(el);
           if (el.tagName && el.tagName.toLowerCase() === "a") {
-            el.setAttribute("href", checkoutURL);
+            el.setAttribute("href", buildCheckoutURL(params));
           }
           el.onclick = function (event) {
             if (event) event.preventDefault();
-            parent.postMessage("gumroad:checkout", "*");
+            parent.postMessage({ type: "gumroad:checkout", params: params }, "*");
             return false;
           };
         });
@@ -321,9 +349,31 @@ func devWrapperDocument(title string, checkoutURL string) string {
     <iframe id="gumroad-landing-frame" src="/embed" title="` + title + `" sandbox="allow-scripts allow-forms"></iframe>
     <script>
       var frame = document.getElementById("gumroad-landing-frame");
+      var checkoutURL = ` + string(checkout) + `;
+      var allowedCheckoutKeys = ["variant", "option", "quantity", "price", "recurrence"];
+      function buildCheckoutURL(params) {
+        var url = new URL(checkoutURL, window.location.href);
+        if (!params || typeof params !== "object" || Array.isArray(params)) {
+          return url.toString();
+        }
+        allowedCheckoutKeys.forEach(function (key) {
+          var value = params[key];
+          if (typeof value === "string" && value !== "") {
+            url.searchParams.set(key, value);
+          }
+        });
+        return url.toString();
+      }
       window.addEventListener("message", function (e) {
-        if (e.source === frame.contentWindow && e.origin === "null" && e.data === "gumroad:checkout") {
-          window.location.href = ` + string(checkout) + `;
+        if (e.source !== frame.contentWindow || e.origin !== "null") {
+          return;
+        }
+        if (e.data === "gumroad:checkout") {
+          window.location.href = checkoutURL;
+          return;
+        }
+        if (e.data && e.data.type === "gumroad:checkout") {
+          window.location.href = buildCheckoutURL(e.data.params);
         }
       });
       var events = new EventSource("/events");

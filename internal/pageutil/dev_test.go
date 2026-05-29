@@ -34,8 +34,11 @@ func TestDevWrapperContainsCheckoutBridgeAndReloadStream(t *testing.T) {
 	doc := devWrapperDocument("landing.html", "https://creator.example/l/prod?wanted=true")
 	for _, want := range []string{
 		`e.data === "gumroad:checkout"`,
-		`e.origin === "null"`,
-		`window.location.href = "https://creator.example/l/prod?wanted=true"`,
+		`e.origin !== "null"`,
+		`var checkoutURL = "https://creator.example/l/prod?wanted=true"`,
+		`allowedCheckoutKeys = ["variant", "option", "quantity", "price", "recurrence"]`,
+		`e.data.type === "gumroad:checkout"`,
+		`window.location.href = buildCheckoutURL(e.data.params)`,
 		`new EventSource("/events")`,
 		`frame.src = "/embed?reload=" + Date.now()`,
 		`sandbox="allow-scripts allow-forms"`,
@@ -47,7 +50,7 @@ func TestDevWrapperContainsCheckoutBridgeAndReloadStream(t *testing.T) {
 }
 
 func TestDevEmbedWiresBuyActionElements(t *testing.T) {
-	state := &devState{html: `<a data-gumroad-action="buy" href="#">Buy</a><button data-gumroad-action="buy">Buy</button>`, clients: map[chan struct{}]struct{}{}}
+	state := &devState{html: `<a data-gumroad-action="buy" data-gumroad-option="Pro" data-gumroad-recurrence="yearly">Buy</a><button data-gumroad-action="buy" data-gumroad-quantity="2">Buy</button>`, clients: map[chan struct{}]struct{}{}}
 	srv := httptest.NewServer(devHandler(state, "landing.html", "https://creator.example/l/prod?wanted=true"))
 	t.Cleanup(srv.Close)
 
@@ -65,9 +68,13 @@ func TestDevEmbedWiresBuyActionElements(t *testing.T) {
 	for _, want := range []string{
 		`data-gumroad-action="buy"`,
 		`var checkoutURL = "https://creator.example/l/prod?wanted=true"`,
+		`["data-gumroad-option", "variant"]`,
+		`["data-gumroad-quantity", "quantity"]`,
+		`["data-gumroad-price", "price"]`,
+		`["data-gumroad-recurrence", "recurrence"]`,
 		`document.querySelectorAll('[data-gumroad-action="buy"]')`,
-		`el.setAttribute("href", checkoutURL)`,
-		`parent.postMessage("gumroad:checkout", "*")`,
+		`el.setAttribute("href", buildCheckoutURL(params))`,
+		`parent.postMessage({ type: "gumroad:checkout", params: params }, "*")`,
 		`return false`,
 	} {
 		if !strings.Contains(body, want) {
