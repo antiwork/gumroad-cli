@@ -93,9 +93,11 @@ func TestSkillMarkdown_ContainsProductMediaAndBulkGuidance(t *testing.T) {
 		"gumroad products update <id> --preview-image ./gallery-1.jpg --preview-image ./gallery-2.jpg --json --no-input",
 		"gumroad products covers add <id> --image ./cover.jpg --json --no-input",
 		"gumroad products thumbnail set <id> --image ./thumb.jpg --json --no-input",
+		"gumroad products thumbnail set <id> --url https://example.com/thumb.png --json --no-input",
 		"WebP is not supported by the API",
 		"`products update` with media flags → mutation envelope with `.result.media[]`",
 		"`products covers add --url` → `.result.covers[]`, `.result.main_cover_id`",
+		"`products thumbnail set --url` → `.result.thumbnail`",
 		"Check existing products and permalinks first",
 		"Continue past per-product errors",
 	} {

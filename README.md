@@ -94,6 +94,9 @@ gumroad products create --name "Art Pack" --price 10.00 --cover-image ./cover.jp
 
 # Add preview/gallery images to an existing product
 gumroad products update <product_id> --preview-image ./gallery-1.jpg --preview-image ./gallery-2.jpg
+
+# Set a thumbnail from a public image URL
+gumroad products thumbnail set <product_id> --url https://example.com/thumb.png
 ```
 
 Product media upload supports JPEG, PNG, and GIF. Use `gumroad products covers --help` and `gumroad products thumbnail --help` for full-control resource commands.

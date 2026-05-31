@@ -61,7 +61,8 @@ Responses are wrapped in `{"success": true, ...}` with resource-specific keys:
 - `products update` with media flags → mutation envelope with `.result.media[]`
 - `products covers add --image` → `.result.covers[]`, `.result.main_cover_id`, plus `.result.media[]`
 - `products covers add --url` → `.result.covers[]`, `.result.main_cover_id`
-- `products thumbnail set` → `.result.media[].response`
+- `products thumbnail set --image` → `.result.thumbnail`, plus `.result.media[]`
+- `products thumbnail set --url` → `.result.thumbnail`
 - `webhooks list` → `.resource_subscriptions[]`
 - `admin users info` → `.user`
 - `admin users affiliates` → `.affiliates[]`
@@ -203,6 +204,7 @@ gumroad products covers add <id> --url https://www.youtube.com/watch?v=qKebcV1jv
 gumroad products covers reorder <id> <cover_id> <cover_id> --json --no-input
 gumroad products covers remove <id> <cover_id> --yes --json --no-input
 gumroad products thumbnail set <id> --image ./thumb.jpg --json --no-input
+gumroad products thumbnail set <id> --url https://example.com/thumb.png --json --no-input
 gumroad products thumbnail remove <id> --yes --json --no-input
 
 # Publish / unpublish
@@ -222,7 +224,7 @@ gumroad products skus <id> --json --no-input
 
 Use `products update --file` for shared product Content. For products with per-variant Content, use `variants update ... --file` for the specific variant you want to change.
 
-Use `--cover-image` for the primary cover, repeat `--preview-image` for additional gallery/preview images, and `--thumbnail` for the card/library thumbnail. These media flags run the required two-step API flow: direct upload first, then attach by signed blob ID.
+Use `--cover-image` for the primary cover, repeat `--preview-image` for additional gallery/preview images, and `--thumbnail` for the card/library thumbnail. These media flags run the required two-step API flow: direct upload first, then attach by signed blob ID. For an existing product, `products thumbnail set --url` asks Gumroad to download and attach a public HTTP(S) image directly.
 
 ### files — Upload and recover file attachments
 

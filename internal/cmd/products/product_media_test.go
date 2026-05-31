@@ -767,7 +767,7 @@ func TestThumbnailSet_WithImageUploadsAndAttaches(t *testing.T) {
 	path := writeMediaFixture(t, "thumb.png", pngFixtureContents())
 	cmd := testutil.Command(newThumbnailSetCmd(), testutil.JSONOutput())
 	cmd.SetArgs([]string{"prod1", "--image", path})
-	testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
 	sequence, forms, _, signedIDs, _, _ := srv.snapshot()
 	if !reflect.DeepEqual(sequence, []string{"POST /direct_uploads", "POST /products/prod1/thumbnail"}) {
@@ -778,6 +778,106 @@ func TestThumbnailSet_WithImageUploadsAndAttaches(t *testing.T) {
 	}
 	if !reflect.DeepEqual(signedIDs, []string{"signed-1"}) {
 		t.Fatalf("attached signed IDs = %#v", signedIDs)
+	}
+	var payload struct {
+		Result struct {
+			Thumbnail struct {
+				GUID string `json:"guid"`
+			} `json:"thumbnail"`
+			Media []productMediaAttachmentResult `json:"media"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal([]byte(out), &payload); err != nil {
+		t.Fatalf("parse JSON output: %v\n%s", err, out)
+	}
+	if payload.Result.Thumbnail.GUID != "thumb-1" {
+		t.Fatalf("expected thumbnail response fields, got %+v", payload.Result.Thumbnail)
+	}
+	if len(payload.Result.Media) != 1 || payload.Result.Media[0].Kind != "thumbnail" {
+		t.Fatalf("expected media metadata, got %+v", payload.Result.Media)
+	}
+}
+
+func TestThumbnailSet_WithURLSendsURL(t *testing.T) {
+	var gotForm urlValues
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/products/prod1/thumbnail" {
+			t.Fatalf("got %s %s, want POST /products/prod1/thumbnail", r.Method, r.URL.Path)
+		}
+		if err := r.ParseForm(); err != nil {
+			t.Fatalf("ParseForm: %v", err)
+		}
+		gotForm = urlValues(r.PostForm)
+		testutil.JSON(t, w, map[string]any{
+			"success":   true,
+			"thumbnail": map[string]any{"guid": "thumb-url", "url": "https://cdn.example/thumb.png"},
+		})
+	})
+
+	cmd := testutil.Command(newThumbnailSetCmd(), testutil.JSONOutput())
+	cmd.SetArgs([]string{"prod1", "--url", "https://example.com/assets/thumb.png"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	if gotForm.Get("url") != "https://example.com/assets/thumb.png" {
+		t.Fatalf("url = %q", gotForm.Get("url"))
+	}
+	if gotForm.Get("signed_blob_id") != "" {
+		t.Fatalf("signed_blob_id = %q, want empty", gotForm.Get("signed_blob_id"))
+	}
+
+	var payload struct {
+		Result struct {
+			Thumbnail struct {
+				GUID string `json:"guid"`
+				URL  string `json:"url"`
+			} `json:"thumbnail"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal([]byte(out), &payload); err != nil {
+		t.Fatalf("parse JSON output: %v\n%s", err, out)
+	}
+	if payload.Result.Thumbnail.GUID != "thumb-url" || payload.Result.Thumbnail.URL != "https://cdn.example/thumb.png" {
+		t.Fatalf("unexpected thumbnail JSON: %+v", payload.Result.Thumbnail)
+	}
+}
+
+func TestThumbnailSet_WithMissingOrConflictingMediaFlagsReturnsUsageError(t *testing.T) {
+	testutil.Setup(t, func(http.ResponseWriter, *http.Request) {
+		t.Fatal("invalid flags must not reach the API")
+	})
+
+	for _, tc := range []struct {
+		name    string
+		args    []string
+		wantErr string
+	}{
+		{
+			name:    "missing input",
+			args:    []string{"prod1"},
+			wantErr: "provide --image or --url",
+		},
+		{
+			name:    "image and url",
+			args:    []string{"prod1", "--image", "thumb.png", "--url", "https://example.com/thumb.png"},
+			wantErr: "--image and --url cannot be used together",
+		},
+		{
+			name:    "non-http url",
+			args:    []string{"prod1", "--url", "ftp://example.com/thumb.png"},
+			wantErr: "--url must use http or https",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cmd := testutil.Command(newThumbnailSetCmd())
+			cmd.SetArgs(tc.args)
+			err := cmd.Execute()
+			if err == nil {
+				t.Fatal("expected usage error")
+			}
+			if !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("expected %q in error, got %v", tc.wantErr, err)
+			}
+		})
 	}
 }
 
