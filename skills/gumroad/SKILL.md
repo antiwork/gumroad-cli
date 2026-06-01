@@ -4,13 +4,14 @@ description: >
   Use the `gumroad` CLI to look up and manage Gumroad data from the terminal.
   Trigger when the user asks about Gumroad products, files, file uploads,
   attachments, sales, subscribers, licenses, payouts, offer codes, webhooks,
+  refund policies,
   or any Gumroad data lookup.
   Also trigger on "check my Gumroad", "look up a sale", "verify a license",
   "list my products", "how much have I made", "who bought", "recent sales",
   "refund a sale", "create a product", "upload a file", "attach a file to a product",
   "add a cover image", "set a product thumbnail", "upload product media",
   "attach a file to a variant", "finish a failed upload", "abort an upload", "manage webhooks",
-  "check my earnings", "see my revenue", "who subscribed", "manage my store",
+  "set refund policy", "check my refund policy", "check my earnings", "see my revenue", "who subscribed", "manage my store",
   "discount code", "coupon", "shipping status", "payout schedule", or any
   request to query or act on Gumroad data — even if the user doesn't say
   "Gumroad" explicitly but is clearly referring to their creator store or
@@ -44,6 +45,7 @@ Always follow these rules:
 Responses are wrapped in `{"success": true, ...}` with resource-specific keys:
 
 - `user` → `.user`
+- `refund-policy view/set` → `.refund_policy`
 - `products list` → `.products[]`
 - `products view` → `.product`
 - `sales list` → `.sales[]`
@@ -118,6 +120,20 @@ gumroad auth logout --yes --no-input
 ```sh
 gumroad user --json --no-input
 gumroad user --json --jq '.user.email' --no-input
+```
+
+### refund-policy — Store-wide refund policy
+
+```sh
+# View the current account-level refund policy
+gumroad refund-policy view --json --no-input
+gumroad refund-policy view --json --jq '.refund_policy.in_effect' --no-input
+
+# Set the refund period. Allowed values: none, 7, 14, 30, 183.
+gumroad refund-policy set --period 30 --fine-print "Refund requests are reviewed within 2 business days." --json --no-input
+
+# Clear fine print. This is account-level, not per-product.
+gumroad refund-policy set --period none --fine-print "" --json --no-input
 ```
 
 ### admin — Internal admin API

@@ -38,6 +38,10 @@ export GUMROAD_ACCESS_TOKEN=your-token
 # View your account
 gumroad user
 
+# View or set your account refund policy
+gumroad refund-policy view
+gumroad refund-policy set --period 30 --fine-print "Refund requests are reviewed within 2 business days."
+
 # List products, then inspect one
 gumroad products list
 gumroad products view abc123
@@ -70,6 +74,21 @@ When a browser isn't available, the CLI prints the authorize URL and you paste t
 Run `gumroad --help` and `gumroad <command> --help` for subcommands, usage details, and examples.
 
 Admin commands use a separate internal token. Run `gumroad auth login` and check the admin box to store one locally, or use `GUMROAD_ADMIN_TOKEN` with `--non-interactive` in CI and agent runs. For local testing, set `GUMROAD_ADMIN_API_BASE_URL`.
+
+## Refund policy
+
+```sh
+# Read the store-wide refund policy shown to buyers
+gumroad refund-policy view
+
+# Set the refund period and fine print
+gumroad refund-policy set --period 30 --fine-print "Refund requests are reviewed within 2 business days."
+
+# Clear fine print and allow no refunds
+gumroad refund-policy set --period none --fine-print ""
+```
+
+Refund policy is account-level, not per-product. Allowed periods are `none`, `7`, `14`, `30`, and `183`; `--fine-print` is optional and capped by the API at 3000 characters.
 
 ## Product categories
 
