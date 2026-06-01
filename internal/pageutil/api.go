@@ -21,8 +21,11 @@ type Target struct {
 }
 
 type Product struct {
-	CustomHTML *string `json:"custom_html"`
-	LandingURL string  `json:"landing_url"`
+	CustomHTML     *string `json:"custom_html"`
+	Description    *string `json:"description"`
+	FormattedPrice string  `json:"formatted_price"`
+	LandingURL     string  `json:"landing_url"`
+	Name           string  `json:"name"`
 }
 
 type UpdateResponse struct {

@@ -37,6 +37,12 @@ type devState struct {
 	clients map[chan struct{}]struct{}
 }
 
+type devFieldValues struct {
+	Name        string `json:"name"`
+	Price       string `json:"price"`
+	Description string `json:"description"`
+}
+
 func Dev(opts cmdutil.Options, target Target, path string, port int, shouldOpen bool) error {
 	if strings.TrimSpace(path) == "" {
 		path = DefaultPath
@@ -82,7 +88,7 @@ func Dev(opts cmdutil.Options, target Target, path string, port int, shouldOpen 
 
 	state := &devState{html: stringOrEmpty(preview.CustomHTML), report: preview.SanitizationReport, clients: map[chan struct{}]struct{}{}}
 	checkoutURL := wantedURL(show.Product.LandingURL)
-	handler := devHandler(state, source, checkoutURL)
+	handler := devHandler(state, source, checkoutURL, devFieldsForProduct(show.Product))
 	server := &http.Server{Handler: handler, ReadHeaderTimeout: 5 * time.Second}
 	listener, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
 	if err != nil {
@@ -220,7 +226,15 @@ func reloadDevPreview(opts cmdutil.Options, client *api.Client, target Target, p
 	}
 }
 
-func devHandler(state *devState, title string, checkoutURL string) http.Handler {
+func devFieldsForProduct(product Product) devFieldValues {
+	return devFieldValues{
+		Name:        product.Name,
+		Price:       product.FormattedPrice,
+		Description: stringOrEmpty(product.Description),
+	}
+}
+
+func devHandler(state *devState, title string, checkoutURL string, fields devFieldValues) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/" {
@@ -238,7 +252,7 @@ func devHandler(state *devState, title string, checkoutURL string) http.Handler 
 		w.Header().Set("X-Frame-Options", "SAMEORIGIN")
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_, _ = fmt.Fprint(w, customHTMLDocument(current, checkoutURL))
+		_, _ = fmt.Fprint(w, customHTMLDocument(current, checkoutURL, fields))
 	})
 	mux.HandleFunc("/events", func(w http.ResponseWriter, r *http.Request) {
 		flusher, ok := w.(http.Flusher)
@@ -275,8 +289,9 @@ func devHandler(state *devState, title string, checkoutURL string) http.Handler 
 	return mux
 }
 
-func customHTMLDocument(customHTML string, checkoutURL string) string {
+func customHTMLDocument(customHTML string, checkoutURL string, fields devFieldValues) string {
 	checkout, _ := json.Marshal(checkoutURL)
+	fieldValues, _ := json.Marshal(fields)
 	return `<!doctype html>
 <html>
   <head>
@@ -289,6 +304,7 @@ func customHTMLDocument(customHTML string, checkoutURL string) string {
     <script>
       (function () {
         var checkoutURL = ` + string(checkout) + `;
+        var gumroadFieldValues = ` + string(fieldValues) + `;
         var checkoutParamAttributes = [
           ["data-gumroad-option", "variant"],
           ["data-gumroad-quantity", "quantity"],
@@ -316,6 +332,22 @@ func customHTMLDocument(customHTML string, checkoutURL string) string {
           });
           return url.toString();
         }
+        function textFromHTML(value) {
+          var template = document.createElement("template");
+          template.innerHTML = value == null ? "" : String(value);
+          return template.content.textContent || "";
+        }
+        var fieldText = {
+          name: gumroadFieldValues.name || "",
+          price: gumroadFieldValues.price || "",
+          description: textFromHTML(gumroadFieldValues.description)
+        };
+        document.querySelectorAll("[data-gumroad-field]").forEach(function (el) {
+          var value = fieldText[el.getAttribute("data-gumroad-field")];
+          if (value !== undefined) {
+            el.textContent = value;
+          }
+        });
         document.querySelectorAll('[data-gumroad-action="buy"]').forEach(function (el) {
           var params = collectCheckoutParams(el);
           if (el.tagName && el.tagName.toLowerCase() === "a") {
