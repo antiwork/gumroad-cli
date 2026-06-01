@@ -74,7 +74,7 @@ func TestUpdate_CustomHTMLMissingFileErrors(t *testing.T) {
 		t.Error("should not reach API on a bad --custom-html path")
 	})
 
-	cmd := newUpdateCmd()
+	cmd := testutil.Command(newUpdateCmd(), testutil.Quiet(false))
 	cmd.SetArgs([]string{"prod1", "--custom-html", filepath.Join(t.TempDir(), "does-not-exist.html")})
 	err := cmd.Execute()
 	if err == nil || !strings.Contains(err.Error(), "--custom-html") {

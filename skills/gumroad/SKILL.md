@@ -10,6 +10,7 @@ description: >
   "list my products", "how much have I made", "who bought", "recent sales",
   "refund a sale", "create a product", "upload a file", "attach a file to a product",
   "add a cover image", "set a product thumbnail", "upload product media",
+  "publish a product landing page", "publish custom HTML", "clear custom HTML",
   "attach a file to a variant", "finish a failed upload", "abort an upload", "manage webhooks",
   "set refund policy", "check my refund policy", "check my earnings", "see my revenue", "who subscribed", "manage my store",
   "discount code", "coupon", "shipping status", "payout schedule", or any
@@ -37,6 +38,8 @@ Always follow these rules:
 - Prices are in whole currency units (e.g. `--price 10.00` for $10), not cents. The CLI converts internally. Use `--currency eur` to change currency.
 - Products are created as drafts — use `gumroad products publish <id>` to make them live.
 - Product cover and thumbnail uploads support JPEG, PNG, and GIF. WebP is not supported by the API and the CLI rejects it before upload.
+- Product custom HTML landing pages are published with `gumroad products update <id> --custom-html ./landing.html`. Use `--custom-html ''` to clear the page. `--dry-run` only previews the CLI request body; it does not call the backend sanitizer. Inspect `.result.sanitization_report` in the publish response for server-side changes.
+- Custom HTML pages can use `data-gumroad-field="name"`, `data-gumroad-field="price"`, `data-gumroad-field="description"`, and `data-gumroad-action="buy"`. To preselect checkout state, add `data-gumroad-option="<variant name>"`, `data-gumroad-quantity="<integer>"`, `data-gumroad-price="<decimal>"`, or `data-gumroad-recurrence="monthly|quarterly|biannually|yearly|every_two_years"`. Production validates these values and falls back to product defaults when invalid. Prefer anchors for buy CTAs so production can add a checkout href; non-anchor buy elements also post to checkout.
 - If a command fails with a seller auth error, tell the user to run `gumroad auth login` interactively — agents cannot do this step.
 - For admin commands in agents/CI, pass `--non-interactive` and set `GUMROAD_ADMIN_TOKEN`; interactive shells can store an admin token with `gumroad auth login`.
 
@@ -65,6 +68,7 @@ Responses are wrapped in `{"success": true, ...}` with resource-specific keys:
 - `products covers add --url` → `.result.covers[]`, `.result.main_cover_id`
 - `products thumbnail set --image` → `.result.thumbnail`, plus `.result.media[]`
 - `products thumbnail set --url` → `.result.thumbnail`
+- `products update --custom-html` → `.result.product.custom_html`, `.result.product.landing_url`, `.result.previous_custom_html`, `.result.sanitization_report`
 - `webhooks list` → `.resource_subscriptions[]`
 - `admin users info` → `.user`
 - `admin users affiliates` → `.affiliates[]`
@@ -216,6 +220,9 @@ gumroad products update <id> --file ./pack.zip --json --no-input
 gumroad products update <id> --cover-image ./cover.jpg --json --no-input
 gumroad products update <id> --preview-image ./gallery-1.jpg --preview-image ./gallery-2.jpg --json --no-input
 gumroad products update <id> --thumbnail ./thumb.jpg --json --no-input
+gumroad products update <id> --custom-html ./landing.html --json --no-input
+gumroad products update <id> --custom-html '' --json --no-input
+gumroad products view <id> --json --jq '.product.landing_url' --no-input
 gumroad products update <id> --replace-files --keep-file file_123 --file ./new-pack.zip --yes --json --no-input
 gumroad products update <id> --remove-file file_456 --yes --json --no-input
 
@@ -239,11 +246,23 @@ gumroad products delete <id> --yes --json --no-input
 gumroad products skus <id> --json --no-input
 ```
 
+In custom HTML, use Gumroad data attributes for live product values and checkout:
+
+```html
+<h1 data-gumroad-field="name">Product name</h1>
+<span data-gumroad-field="price">$0</span>
+<p data-gumroad-field="description">Product description</p>
+<a data-gumroad-action="buy">Buy now</a>
+<a data-gumroad-action="buy" data-gumroad-option="Pro" data-gumroad-recurrence="yearly">Buy Pro - $99/year</a>
+<button data-gumroad-action="buy" data-gumroad-quantity="2">Buy 2 seats</button>
+<button data-gumroad-action="buy" data-gumroad-price="19.99">Pay $19.99</button>
+```
+
 **Categories:** `products categories [--search <term>]` returns label, path, and numeric ID. Prefer `--category <path>` for product create/update. `--taxonomy-id` remains supported when you already have the numeric ID, but it cannot be combined with `--category`.
 
 **Create flags:** `--name` (required), `--price`, `--type` (digital|course|ebook|membership|bundle|coffee|call|commission), `--currency`, `--pay-what-you-want`, `--suggested-price`, `--description`, `--custom-summary`, `--custom-permalink`, `--custom-receipt`, `--max-purchase-count`, `--category`, `--taxonomy-id`, `--tag` (repeatable), `--file` (repeatable), `--file-name` (repeatable, aligned to `--file`), `--file-description` (repeatable, aligned to `--file`), `--cover-image`, `--preview-image` (repeatable), `--thumbnail`.
 
-**Update flags:** `--name`, `--price`, `--currency`, `--description`, `--custom-summary`, `--custom-permalink`, `--custom-receipt`, `--max-purchase-count`, `--category`, `--taxonomy-id`, `--tag` (repeatable), `--file` (repeatable), `--file-name`, `--file-description`, `--remove-file` (repeatable), `--replace-files`, `--keep-file` (repeatable with `--replace-files`), `--cover-image`, `--preview-image` (repeatable), `--thumbnail`. Updates preserve existing files by default unless `--replace-files` is set.
+**Update flags:** `--name`, `--price`, `--currency`, `--description`, `--custom-summary`, `--custom-permalink`, `--custom-receipt`, `--max-purchase-count`, `--category`, `--taxonomy-id`, `--tag` (repeatable), `--custom-html`, `--file` (repeatable), `--file-name`, `--file-description`, `--remove-file` (repeatable), `--replace-files`, `--keep-file` (repeatable with `--replace-files`), `--cover-image`, `--preview-image` (repeatable), `--thumbnail`. Updates preserve existing files by default unless `--replace-files` is set.
 
 Use `products update --file` for shared product Content. For products with per-variant Content, use `variants update ... --file` for the specific variant you want to change.
 
