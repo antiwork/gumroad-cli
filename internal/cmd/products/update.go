@@ -2,6 +2,7 @@ package products
 
 import (
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 
@@ -25,6 +26,7 @@ func newUpdateCmd() *cobra.Command {
 	var replaceFiles bool
 	var coverImage, thumbnail string
 	var previewImages []string
+	var customHTML string
 
 	cmd := &cobra.Command{
 		Use:   "update <product_id>",
@@ -36,6 +38,8 @@ func newUpdateCmd() *cobra.Command {
   gumroad products update <id> --cover-image ./cover.jpg
   gumroad products update <id> --preview-image ./gallery-1.jpg --preview-image ./gallery-2.jpg
   gumroad products update <id> --file ./pack.zip
+  gumroad products update <id> --custom-html ./landing.html
+  gumroad products update <id> --custom-html ''
   gumroad products update <id> --replace-files --keep-file file_123 --file ./new-pack.zip`,
 		Args: cmdutil.ExactArgs(1),
 		RunE: func(c *cobra.Command, args []string) error {
@@ -50,6 +54,7 @@ func newUpdateCmd() *cobra.Command {
 				"file", "file-name", "file-description",
 				"keep-file", "remove-file", "replace-files",
 				"cover-image", "preview-image", "thumbnail",
+				"custom-html",
 			); err != nil {
 				return err
 			}
@@ -120,6 +125,17 @@ func newUpdateCmd() *cobra.Command {
 			}
 			if flags.Changed("taxonomy-id") {
 				params.Set("taxonomy_id", taxonomyID)
+			}
+			if flags.Changed("custom-html") {
+				if customHTML == "" {
+					params.Set("custom_html", "")
+				} else {
+					html, err := os.ReadFile(customHTML)
+					if err != nil {
+						return cmdutil.UsageErrorf(c, "--custom-html: cannot read %s: %v", customHTML, err)
+					}
+					params.Set("custom_html", string(html))
+				}
 			}
 			for _, t := range tags {
 				params.Add("tags[]", t)
@@ -280,6 +296,7 @@ func newUpdateCmd() *cobra.Command {
 	cmd.Flags().StringVar(&coverImage, "cover-image", "", "Local JPEG, PNG, or GIF cover image to upload")
 	cmd.Flags().StringArrayVar(&previewImages, "preview-image", nil, "Additional local JPEG, PNG, or GIF preview image to upload as a product cover (repeatable)")
 	cmd.Flags().StringVar(&thumbnail, "thumbnail", "", "Local JPEG, PNG, or GIF thumbnail image to upload")
+	cmd.Flags().StringVar(&customHTML, "custom-html", "", "Path to an HTML file for the product's custom landing page (empty string clears it)")
 
 	return cmd
 }
@@ -289,7 +306,7 @@ func productUpdateFieldFlagsChanged(cmd *cobra.Command) bool {
 		"name", "price", "currency", "description",
 		"custom-permalink", "custom-summary", "custom-receipt",
 		"pay-what-you-want", "suggested-price", "max-purchase-count",
-		"category", "taxonomy-id", "tag",
+		"category", "taxonomy-id", "tag", "custom-html",
 	} {
 		if cmd.Flags().Changed(flag) {
 			return true
