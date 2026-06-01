@@ -52,6 +52,38 @@ func TestView_RendersRefundPolicy(t *testing.T) {
 	}
 }
 
+func TestNewRefundPolicyCmd_RegistersSubcommands(t *testing.T) {
+	cmd := NewRefundPolicyCmd()
+
+	for _, args := range [][]string{{"view"}, {"set", "--period", "30"}} {
+		found, _, err := cmd.Find(args)
+		if err != nil {
+			t.Fatalf("Find(%v) failed: %v", args, err)
+		}
+		if found == nil {
+			t.Fatalf("Find(%v) returned nil command", args)
+		}
+	}
+}
+
+func TestView_NilFinePrintAndInactivePolicy(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, refundPolicyPayload("none", "No refunds allowed", nil, false))
+	})
+
+	cmd := newViewCmd()
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	for _, want := range []string{
+		"Fine print: (none)",
+		"In effect: no",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("output missing %q: %q", want, out)
+		}
+	}
+}
+
 func TestView_JSON(t *testing.T) {
 	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
 		testutil.JSON(t, w, refundPolicyPayload("none", "No refunds allowed", nil, false))
@@ -152,6 +184,20 @@ func TestSet_OmitsFinePrintWhenFlagNotProvided(t *testing.T) {
 
 	if hasFinePrint {
 		t.Fatal("fine_print must be omitted when --fine-print is not provided")
+	}
+}
+
+func TestSet_QuietSuppressesHumanOutput(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, refundPolicyPayload("7", "7-day money back guarantee", nil, true))
+	})
+
+	cmd := testutil.Command(newSetCmd())
+	cmd.SetArgs([]string{"--period", "7"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	if out != "" {
+		t.Fatalf("quiet set command should not print human output, got %q", out)
 	}
 }
 
