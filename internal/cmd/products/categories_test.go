@@ -15,6 +15,7 @@ func productCategoriesHandler(t *testing.T) http.HandlerFunc {
 			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
 		}
 		testutil.JSON(t, w, map[string]any{
+			"success": true,
 			"categories": []map[string]any{
 				{"id": 10, "name": "design", "label": "Design", "path": "design", "parent_id": nil},
 				{"id": 11, "name": "ui-and-web", "label": "UI & Web", "path": "design/ui-and-web", "parent_id": 10},
@@ -51,6 +52,9 @@ func TestCategories_JSON(t *testing.T) {
 	var resp productCategoriesResponse
 	if err := json.Unmarshal([]byte(out), &resp); err != nil {
 		t.Fatalf("output is not valid JSON: %v\n%s", err, out)
+	}
+	if !resp.Success {
+		t.Fatalf("success = false, want true")
 	}
 	if len(resp.Categories) != 4 {
 		t.Fatalf("got %d categories, want 4", len(resp.Categories))
