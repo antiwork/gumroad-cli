@@ -16,7 +16,10 @@ func NewProductsCmd() *cobra.Command {
   gumroad products create --name "Art Pack" --price 10.00
   gumroad products create --name "Art Pack" --file ./pack.zip --file-name "Art Pack.zip"
   gumroad products create --name "Art Pack" --cover-image ./cover.jpg --thumbnail ./thumb.jpg
+  gumroad products categories --search figma
+  gumroad products create --name "Figma Kit" --category design/ui-and-web/figma
   gumroad products update <product_id> --name "New Name"
+  gumroad products update <product_id> --category design/ui-and-web/figma
   gumroad products update <product_id> --preview-image ./gallery.jpg
   gumroad products covers add <product_id> --image ./cover.jpg
   gumroad products thumbnail set <product_id> --image ./thumb.jpg
@@ -31,6 +34,7 @@ func NewProductsCmd() *cobra.Command {
 
 	cmd.AddCommand(newCreateCmd())
 	cmd.AddCommand(newUpdateCmd())
+	cmd.AddCommand(newCategoriesCmd())
 	cmd.AddCommand(newListCmd())
 	cmd.AddCommand(newViewCmd())
 	cmd.AddCommand(newDeleteCmd())

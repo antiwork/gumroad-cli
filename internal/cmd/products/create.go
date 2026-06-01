@@ -79,7 +79,7 @@ type dryRunCreatePayload struct {
 
 func newCreateCmd() *cobra.Command {
 	var name, nativeType, currency, description, customPermalink string
-	var customSummary, customReceipt, subscriptionDuration, taxonomyID string
+	var customSummary, customReceipt, subscriptionDuration, category, taxonomyID string
 	var price, suggestedPrice string
 	var maxPurchaseCount int
 	var payWhatYouWant bool
@@ -94,6 +94,7 @@ func newCreateCmd() *cobra.Command {
 		Example: `  gumroad products create --name "Art Pack" --price 10.00
   gumroad products create --name "Art Pack" --file ./pack.zip --file-name "Art Pack.zip"
   gumroad products create --name "Art Pack" --cover-image ./cover.jpg --thumbnail ./thumb.jpg
+  gumroad products create --name "Figma Kit" --category design/ui-and-web/figma
   gumroad products create --name "Newsletter" --type membership --subscription-duration monthly
   gumroad products create --name "E-Book" --type ebook --price 5 --tag art --tag digital`,
 		Args: cmdutil.ExactArgs(0),
@@ -119,6 +120,9 @@ func newCreateCmd() *cobra.Command {
 			}
 
 			if err := cmdutil.RequireNonNegativeIntFlag(c, "max-purchase-count", maxPurchaseCount); err != nil {
+				return err
+			}
+			if err := validateProductCategoryFlags(c); err != nil {
 				return err
 			}
 
@@ -172,6 +176,9 @@ func newCreateCmd() *cobra.Command {
 			}
 			if flags.Changed("max-purchase-count") {
 				params.Set("max_purchase_count", strconv.Itoa(maxPurchaseCount))
+			}
+			if flags.Changed("category") {
+				params.Set("category", category)
 			}
 			if flags.Changed("taxonomy-id") {
 				params.Set("taxonomy_id", taxonomyID)
@@ -279,7 +286,8 @@ func newCreateCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&payWhatYouWant, "pay-what-you-want", false, "Enable pay-what-you-want pricing")
 	cmd.Flags().StringVar(&suggestedPrice, "suggested-price", "", "Suggested price for pay-what-you-want (e.g. 5, 5.00)")
 	cmd.Flags().IntVar(&maxPurchaseCount, "max-purchase-count", 0, "Maximum number of purchases (inventory limit)")
-	cmd.Flags().StringVar(&taxonomyID, "taxonomy-id", "", "Taxonomy/category ID")
+	cmd.Flags().StringVar(&category, "category", "", "Product category path (for example: design/ui-and-web/figma)")
+	cmd.Flags().StringVar(&taxonomyID, "taxonomy-id", "", "Numeric taxonomy/category ID")
 	cmd.Flags().StringVar(&subscriptionDuration, "subscription-duration", "", "Subscription duration (membership only: monthly, quarterly, biannually, yearly, every_two_years)")
 	cmd.Flags().StringArrayVar(&tags, "tag", nil, "Tag (repeatable)")
 	cmd.Flags().StringArrayVar(&files, "file", nil, "Attach a local file to the new product (repeatable)")

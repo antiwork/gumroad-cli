@@ -181,8 +181,12 @@ gumroad products list --json --no-input
 # View a product
 gumroad products view <id> --json --no-input
 
+# Find product categories
+gumroad products categories --search figma --json --no-input
+
 # Create a product (created as draft)
 gumroad products create --name "Art Pack" --price 10.00 --json --no-input
+gumroad products create --name "Figma Kit" --category design/ui-and-web/figma --json --no-input
 gumroad products create --name "Art Pack" --price 10.00 --file ./pack.zip --file-name "Art Pack.zip" --json --no-input
 gumroad products create --name "Art Pack" --price 10.00 --cover-image ./cover.jpg --thumbnail ./thumb.jpg --json --no-input
 gumroad products create --name "Newsletter" --type membership --subscription-duration monthly --json --no-input
@@ -191,6 +195,7 @@ gumroad products create --name "E-Book" --type ebook --price 5 --tag art --tag d
 # Update a product
 gumroad products update <id> --name "New Name" --json --no-input
 gumroad products update <id> --price 15.00 --currency eur --json --no-input
+gumroad products update <id> --category design/ui-and-web/figma --json --no-input
 gumroad products update <id> --file ./pack.zip --json --no-input
 gumroad products update <id> --cover-image ./cover.jpg --json --no-input
 gumroad products update <id> --preview-image ./gallery-1.jpg --preview-image ./gallery-2.jpg --json --no-input
@@ -218,9 +223,11 @@ gumroad products delete <id> --yes --json --no-input
 gumroad products skus <id> --json --no-input
 ```
 
-**Create flags:** `--name` (required), `--price`, `--type` (digital|course|ebook|membership|bundle|coffee|call|commission), `--currency`, `--pay-what-you-want`, `--suggested-price`, `--description`, `--custom-summary`, `--custom-permalink`, `--custom-receipt`, `--max-purchase-count`, `--taxonomy-id`, `--tag` (repeatable), `--file` (repeatable), `--file-name` (repeatable, aligned to `--file`), `--file-description` (repeatable, aligned to `--file`), `--cover-image`, `--preview-image` (repeatable), `--thumbnail`.
+**Categories:** `products categories [--search <term>]` returns label, path, and numeric ID. Prefer `--category <path>` for product create/update. `--taxonomy-id` remains supported when you already have the numeric ID, but it cannot be combined with `--category`.
 
-**Update flags:** `--name`, `--price`, `--currency`, `--description`, `--custom-summary`, `--custom-permalink`, `--custom-receipt`, `--max-purchase-count`, `--taxonomy-id`, `--tag` (repeatable), `--file` (repeatable), `--file-name`, `--file-description`, `--remove-file` (repeatable), `--replace-files`, `--keep-file` (repeatable with `--replace-files`), `--cover-image`, `--preview-image` (repeatable), `--thumbnail`. Updates preserve existing files by default unless `--replace-files` is set.
+**Create flags:** `--name` (required), `--price`, `--type` (digital|course|ebook|membership|bundle|coffee|call|commission), `--currency`, `--pay-what-you-want`, `--suggested-price`, `--description`, `--custom-summary`, `--custom-permalink`, `--custom-receipt`, `--max-purchase-count`, `--category`, `--taxonomy-id`, `--tag` (repeatable), `--file` (repeatable), `--file-name` (repeatable, aligned to `--file`), `--file-description` (repeatable, aligned to `--file`), `--cover-image`, `--preview-image` (repeatable), `--thumbnail`.
+
+**Update flags:** `--name`, `--price`, `--currency`, `--description`, `--custom-summary`, `--custom-permalink`, `--custom-receipt`, `--max-purchase-count`, `--category`, `--taxonomy-id`, `--tag` (repeatable), `--file` (repeatable), `--file-name`, `--file-description`, `--remove-file` (repeatable), `--replace-files`, `--keep-file` (repeatable with `--replace-files`), `--cover-image`, `--preview-image` (repeatable), `--thumbnail`. Updates preserve existing files by default unless `--replace-files` is set.
 
 Use `products update --file` for shared product Content. For products with per-variant Content, use `variants update ... --file` for the specific variant you want to change.
 

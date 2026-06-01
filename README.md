@@ -71,6 +71,19 @@ Run `gumroad --help` and `gumroad <command> --help` for subcommands, usage detai
 
 Admin commands use a separate internal token. Run `gumroad auth login` and check the admin box to store one locally, or use `GUMROAD_ADMIN_TOKEN` with `--non-interactive` in CI and agent runs. For local testing, set `GUMROAD_ADMIN_API_BASE_URL`.
 
+## Product categories
+
+```sh
+# Find the category path to use on create/update
+gumroad products categories --search figma
+
+# Set a product category by path
+gumroad products create --name "Figma Kit" --category design/ui-and-web/figma
+gumroad products update <product_id> --category design/ui-and-web/figma
+```
+
+Use the `path` from `gumroad products categories` with `--category`. The older numeric `--taxonomy-id` flag still works when you already have an API taxonomy ID, but it cannot be combined with `--category`.
+
 ## File attachments
 
 ```sh

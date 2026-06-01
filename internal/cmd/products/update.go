@@ -12,7 +12,7 @@ import (
 
 func newUpdateCmd() *cobra.Command {
 	var name, currency, description, customPermalink string
-	var customSummary, customReceipt, taxonomyID string
+	var customSummary, customReceipt, category, taxonomyID string
 	var price, suggestedPrice string
 	var maxPurchaseCount int
 	var payWhatYouWant bool
@@ -31,6 +31,7 @@ func newUpdateCmd() *cobra.Command {
 		Short: "Update a product",
 		Example: `  gumroad products update <id> --name "New Name"
   gumroad products update <id> --price 15.00 --currency eur
+  gumroad products update <id> --category design/ui-and-web/figma
   gumroad products update <id> --tag art --tag digital
   gumroad products update <id> --cover-image ./cover.jpg
   gumroad products update <id> --preview-image ./gallery-1.jpg --preview-image ./gallery-2.jpg
@@ -45,7 +46,7 @@ func newUpdateCmd() *cobra.Command {
 				"name", "price", "currency", "description",
 				"custom-permalink", "custom-summary", "custom-receipt",
 				"pay-what-you-want", "suggested-price", "max-purchase-count",
-				"taxonomy-id", "tag",
+				"category", "taxonomy-id", "tag",
 				"file", "file-name", "file-description",
 				"keep-file", "remove-file", "replace-files",
 				"cover-image", "preview-image", "thumbnail",
@@ -57,6 +58,9 @@ func newUpdateCmd() *cobra.Command {
 				return cmdutil.UsageErrorf(c, "--name cannot be empty")
 			}
 			if err := cmdutil.RequireNonNegativeIntFlag(c, "max-purchase-count", maxPurchaseCount); err != nil {
+				return err
+			}
+			if err := validateProductCategoryFlags(c); err != nil {
 				return err
 			}
 			requestedUploads, err := collectRequestedProductUploads(c, files, fileNames, fileDescriptions)
@@ -110,6 +114,9 @@ func newUpdateCmd() *cobra.Command {
 			}
 			if flags.Changed("max-purchase-count") {
 				params.Set("max_purchase_count", strconv.Itoa(maxPurchaseCount))
+			}
+			if flags.Changed("category") {
+				params.Set("category", category)
 			}
 			if flags.Changed("taxonomy-id") {
 				params.Set("taxonomy_id", taxonomyID)
@@ -261,7 +268,8 @@ func newUpdateCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&payWhatYouWant, "pay-what-you-want", false, "Enable pay-what-you-want pricing")
 	cmd.Flags().StringVar(&suggestedPrice, "suggested-price", "", "New suggested price for pay-what-you-want (e.g. 5, 5.00)")
 	cmd.Flags().IntVar(&maxPurchaseCount, "max-purchase-count", 0, "New maximum number of purchases")
-	cmd.Flags().StringVar(&taxonomyID, "taxonomy-id", "", "New taxonomy/category ID")
+	cmd.Flags().StringVar(&category, "category", "", "New product category path (for example: design/ui-and-web/figma)")
+	cmd.Flags().StringVar(&taxonomyID, "taxonomy-id", "", "New numeric taxonomy/category ID")
 	cmd.Flags().StringArrayVar(&tags, "tag", nil, "Tag (repeatable, replaces all existing tags)")
 	cmd.Flags().StringArrayVar(&files, "file", nil, "Attach a new local file (repeatable)")
 	cmd.Flags().StringArrayVar(&fileNames, "file-name", nil, "Display name for the matching --file (repeatable)")
@@ -281,7 +289,7 @@ func productUpdateFieldFlagsChanged(cmd *cobra.Command) bool {
 		"name", "price", "currency", "description",
 		"custom-permalink", "custom-summary", "custom-receipt",
 		"pay-what-you-want", "suggested-price", "max-purchase-count",
-		"taxonomy-id", "tag",
+		"category", "taxonomy-id", "tag",
 	} {
 		if cmd.Flags().Changed(flag) {
 			return true
