@@ -1,9 +1,8 @@
 package products
 
 import (
-	"encoding/json"
-	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/antiwork/gumroad-cli/internal/cmdutil"
@@ -16,6 +15,7 @@ func newThumbnailCmd() *cobra.Command {
 		Use:   "thumbnail",
 		Short: "Manage a product thumbnail",
 		Example: `  gumroad products thumbnail set <product_id> --image ./thumb.jpg
+  gumroad products thumbnail set <product_id> --url https://example.com/thumb.png
   gumroad products thumbnail remove <product_id>`,
 	}
 
@@ -25,7 +25,7 @@ func newThumbnailCmd() *cobra.Command {
 }
 
 func newThumbnailSetCmd() *cobra.Command {
-	var imagePath string
+	var imagePath, thumbnailURL string
 
 	cmd := &cobra.Command{
 		Use:   "set <product_id>",
@@ -33,13 +33,28 @@ func newThumbnailSetCmd() *cobra.Command {
 		Args:  cmdutil.ExactArgs(1),
 		RunE: func(c *cobra.Command, args []string) error {
 			opts := cmdutil.OptionsFrom(c)
-			if !c.Flags().Changed("image") {
-				return cmdutil.MissingFlagError(c, "--image")
+			flags := c.Flags()
+			if !flags.Changed("image") && !flags.Changed("url") {
+				return cmdutil.UsageErrorf(c, "provide --image or --url")
 			}
-			if strings.TrimSpace(imagePath) == "" {
+			if flags.Changed("image") && flags.Changed("url") {
+				return cmdutil.UsageErrorf(c, "--image and --url cannot be used together")
+			}
+			if flags.Changed("image") && strings.TrimSpace(imagePath) == "" {
 				return cmdutil.UsageErrorf(c, "--image cannot be empty")
 			}
 			productID := args[0]
+			path := productMediaAttachPath(productID, productMediaThumbnail)
+
+			if flags.Changed("url") {
+				if err := cmdutil.RequireHTTPURLFlag(c, "url", thumbnailURL); err != nil {
+					return err
+				}
+				params := url.Values{}
+				params.Set("url", thumbnailURL)
+				return cmdutil.RunRequestWithSuccess(opts, "Setting thumbnail...", http.MethodPost, path, params, productID, "Thumbnail set for product "+productID+".")
+			}
+
 			media, err := describeProductMedia([]requestedProductMedia{{Kind: productMediaThumbnail, Path: imagePath}})
 			if err != nil {
 				return err
@@ -57,14 +72,15 @@ func newThumbnailSetCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			data, err := json.Marshal(map[string]any{"media": results})
+			data, err := productMediaSingleAttachResult(results)
 			if err != nil {
-				return fmt.Errorf("could not encode response: %w", err)
+				return err
 			}
 			return cmdutil.PrintMutationSuccess(opts, data, productID, "Thumbnail set for product "+productID+".")
 		},
 	}
 	cmd.Flags().StringVar(&imagePath, "image", "", "Local JPEG, PNG, or GIF image to upload as the thumbnail")
+	cmd.Flags().StringVar(&thumbnailURL, "url", "", "Remote http(s) image URL to set as the thumbnail")
 	return cmd
 }
 

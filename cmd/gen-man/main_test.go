@@ -28,6 +28,18 @@ func TestRunRemovesStaleManPagesAndGeneratesCurrentTree(t *testing.T) {
 	if _, err := os.Stat(productSKUsPath); err != nil {
 		t.Fatalf("expected nested sku man page, got err=%v", err)
 	}
+	refundPolicyPath := filepath.Join(outputDir, "gumroad-refund-policy.1")
+	if _, err := os.Stat(refundPolicyPath); err != nil {
+		t.Fatalf("expected refund policy man page, got err=%v", err)
+	}
+	refundPolicyViewPath := filepath.Join(outputDir, "gumroad-refund-policy-view.1")
+	if _, err := os.Stat(refundPolicyViewPath); err != nil {
+		t.Fatalf("expected refund policy view man page, got err=%v", err)
+	}
+	refundPolicySetPath := filepath.Join(outputDir, "gumroad-refund-policy-set.1")
+	if _, err := os.Stat(refundPolicySetPath); err != nil {
+		t.Fatalf("expected refund policy set man page, got err=%v", err)
+	}
 
 	productPageData, err := os.ReadFile(filepath.Join(outputDir, "gumroad-products.1"))
 	if err != nil {

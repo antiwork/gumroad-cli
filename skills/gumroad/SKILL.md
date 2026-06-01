@@ -4,6 +4,7 @@ description: >
   Use the `gumroad` CLI to look up and manage Gumroad data from the terminal.
   Trigger when the user asks about Gumroad products, files, file uploads,
   attachments, sales, subscribers, licenses, payouts, offer codes, webhooks,
+  refund policies,
   or any Gumroad data lookup.
   Also trigger on "check my Gumroad", "look up a sale", "verify a license",
   "list my products", "how much have I made", "who bought", "recent sales",
@@ -11,7 +12,7 @@ description: >
   "add a cover image", "set a product thumbnail", "upload product media",
   "publish a product landing page", "preview custom HTML", "restore a product page",
   "attach a file to a variant", "finish a failed upload", "abort an upload", "manage webhooks",
-  "check my earnings", "see my revenue", "who subscribed", "manage my store",
+  "set refund policy", "check my refund policy", "check my earnings", "see my revenue", "who subscribed", "manage my store",
   "discount code", "coupon", "shipping status", "payout schedule", or any
   request to query or act on Gumroad data — even if the user doesn't say
   "Gumroad" explicitly but is clearly referring to their creator store or
@@ -47,6 +48,7 @@ Always follow these rules:
 Responses are wrapped in `{"success": true, ...}` with resource-specific keys:
 
 - `user` → `.user`
+- `refund-policy view/set` → `.refund_policy`
 - `products list` → `.products[]`
 - `products view` → `.product`
 - `sales list` → `.sales[]`
@@ -64,7 +66,8 @@ Responses are wrapped in `{"success": true, ...}` with resource-specific keys:
 - `products update` with media flags → mutation envelope with `.result.media[]`
 - `products covers add --image` → `.result.covers[]`, `.result.main_cover_id`, plus `.result.media[]`
 - `products covers add --url` → `.result.covers[]`, `.result.main_cover_id`
-- `products thumbnail set` → `.result.media[].response`
+- `products thumbnail set --image` → `.result.thumbnail`, plus `.result.media[]`
+- `products thumbnail set --url` → `.result.thumbnail`
 - `products page push`, `products page clear`, `products page restore` → `.product.custom_html`, `.product.landing_url`, `.previous_custom_html`, `.sanitization_report`
 - `products page preview` → `.custom_html`, `.sanitization_report`
 - `products page history` → `.snapshots[]`
@@ -124,6 +127,20 @@ gumroad auth logout --yes --no-input
 ```sh
 gumroad user --json --no-input
 gumroad user --json --jq '.user.email' --no-input
+```
+
+### refund-policy — Store-wide refund policy
+
+```sh
+# View the current account-level refund policy
+gumroad refund-policy view --json --no-input
+gumroad refund-policy view --json --jq '.refund_policy.in_effect' --no-input
+
+# Set the refund period. Allowed values: none, 7, 14, 30, 183.
+gumroad refund-policy set --period 30 --fine-print "Refund requests are reviewed within 2 business days." --json --no-input
+
+# Clear fine print. This is account-level, not per-product.
+gumroad refund-policy set --period none --fine-print "" --json --no-input
 ```
 
 ### admin — Internal admin API
@@ -187,8 +204,12 @@ gumroad products list --json --no-input
 # View a product
 gumroad products view <id> --json --no-input
 
+# Find product categories
+gumroad products categories --search figma --json --no-input
+
 # Create a product (created as draft)
 gumroad products create --name "Art Pack" --price 10.00 --json --no-input
+gumroad products create --name "Figma Kit" --category design/ui-and-web/figma --json --no-input
 gumroad products create --name "Art Pack" --price 10.00 --file ./pack.zip --file-name "Art Pack.zip" --json --no-input
 gumroad products create --name "Art Pack" --price 10.00 --cover-image ./cover.jpg --thumbnail ./thumb.jpg --json --no-input
 gumroad products create --name "Newsletter" --type membership --subscription-duration monthly --json --no-input
@@ -197,6 +218,7 @@ gumroad products create --name "E-Book" --type ebook --price 5 --tag art --tag d
 # Update a product
 gumroad products update <id> --name "New Name" --json --no-input
 gumroad products update <id> --price 15.00 --currency eur --json --no-input
+gumroad products update <id> --category design/ui-and-web/figma --json --no-input
 gumroad products update <id> --file ./pack.zip --json --no-input
 gumroad products update <id> --cover-image ./cover.jpg --json --no-input
 gumroad products update <id> --preview-image ./gallery-1.jpg --preview-image ./gallery-2.jpg --json --no-input
@@ -210,6 +232,7 @@ gumroad products covers add <id> --url https://www.youtube.com/watch?v=qKebcV1jv
 gumroad products covers reorder <id> <cover_id> <cover_id> --json --no-input
 gumroad products covers remove <id> <cover_id> --yes --json --no-input
 gumroad products thumbnail set <id> --image ./thumb.jpg --json --no-input
+gumroad products thumbnail set <id> --url https://example.com/thumb.png --json --no-input
 gumroad products thumbnail remove <id> --yes --json --no-input
 
 # Product custom HTML page
@@ -245,13 +268,15 @@ In custom HTML, use Gumroad data attributes for live product values and checkout
 <button data-gumroad-action="buy" data-gumroad-price="19.99">Pay $19.99</button>
 ```
 
-**Create flags:** `--name` (required), `--price`, `--type` (digital|course|ebook|membership|bundle|coffee|call|commission), `--currency`, `--pay-what-you-want`, `--suggested-price`, `--description`, `--custom-summary`, `--custom-permalink`, `--custom-receipt`, `--max-purchase-count`, `--taxonomy-id`, `--tag` (repeatable), `--file` (repeatable), `--file-name` (repeatable, aligned to `--file`), `--file-description` (repeatable, aligned to `--file`), `--cover-image`, `--preview-image` (repeatable), `--thumbnail`.
+**Categories:** `products categories [--search <term>]` returns label, path, and numeric ID. Prefer `--category <path>` for product create/update. `--taxonomy-id` remains supported when you already have the numeric ID, but it cannot be combined with `--category`.
 
-**Update flags:** `--name`, `--price`, `--currency`, `--description`, `--custom-summary`, `--custom-permalink`, `--custom-receipt`, `--max-purchase-count`, `--taxonomy-id`, `--tag` (repeatable), `--file` (repeatable), `--file-name`, `--file-description`, `--remove-file` (repeatable), `--replace-files`, `--keep-file` (repeatable with `--replace-files`), `--cover-image`, `--preview-image` (repeatable), `--thumbnail`. Updates preserve existing files by default unless `--replace-files` is set.
+**Create flags:** `--name` (required), `--price`, `--type` (digital|course|ebook|membership|bundle|coffee|call|commission), `--currency`, `--pay-what-you-want`, `--suggested-price`, `--description`, `--custom-summary`, `--custom-permalink`, `--custom-receipt`, `--max-purchase-count`, `--category`, `--taxonomy-id`, `--tag` (repeatable), `--file` (repeatable), `--file-name` (repeatable, aligned to `--file`), `--file-description` (repeatable, aligned to `--file`), `--cover-image`, `--preview-image` (repeatable), `--thumbnail`.
+
+**Update flags:** `--name`, `--price`, `--currency`, `--description`, `--custom-summary`, `--custom-permalink`, `--custom-receipt`, `--max-purchase-count`, `--category`, `--taxonomy-id`, `--tag` (repeatable), `--file` (repeatable), `--file-name`, `--file-description`, `--remove-file` (repeatable), `--replace-files`, `--keep-file` (repeatable with `--replace-files`), `--cover-image`, `--preview-image` (repeatable), `--thumbnail`. Updates preserve existing files by default unless `--replace-files` is set.
 
 Use `products update --file` for shared product Content. For products with per-variant Content, use `variants update ... --file` for the specific variant you want to change.
 
-Use `--cover-image` for the primary cover, repeat `--preview-image` for additional gallery/preview images, and `--thumbnail` for the card/library thumbnail. These media flags run the required two-step API flow: direct upload first, then attach by signed blob ID.
+Use `--cover-image` for the primary cover, repeat `--preview-image` for additional gallery/preview images, and `--thumbnail` for the card/library thumbnail. These media flags run the required two-step API flow: direct upload first, then attach by signed blob ID. For an existing product, `products thumbnail set --url` asks Gumroad to download and attach a public HTTP(S) image directly.
 
 Use `products page preview` to see the sanitized HTML and `sanitization_report` without writing. Use `products page push <id> [path]` to publish custom HTML; `path` defaults to `./landing.html`, and `-` reads stdin. `products page clear` and `products page restore` are mutating and can prompt, so pass `--yes --json --no-input` in agent runs. The CLI snapshots `previous_custom_html` locally when push/clear/restore responses include it; use `products page history` to inspect snapshots and `products page restore --snapshot N` to re-PUT one. `products page dev` is for interactive local browser iteration, not unattended agent runs, and mirrors the `data-gumroad-action="buy"` checkout bridge locally.
 

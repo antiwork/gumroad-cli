@@ -604,6 +604,47 @@ func TestCreate_AllOptionalFlags(t *testing.T) {
 	}
 }
 
+func TestCreate_CategorySendsCategoryParam(t *testing.T) {
+	var gotForm url.Values
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		gotForm = r.PostForm
+		testutil.JSON(t, w, map[string]any{
+			"product": map[string]any{
+				"id": "p1", "name": "Figma Kit", "formatted_price": "$0",
+			},
+		})
+	})
+
+	cmd := newCreateCmd()
+	cmd.SetArgs([]string{"--name", "Figma Kit", "--category", "design/ui-and-web/figma"})
+	testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	if got := gotForm.Get("category"); got != "design/ui-and-web/figma" {
+		t.Fatalf("category = %q, want design/ui-and-web/figma", got)
+	}
+	if got := gotForm.Get("taxonomy_id"); got != "" {
+		t.Fatalf("taxonomy_id should not be sent with --category, got %q", got)
+	}
+}
+
+func TestCreate_CategoryAndTaxonomyIDError(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Error("should not reach API")
+	})
+
+	cmd := newCreateCmd()
+	cmd.SetArgs([]string{
+		"--name", "Figma Kit",
+		"--category", "design/ui-and-web/figma",
+		"--taxonomy-id", "12",
+	})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "specify either --category or --taxonomy-id") {
+		t.Fatalf("expected mutually exclusive category error, got: %v", err)
+	}
+}
+
 func TestCreate_MissingName(t *testing.T) {
 	cmd := newCreateCmd()
 	cmd.SetArgs([]string{"--price", "1.00"})
@@ -918,6 +959,43 @@ func TestUpdate_MultipleFlags(t *testing.T) {
 		if got := gotForm.Get(param); got != want {
 			t.Errorf("param %s: got %q, want %q", param, got, want)
 		}
+	}
+}
+
+func TestUpdate_CategorySendsCategoryParam(t *testing.T) {
+	var gotForm url.Values
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		gotForm = r.PostForm
+		testutil.JSON(t, w, map[string]any{})
+	})
+
+	cmd := newUpdateCmd()
+	cmd.SetArgs([]string{"prod1", "--category", "design/ui-and-web/figma"})
+	testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	if got := gotForm.Get("category"); got != "design/ui-and-web/figma" {
+		t.Fatalf("category = %q, want design/ui-and-web/figma", got)
+	}
+	if got := gotForm.Get("taxonomy_id"); got != "" {
+		t.Fatalf("taxonomy_id should not be sent with --category, got %q", got)
+	}
+}
+
+func TestUpdate_CategoryAndTaxonomyIDError(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Error("should not reach API")
+	})
+
+	cmd := newUpdateCmd()
+	cmd.SetArgs([]string{
+		"prod1",
+		"--category", "design/ui-and-web/figma",
+		"--taxonomy-id", "12",
+	})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "specify either --category or --taxonomy-id") {
+		t.Fatalf("expected mutually exclusive category error, got: %v", err)
 	}
 }
 

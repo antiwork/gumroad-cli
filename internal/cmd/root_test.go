@@ -187,6 +187,17 @@ func TestRootCmd_HelpIncludesPageDelayFlag(t *testing.T) {
 	}
 }
 
+func TestRootCmd_IncludesRefundPolicyCommand(t *testing.T) {
+	cmd := NewRootCmd()
+	found, _, err := cmd.Find([]string{"refund-policy", "view"})
+	if err != nil {
+		t.Fatalf("find refund-policy view: %v", err)
+	}
+	if found == nil || found.CommandPath() != "gumroad refund-policy view" {
+		t.Fatalf("expected gumroad refund-policy view, got %v", found)
+	}
+}
+
 func TestRootCmd_VersionFlag(t *testing.T) {
 	cmd := NewRootCmd()
 	cmd.SetArgs([]string{"--version"})

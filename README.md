@@ -38,6 +38,10 @@ export GUMROAD_ACCESS_TOKEN=your-token
 # View your account
 gumroad user
 
+# View or set your account refund policy
+gumroad refund-policy view
+gumroad refund-policy set --period 30 --fine-print "Refund requests are reviewed within 2 business days."
+
 # List products, then inspect one
 gumroad products list
 gumroad products view abc123
@@ -71,6 +75,34 @@ Run `gumroad --help` and `gumroad <command> --help` for subcommands, usage detai
 
 Admin commands use a separate internal token. Run `gumroad auth login` and check the admin box to store one locally, or use `GUMROAD_ADMIN_TOKEN` with `--non-interactive` in CI and agent runs. For local testing, set `GUMROAD_ADMIN_API_BASE_URL`.
 
+## Refund policy
+
+```sh
+# Read the store-wide refund policy shown to buyers
+gumroad refund-policy view
+
+# Set the refund period and fine print
+gumroad refund-policy set --period 30 --fine-print "Refund requests are reviewed within 2 business days."
+
+# Clear fine print and allow no refunds
+gumroad refund-policy set --period none --fine-print ""
+```
+
+Refund policy is account-level, not per-product. Allowed periods are `none`, `7`, `14`, `30`, and `183`; `--fine-print` is optional and capped by the API at 3000 characters.
+
+## Product categories
+
+```sh
+# Find the category path to use on create/update
+gumroad products categories --search figma
+
+# Set a product category by path
+gumroad products create --name "Figma Kit" --category design/ui-and-web/figma
+gumroad products update <product_id> --category design/ui-and-web/figma
+```
+
+Use the `path` from `gumroad products categories` with `--category`. The older numeric `--taxonomy-id` flag still works when you already have an API taxonomy ID, but it cannot be combined with `--category`.
+
 ## File attachments
 
 ```sh
@@ -94,6 +126,9 @@ gumroad products create --name "Art Pack" --price 10.00 --cover-image ./cover.jp
 
 # Add preview/gallery images to an existing product
 gumroad products update <product_id> --preview-image ./gallery-1.jpg --preview-image ./gallery-2.jpg
+
+# Set a thumbnail from a public image URL
+gumroad products thumbnail set <product_id> --url https://example.com/thumb.png
 ```
 
 Product media upload supports JPEG, PNG, and GIF. Use `gumroad products covers --help` and `gumroad products thumbnail --help` for full-control resource commands.
