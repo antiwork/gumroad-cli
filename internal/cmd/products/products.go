@@ -21,6 +21,8 @@ func NewProductsCmd() *cobra.Command {
   gumroad products update <product_id> --name "New Name"
   gumroad products update <product_id> --category design/ui-and-web/figma
   gumroad products update <product_id> --preview-image ./gallery.jpg
+  gumroad products page preview <product_id> ./landing.html
+  gumroad products page publish <product_id> ./landing.html
   gumroad products covers add <product_id> --image ./cover.jpg
   gumroad products thumbnail set <product_id> --image ./thumb.jpg
   gumroad products update <product_id> --file ./pack.zip
@@ -40,6 +42,7 @@ func NewProductsCmd() *cobra.Command {
 	cmd.AddCommand(newDeleteCmd())
 	cmd.AddCommand(newPublishCmd())
 	cmd.AddCommand(newUnpublishCmd())
+	cmd.AddCommand(newPageCmd())
 	cmd.AddCommand(newCoversCmd())
 	cmd.AddCommand(newThumbnailCmd())
 	cmd.AddCommand(skus.NewProductSKUsCmd())
