@@ -317,6 +317,6 @@ func assertInOrder(t *testing.T, value string, needles ...string) {
 		if idx < last {
 			t.Fatalf("expected %q after previous needle in %q", needle, value)
 		}
-		last = idx
+		last = idx + len(needle)
 	}
 }
