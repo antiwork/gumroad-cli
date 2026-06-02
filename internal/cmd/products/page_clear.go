@@ -42,7 +42,7 @@ func newPageClearCmd() *cobra.Command {
 					})
 				},
 			)
-			return pageutil.TranslateRateLimitError(err, pageutil.PublishRateLimitMessage)
+			return pageutil.TranslateRateLimitError(err, pageutil.ClearRateLimitMessage)
 		},
 	}
 }

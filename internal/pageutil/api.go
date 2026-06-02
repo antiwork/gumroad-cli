@@ -12,11 +12,10 @@ import (
 const (
 	PublishRateLimitMessage = "Hit Gumroad's rate limit (30 PUTs/min). Use `gumroad products page preview` to iterate without burning your publish budget."
 	PreviewRateLimitMessage = "Hit Gumroad's rate limit (60 previews/min). Wait a moment before previewing again."
+	ClearRateLimitMessage   = "Hit Gumroad's rate limit (30 PUTs/min). Wait a moment before trying again."
 )
 
 type Target struct {
-	Resource    string
-	ID          string
 	Path        string
 	PreviewPath string
 }
@@ -24,8 +23,6 @@ type Target struct {
 func ProductTarget(id string) Target {
 	path := cmdutil.JoinPath("products", id)
 	return Target{
-		Resource:    "products",
-		ID:          id,
 		Path:        path,
 		PreviewPath: cmdutil.JoinPath("products", id, "preview_custom_html"),
 	}

@@ -69,3 +69,23 @@ func TestPageClearNoInputRequiresYesBeforeAPI(t *testing.T) {
 		t.Fatalf("expected confirmation error, got %v", err)
 	}
 }
+
+func TestPageClearRateLimitMessage(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusTooManyRequests)
+		testutil.RawJSON(t, w, `{"success":false,"message":"Rate limited"}`)
+	})
+
+	cmd := testutil.Command(newPageClearCmd(), testutil.Yes(true))
+	cmd.SetArgs([]string{"prod1"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected rate limit error")
+	}
+	if !strings.Contains(err.Error(), "Wait a moment before trying again") {
+		t.Fatalf("expected clear-specific rate limit message, got %v", err)
+	}
+	if strings.Contains(err.Error(), "page preview") {
+		t.Fatalf("clear rate limit message should not mention preview, got %v", err)
+	}
+}
