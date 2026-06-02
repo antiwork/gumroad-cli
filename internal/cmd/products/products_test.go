@@ -1379,14 +1379,14 @@ func TestNewProductsCmd(t *testing.T) {
 	for _, c := range cmd.Commands() {
 		subs[c.Use] = true
 	}
-	for _, name := range []string{"create", "update <product_id>", "list", "view <id>", "delete <id>", "publish <id>", "unpublish <id>", "skus <id>"} {
+	for _, name := range []string{"create", "update <product_id>", "list", "view <id>", "delete <id>", "publish <id>", "unpublish <id>", "covers", "thumbnail", "sections", "skus <id>"} {
 		if !subs[name] {
 			t.Errorf("missing subcommand %q", name)
 		}
 	}
 }
 
-func TestNewProductsCmd_HelpIncludesSKUs(t *testing.T) {
+func TestNewProductsCmd_HelpIncludesProductScopedReads(t *testing.T) {
 	cmd := NewProductsCmd()
 	cmd.SetArgs([]string{"--help"})
 
@@ -1397,6 +1397,8 @@ func TestNewProductsCmd_HelpIncludesSKUs(t *testing.T) {
 	})
 
 	for _, want := range []string{
+		"gumroad products sections list <product_id>",
+		"sections    Manage product page sections",
 		"gumroad products skus <id>",
 		"skus        List SKUs for a product",
 	} {
