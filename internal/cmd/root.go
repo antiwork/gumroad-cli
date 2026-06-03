@@ -27,6 +27,7 @@ import (
 	"github.com/antiwork/gumroad-cli/internal/cmd/webhooks"
 	"github.com/antiwork/gumroad-cli/internal/cmdutil"
 	"github.com/antiwork/gumroad-cli/internal/output"
+	"github.com/antiwork/gumroad-cli/internal/updatecheck"
 	"github.com/spf13/cobra"
 )
 
@@ -35,6 +36,7 @@ var (
 	newRootCommand = NewRootCmd
 	exitProcess    = os.Exit
 	getOSArgs      = func() []string { return os.Args }
+	notifyUpdate   = updatecheck.Notify
 )
 
 func NewRootCmd() *cobra.Command {
@@ -76,6 +78,7 @@ func NewRootCmd() *cobra.Command {
 				return err
 			}
 			skill.AutoRefresh(Version)
+			notifyUpdate(opts, cmd.CommandPath())
 			return nil
 		},
 		Version: Version,

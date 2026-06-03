@@ -61,6 +61,13 @@ func replaceGetOSArgs(t *testing.T, args []string) {
 	t.Cleanup(func() { getOSArgs = previous })
 }
 
+func replaceNotifyUpdate(t *testing.T, fn func(cmdutil.Options, string)) {
+	t.Helper()
+	previous := notifyUpdate
+	notifyUpdate = fn
+	t.Cleanup(func() { notifyUpdate = previous })
+}
+
 func replaceExitProcess(t *testing.T, exitFn func(int)) {
 	t.Helper()
 
@@ -210,6 +217,49 @@ func TestRootCmd_VersionFlag(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "gumroad version ") {
 		t.Fatalf("expected version output, got %q", out.String())
+	}
+}
+
+func TestRootCmd_UpdateNoticeUsesStderrWithJSONOutput(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	called := false
+	replaceNotifyUpdate(t, func(opts cmdutil.Options, commandPath string) {
+		called = true
+		if commandPath != "gumroad noop" {
+			t.Fatalf("got command path %q, want gumroad noop", commandPath)
+		}
+		if !opts.JSONOutput {
+			t.Fatal("expected JSON output flag in update notifier options")
+		}
+		fmt.Fprintln(opts.Err(), "warning: gumroad v1.1.0 is available; you have v1.0.0. Update: brew upgrade antiwork/cli/gumroad")
+	})
+
+	cmd := NewRootCmd()
+	cmd.AddCommand(&cobra.Command{
+		Use: "noop",
+		RunE: func(c *cobra.Command, args []string) error {
+			_, err := fmt.Fprintln(c.OutOrStdout(), `{"ok":true}`)
+			return err
+		},
+	})
+	cmd.SetArgs([]string{"noop", "--json"})
+
+	var stdout, stderr bytes.Buffer
+	cmd.SetOut(&stdout)
+	cmd.SetErr(&stderr)
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !called {
+		t.Fatal("expected update notifier to be called")
+	}
+	if got := stdout.String(); got != "{\"ok\":true}\n" {
+		t.Fatalf("stdout should stay machine-readable, got %q", got)
+	}
+	if !strings.Contains(stderr.String(), "warning: gumroad v1.1.0 is available") {
+		t.Fatalf("expected warning on stderr, got %q", stderr.String())
 	}
 }
 
