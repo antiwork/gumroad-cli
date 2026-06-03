@@ -27,6 +27,7 @@ import (
 	"github.com/antiwork/gumroad-cli/internal/cmd/webhooks"
 	"github.com/antiwork/gumroad-cli/internal/cmdutil"
 	"github.com/antiwork/gumroad-cli/internal/output"
+	"github.com/antiwork/gumroad-cli/internal/updatecheck"
 	"github.com/spf13/cobra"
 )
 
@@ -35,6 +36,8 @@ var (
 	newRootCommand = NewRootCmd
 	exitProcess    = os.Exit
 	getOSArgs      = func() []string { return os.Args }
+	notifyUpdate   = updatecheck.Notify
+	refreshUpdate  = updatecheck.Refresh
 )
 
 func NewRootCmd() *cobra.Command {
@@ -75,7 +78,11 @@ func NewRootCmd() *cobra.Command {
 			if err := cmdutil.RequireNonNegativeDurationFlag(cmd, "page-delay", opts.PageDelay); err != nil {
 				return err
 			}
+			if updatecheck.IsRefreshCommand(cmd.CommandPath()) {
+				return nil
+			}
 			skill.AutoRefresh(Version)
+			notifyUpdate(opts, cmd.CommandPath())
 			return nil
 		},
 		Version: Version,
@@ -121,9 +128,20 @@ func NewRootCmd() *cobra.Command {
 	cmd.AddCommand(webhooks.NewWebhooksCmd())
 	cmd.AddCommand(completion.NewCompletionCmd())
 	cmd.AddCommand(skill.NewSkillCmd())
+	cmd.AddCommand(newUpdateCheckRefreshCmd())
 	cmdutil.PropagateExamples(cmd)
 
 	return cmd
+}
+
+func newUpdateCheckRefreshCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:    updatecheck.RefreshCommandName,
+		Hidden: true,
+		Run: func(c *cobra.Command, args []string) {
+			refreshUpdate(c.Context())
+		},
+	}
 }
 
 func commandContext(cmd *cobra.Command) context.Context {
