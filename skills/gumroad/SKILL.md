@@ -78,6 +78,8 @@ Responses are wrapped in `{"success": true, ...}` with resource-specific keys:
 - `admin users comments list` → `.comments[]`
 - `admin users comments add` → `.comment`
 - `admin users compliance` → `.compliance_info`, `.info_requests[]`
+- `admin users credits add` → `.user_id`, `.credit.id`, `.credit.amount_cents`, `.credit.reason`, `.credit.crediting_user_id`, `.credit.created_at`
+- `admin users credits list` → `.credits[]`, `.pagination.next`
 - `admin users radar` → `.radar_stats`, `.recent_efws[]`
 - `admin users purchases` → `.purchases[]`
 - `admin users related` → `.related_users[]`, `.truncated`, `.per_signal_limit`
@@ -92,7 +94,7 @@ Responses are wrapped in `{"success": true, ...}` with resource-specific keys:
 
 Admin pagination models differ by command:
 
-- Cursor-paginated: `admin users affiliates`, `admin users comments list`, `admin users radar`, `admin users purchases`, and `admin purchases lookup` return `.pagination.next` as a cursor string. Pass it back with `--cursor`.
+- Cursor-paginated: `admin users affiliates`, `admin users comments list`, `admin users credits list`, `admin users radar`, `admin users purchases`, and `admin purchases lookup` return `.pagination.next` as a cursor string. Pass it back with `--cursor`.
 - Page-paginated: `admin products list` returns `.pagination.next` as an integer page number. Pass it back with `--page`; use `--per-page` for page size.
 - Capped, not continuable: `admin users related` returns at most 50 related users per signal. Always inspect `.truncated`; when any signal is `true`, the result hit the cap and there is no cursor/page to fetch the rest.
 - Capped, not continuable: `admin purchases search` returns `.has_more` when the server capped results. `--limit` is server-capped at 25 and there is no continuation token.
@@ -159,6 +161,12 @@ gumroad admin users affiliates --email seller@example.com --direction received -
 # Read and add admin comments
 gumroad admin users comments list --user-id 2245593582708 --type note --limit 50 --json --non-interactive --no-input
 gumroad admin users comments add --user-id 2245593582708 --content "VAT exempt confirmed" --yes --json --non-interactive --no-input
+
+# Account credits. credits add is a high-stakes write: dry-run first, then issue with explicit --yes.
+# Amounts are cents, positive only, capped at $1,000 unless --allow-large-amount is explicitly passed.
+gumroad admin users credits list --user-id 2245593582708 --limit 50 --json --non-interactive --no-input
+gumroad admin users credits add --user-id 2245593582708 --expected-email seller@example.com --amount-cents 1000 --reason "Goodwill for checkout bug" --dry-run --json --non-interactive --no-input
+gumroad admin users credits add --user-id 2245593582708 --expected-email seller@example.com --amount-cents 1000 --reason "Goodwill for checkout bug" --yes --json --non-interactive --no-input
 
 # Inspect compliance, Radar risk, and buyer history
 gumroad admin users compliance --user-id 2245593582708 --json --non-interactive --no-input

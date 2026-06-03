@@ -16,6 +16,8 @@ func NewUsersCmd() *cobra.Command {
   gumroad admin users comments list --user-id 2245593582708
   gumroad admin users comments add --user-id 2245593582708 --content "VAT exempt confirmed"
   gumroad admin users compliance --user-id 2245593582708
+  gumroad admin users credits list --user-id 2245593582708
+  gumroad admin users credits add --user-id 2245593582708 --amount-cents 1000 --reason "Goodwill for checkout bug" --dry-run
   gumroad admin users radar --user-id 2245593582708
   gumroad admin users purchases --user-id 2245593582708 --status successful
   gumroad admin users related --email user@example.com --signal ip --signal payment_address
@@ -36,6 +38,7 @@ func NewUsersCmd() *cobra.Command {
 	cmd.AddCommand(newAffiliatesCmd())
 	cmd.AddCommand(usercomments.NewCommentsCmd())
 	cmd.AddCommand(newComplianceCmd())
+	cmd.AddCommand(newCreditsCmd())
 	cmd.AddCommand(newRadarCmd())
 	cmd.AddCommand(newPurchasesCmd())
 	cmd.AddCommand(newRelatedCmd())

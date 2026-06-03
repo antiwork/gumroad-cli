@@ -181,6 +181,7 @@ func TestNewUsersCmdWiresSubcommands(t *testing.T) {
 		"affiliates",
 		"comments",
 		"compliance",
+		"credits",
 		"radar",
 		"purchases",
 		"related",
