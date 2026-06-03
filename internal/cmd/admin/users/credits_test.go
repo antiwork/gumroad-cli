@@ -1,6 +1,7 @@
 package users
 
 import (
+	"bytes"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -94,13 +95,14 @@ func TestCreditsAddRejectsLargeAmountWithoutOverride(t *testing.T) {
 }
 
 func TestCreditsAddRequiresConfirmationBeforePost(t *testing.T) {
+	var stderr bytes.Buffer
 	var gotPost bool
 	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
 		gotPost = true
 		t.Error("must not POST without confirmation")
 	})
 
-	cmd := testutil.Command(newCreditsAddCmd(), testutil.NoInput(true))
+	cmd := testutil.Command(newCreditsAddCmd(), testutil.NoInput(true), testutil.Stderr(&stderr))
 	cmd.SetArgs([]string{"--user-id", "2245593582708", "--amount-cents", "1000", "--reason", "Goodwill"})
 
 	err := cmd.Execute()
@@ -109,6 +111,9 @@ func TestCreditsAddRequiresConfirmationBeforePost(t *testing.T) {
 	}
 	if gotPost {
 		t.Fatal("unexpected POST")
+	}
+	if !strings.Contains(stderr.String(), "Admin actor: Test Admin (admin@example.com)") {
+		t.Fatalf("expected actor banner before confirmation failure, got stderr %q", stderr.String())
 	}
 }
 

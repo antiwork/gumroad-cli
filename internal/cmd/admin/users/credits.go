@@ -1,6 +1,7 @@
 package users
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -74,16 +75,16 @@ func newCreditsAddCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "add",
 		Short: "Issue a goodwill account credit",
-		Long: `Issue a positive goodwill account credit to a user.
+		Long: fmt.Sprintf(`Issue a positive goodwill account credit to a user.
 
 This moves money into the user's balance and sends the backend credit
 notification. Each successful call creates a new credit. If the request fails
 after being sent, run "gumroad admin users credits list" for the user before
 retrying to avoid issuing a duplicate credit.
 
-Credits are capped at $1,000 per call unless --allow-large-amount is passed.
+Credits are capped at %s per call unless --allow-large-amount is passed.
 Negative credits and clawbacks are intentionally not supported by this CLI
-command.`,
+command.`, creditCapLabel()),
 		Example: `  gumroad admin users credits add --user-id 2245593582708 --amount-cents 1000 --reason "Goodwill for checkout bug" --dry-run
   gumroad admin users credits add --user-id 2245593582708 --expected-email seller@example.com --amount-cents 1000 --reason "Goodwill for checkout bug" --yes
   gumroad admin users credits add --user-id 2245593582708 --amount-cents 150000 --reason "Approved large goodwill credit" --allow-large-amount --yes`,
@@ -110,6 +111,18 @@ command.`,
 			}
 			path := "users/add_credit"
 
+			var client *adminapi.Client
+			if !opts.DryRun {
+				info, err := admincmd.ResolveMutationToken(opts)
+				if err != nil {
+					return err
+				}
+				if err := admincmd.WriteActorBanner(opts, info); err != nil {
+					return err
+				}
+				client = admincmd.NewAPIClient(opts, info.Value)
+			}
+
 			ok, err := cmdutil.ConfirmAction(opts, fmt.Sprintf(
 				"Issue %s credit to user_id %s? This adds funds to the user's balance.",
 				formatCreditAmount(amountCents),
@@ -126,7 +139,7 @@ command.`,
 				return cmdutil.PrintDryRunRequest(opts, http.MethodPost, adminapi.AdminPath(path), addCreditDryRunParams(req))
 			}
 
-			data, err := admincmd.FetchPostJSON(opts, "Issuing credit...", path, req)
+			data, err := postAddCredit(opts, client, path, req)
 			if err != nil {
 				return wrapCreditError(target.UserID, err)
 			}
@@ -145,7 +158,7 @@ command.`,
 	addUserMutationFlags(cmd, &targetFlags)
 	cmd.Flags().IntVar(&amountCents, "amount-cents", 0, "Credit amount in cents (required, positive)")
 	cmd.Flags().StringVar(&reason, "reason", "", "Reason shown in the creator notification and audit comment (required)")
-	cmd.Flags().BoolVar(&allowLarge, "allow-large-amount", false, "Allow credits over the $1,000 per-call cap")
+	cmd.Flags().BoolVar(&allowLarge, "allow-large-amount", false, "Allow credits over the "+creditCapLabel()+" per-call cap")
 
 	return cmd
 }
@@ -197,9 +210,18 @@ func validateCreditAmount(cmd *cobra.Command, amountCents int, allowLarge bool) 
 		return cmdutil.UsageErrorf(cmd, "--amount-cents must be greater than 0")
 	}
 	if amountCents > creditMaxCents && !allowLarge {
-		return cmdutil.UsageErrorf(cmd, "--amount-cents exceeds the $1,000 per-call cap; pass --allow-large-amount to override")
+		return cmdutil.UsageErrorf(cmd, "--amount-cents exceeds the %s per-call cap; pass --allow-large-amount to override", creditCapLabel())
 	}
 	return nil
+}
+
+func postAddCredit(opts cmdutil.Options, client *adminapi.Client, path string, req addCreditRequest) (json.RawMessage, error) {
+	if cmdutil.ShouldShowSpinner(opts) {
+		sp := output.NewSpinnerTo("Issuing credit...", opts.Err())
+		sp.Start()
+		defer sp.Stop()
+	}
+	return client.PostJSON(path, req)
 }
 
 func validateCreditReason(cmd *cobra.Command, reason string) (string, error) {
@@ -350,6 +372,48 @@ func formatCreditAmount(cents int) string {
 		return fmt.Sprintf("-$%s (%d cents)", strings.TrimPrefix(amount, "-"), cents)
 	}
 	return fmt.Sprintf("$%s (%d cents)", amount, cents)
+}
+
+func creditCapLabel() string {
+	return "$" + formatCreditMoneyLabel(creditMaxCents)
+}
+
+func formatCreditMoneyLabel(cents int) string {
+	amount := cmdutil.FormatMoney(cents, "")
+	negative := strings.HasPrefix(amount, "-")
+	if negative {
+		amount = strings.TrimPrefix(amount, "-")
+	}
+
+	whole, frac, hasFrac := strings.Cut(amount, ".")
+	whole = addThousandsSeparators(whole)
+
+	label := whole
+	if hasFrac && frac != "00" {
+		label += "." + frac
+	}
+	if negative {
+		return "-" + label
+	}
+	return label
+}
+
+func addThousandsSeparators(value string) string {
+	if len(value) <= 3 {
+		return value
+	}
+
+	var b strings.Builder
+	prefix := len(value) % 3
+	if prefix == 0 {
+		prefix = 3
+	}
+	b.WriteString(value[:prefix])
+	for i := prefix; i < len(value); i += 3 {
+		b.WriteByte(',')
+		b.WriteString(value[i : i+3])
+	}
+	return b.String()
 }
 
 func wrapCreditError(userID string, err error) error {
