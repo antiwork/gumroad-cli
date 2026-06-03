@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -40,6 +41,13 @@ func replaceLatestVersion(t *testing.T, fn func(context.Context) (string, error)
 	previous := latestVersion
 	latestVersion = fn
 	t.Cleanup(func() { latestVersion = previous })
+}
+
+func replaceStartRefresh(t *testing.T, fn func()) {
+	t.Helper()
+	previous := startRefresh
+	startRefresh = fn
+	t.Cleanup(func() { startRefresh = previous })
 }
 
 func replaceExecutable(t *testing.T, path string, resolved string) {
@@ -93,8 +101,12 @@ func TestNotifyPrintsWarningAndCachesNotice(t *testing.T) {
 	replaceConfigDir(t, dir)
 	t0 := time.Date(2026, 6, 3, 12, 0, 0, 0, time.UTC)
 	replaceNow(t, t0)
-	replaceLatestVersion(t, func(context.Context) (string, error) {
-		return "v1.1.0", nil
+	writeCache(t, dir, cacheState{
+		LatestVersion: "v1.1.0",
+		CheckedAt:     t0,
+	})
+	replaceStartRefresh(t, func() {
+		t.Fatal("fresh cache should not refresh")
 	})
 
 	var stderr bytes.Buffer
@@ -128,9 +140,8 @@ func TestNotifyDoesNotRepeatSameVersionImmediately(t *testing.T) {
 		LastNoticeVersion: "v1.1.0",
 		LastNoticeAt:      t0,
 	})
-	replaceLatestVersion(t, func(context.Context) (string, error) {
-		t.Fatal("fresh cache should not fetch")
-		return "", nil
+	replaceStartRefresh(t, func() {
+		t.Fatal("fresh cache should not refresh")
 	})
 
 	var stderr bytes.Buffer
@@ -152,6 +163,9 @@ func TestNotifyRepeatsSameVersionAfterNoticeInterval(t *testing.T) {
 		LastNoticeVersion: "v1.1.0",
 		LastNoticeAt:      t0,
 	})
+	replaceStartRefresh(t, func() {
+		t.Fatal("fresh cache should not refresh")
+	})
 
 	var stderr bytes.Buffer
 	Notify(testOptions(&stderr), "gumroad products list")
@@ -170,9 +184,8 @@ func TestNotifyUsesFreshCachedLatestWithoutNetwork(t *testing.T) {
 		LatestVersion: "v1.1.0",
 		CheckedAt:     t0,
 	})
-	replaceLatestVersion(t, func(context.Context) (string, error) {
-		t.Fatal("fresh cache should not fetch")
-		return "", nil
+	replaceStartRefresh(t, func() {
+		t.Fatal("fresh cache should not refresh")
 	})
 
 	var stderr bytes.Buffer
@@ -180,6 +193,32 @@ func TestNotifyUsesFreshCachedLatestWithoutNetwork(t *testing.T) {
 
 	if !strings.Contains(stderr.String(), "v1.1.0 is available") {
 		t.Fatalf("expected cached warning, got %q", stderr.String())
+	}
+}
+
+func TestNotifyStartsRefreshWithoutBlockingForStaleCache(t *testing.T) {
+	dir := t.TempDir()
+	replaceConfigDir(t, dir)
+	t0 := time.Date(2026, 6, 3, 12, 0, 0, 0, time.UTC)
+	replaceNow(t, t0)
+
+	called := false
+	replaceStartRefresh(t, func() {
+		called = true
+	})
+
+	var stderr bytes.Buffer
+	Notify(testOptions(&stderr), "gumroad products list")
+
+	if !called {
+		t.Fatal("expected stale cache to start refresh")
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("expected no first-run warning from live refresh, got %q", stderr.String())
+	}
+	state := readCache(t, dir)
+	if !state.CheckedAt.Equal(t0) {
+		t.Fatalf("expected checked_at throttle marker before refresh, got %+v", state)
 	}
 }
 
@@ -210,6 +249,11 @@ func TestNotifySuppressesQuietCompletionAndDevBuilds(t *testing.T) {
 			opts.Version = "v1.0.0"
 			return opts
 		}(), commandPath: "gumroad __completeNoDesc products list"},
+		{name: "background refresh", opts: func() cmdutil.Options {
+			opts := cmdutil.DefaultOptions()
+			opts.Version = "v1.0.0"
+			return opts
+		}(), commandPath: "gumroad __update-check-refresh"},
 		{name: "dev", opts: func() cmdutil.Options {
 			opts := cmdutil.DefaultOptions()
 			opts.Version = "dev"
@@ -243,19 +287,24 @@ func TestNotifyRefreshFailureIsSilent(t *testing.T) {
 	replaceConfigDir(t, dir)
 	t0 := time.Date(2026, 6, 3, 12, 0, 0, 0, time.UTC)
 	replaceNow(t, t0)
+	writeCache(t, dir, cacheState{
+		LatestVersion: "v1.1.0",
+		CheckedAt:     t0.Add(-checkInterval),
+	})
 	replaceLatestVersion(t, func(context.Context) (string, error) {
 		return "", errors.New("offline")
 	})
 
-	var stderr bytes.Buffer
-	Notify(testOptions(&stderr), "gumroad products list")
-
-	if stderr.Len() != 0 {
-		t.Fatalf("expected silent failure, got %q", stderr.String())
+	if err := refreshCacheOnce(context.Background(), filepath.Join(dir, cacheFileName), cacheState{}, t0); err != nil {
+		t.Fatalf("refresh cache: %v", err)
 	}
+
 	state := readCache(t, dir)
 	if !state.CheckedAt.Equal(t0) {
 		t.Fatalf("expected failed check to be cached, got %+v", state)
+	}
+	if state.LatestVersion != "v1.1.0" {
+		t.Fatalf("expected failed check to preserve latest version, got %+v", state)
 	}
 }
 
@@ -264,8 +313,14 @@ func TestNotifyIgnoresOlderOrMalformedVersions(t *testing.T) {
 		t.Run(latest, func(t *testing.T) {
 			dir := t.TempDir()
 			replaceConfigDir(t, dir)
-			replaceLatestVersion(t, func(context.Context) (string, error) {
-				return latest, nil
+			t0 := time.Date(2026, 6, 3, 12, 0, 0, 0, time.UTC)
+			replaceNow(t, t0)
+			writeCache(t, dir, cacheState{
+				LatestVersion: latest,
+				CheckedAt:     t0,
+			})
+			replaceStartRefresh(t, func() {
+				t.Fatal("fresh cache should not refresh")
 			})
 
 			var stderr bytes.Buffer
@@ -275,6 +330,62 @@ func TestNotifyIgnoresOlderOrMalformedVersions(t *testing.T) {
 				t.Fatalf("expected no warning, got %q", stderr.String())
 			}
 		})
+	}
+}
+
+func TestNotifySkipsWarningWhenNoticeCannotBePersisted(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod-based write failure is Unix-specific")
+	}
+	dir := t.TempDir()
+	replaceConfigDir(t, dir)
+	t0 := time.Date(2026, 6, 3, 12, 0, 0, 0, time.UTC)
+	replaceNow(t, t0)
+	writeCache(t, dir, cacheState{
+		LatestVersion: "v1.1.0",
+		CheckedAt:     t0,
+	})
+	path := filepath.Join(dir, cacheFileName)
+	if err := os.Chmod(path, 0400); err != nil {
+		t.Fatalf("chmod cache file: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(path, 0600) })
+	replaceStartRefresh(t, func() {
+		t.Fatal("fresh cache should not refresh")
+	})
+
+	var stderr bytes.Buffer
+	Notify(testOptions(&stderr), "gumroad products list")
+
+	if stderr.Len() != 0 {
+		t.Fatalf("expected no warning when notice marker cannot persist, got %q", stderr.String())
+	}
+}
+
+func TestRefreshCacheOncePreservesNoticeFields(t *testing.T) {
+	dir := t.TempDir()
+	t0 := time.Date(2026, 6, 3, 12, 0, 0, 0, time.UTC)
+	noticeAt := t0.Add(-time.Hour)
+	writeCache(t, dir, cacheState{
+		LatestVersion:     "v1.1.0",
+		CheckedAt:         t0.Add(-checkInterval),
+		LastNoticeVersion: "v1.1.0",
+		LastNoticeAt:      noticeAt,
+	})
+	replaceLatestVersion(t, func(context.Context) (string, error) {
+		return "v1.2.0", nil
+	})
+
+	if err := refreshCacheOnce(context.Background(), filepath.Join(dir, cacheFileName), cacheState{}, t0); err != nil {
+		t.Fatalf("refresh cache: %v", err)
+	}
+
+	state := readCache(t, dir)
+	if state.LatestVersion != "v1.2.0" || !state.CheckedAt.Equal(t0) {
+		t.Fatalf("expected refreshed latest version, got %+v", state)
+	}
+	if state.LastNoticeVersion != "v1.1.0" || !state.LastNoticeAt.Equal(noticeAt) {
+		t.Fatalf("expected notice fields to be preserved, got %+v", state)
 	}
 }
 

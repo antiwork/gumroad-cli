@@ -14,6 +14,7 @@ import (
 	"github.com/antiwork/gumroad-cli/internal/cmdutil"
 	"github.com/antiwork/gumroad-cli/internal/config"
 	"github.com/antiwork/gumroad-cli/internal/output"
+	"github.com/antiwork/gumroad-cli/internal/updatecheck"
 	"github.com/antiwork/gumroad-cli/internal/upload"
 	"github.com/spf13/cobra"
 )
@@ -66,6 +67,13 @@ func replaceNotifyUpdate(t *testing.T, fn func(cmdutil.Options, string)) {
 	previous := notifyUpdate
 	notifyUpdate = fn
 	t.Cleanup(func() { notifyUpdate = previous })
+}
+
+func replaceRefreshUpdate(t *testing.T, fn func(context.Context)) {
+	t.Helper()
+	previous := refreshUpdate
+	refreshUpdate = fn
+	t.Cleanup(func() { refreshUpdate = previous })
 }
 
 func replaceExitProcess(t *testing.T, exitFn func(int)) {
@@ -260,6 +268,34 @@ func TestRootCmd_UpdateNoticeUsesStderrWithJSONOutput(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "warning: gumroad v1.1.0 is available") {
 		t.Fatalf("expected warning on stderr, got %q", stderr.String())
+	}
+}
+
+func TestRootCmd_UpdateCheckRefreshSkipsNotifier(t *testing.T) {
+	replaceNotifyUpdate(t, func(cmdutil.Options, string) {
+		t.Fatal("update notifier should not run for background refresh command")
+	})
+
+	calledRefresh := false
+	replaceRefreshUpdate(t, func(context.Context) {
+		calledRefresh = true
+	})
+
+	cmd := NewRootCmd()
+	cmd.SetArgs([]string{updatecheck.RefreshCommandName})
+
+	var stdout, stderr bytes.Buffer
+	cmd.SetOut(&stdout)
+	cmd.SetErr(&stderr)
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !calledRefresh {
+		t.Fatal("expected refresh command to run")
+	}
+	if stdout.Len() != 0 || stderr.Len() != 0 {
+		t.Fatalf("expected silent refresh, got stdout=%q stderr=%q", stdout.String(), stderr.String())
 	}
 }
 

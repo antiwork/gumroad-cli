@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -31,7 +33,10 @@ var (
 	userHomeDir   = os.UserHomeDir
 	httpClient    = http.DefaultClient
 	latestVersion = fetchLatestVersion
+	startRefresh  = startRefreshProcess
 )
+
+const RefreshCommandName = "__update-check-refresh"
 
 type cacheState struct {
 	LatestVersion     string    `json:"latest_version,omitempty"`
@@ -70,10 +75,10 @@ func Notify(opts cmdutil.Options, commandPath string) {
 	t := now()
 	if shouldRefresh(state, t) {
 		state.CheckedAt = t
-		if latest, err := checkLatest(opts.Context); err == nil && latest != "" {
-			state.LatestVersion = latest
+		if err := saveCache(path, state); err != nil {
+			return
 		}
-		_ = saveCache(path, state)
+		defer startRefresh()
 	}
 
 	latest, ok := parseVersion(state.LatestVersion)
@@ -81,10 +86,32 @@ func Notify(opts cmdutil.Options, commandPath string) {
 		return
 	}
 
-	fmt.Fprintf(opts.Err(), "warning: gumroad %s is available; you have %s. Update: %s\n", state.LatestVersion, opts.Version, updateCommand())
 	state.LastNoticeVersion = state.LatestVersion
 	state.LastNoticeAt = t
-	_ = saveCache(path, state)
+	if err := saveCache(path, state); err != nil {
+		return
+	}
+	fmt.Fprintf(opts.Err(), "warning: gumroad %s is available; you have %s. Update: %s\n", state.LatestVersion, opts.Version, updateCommand())
+}
+
+// Refresh updates the cache for the hidden background refresh command. It is
+// intentionally silent; update checks must never affect the foreground command.
+func Refresh(ctx context.Context) {
+	path, state, ok := loadCache()
+	if !ok {
+		return
+	}
+	_ = refreshCacheOnce(ctx, path, state, now())
+}
+
+func IsRefreshCommand(commandPath string) bool {
+	fields := strings.Fields(commandPath)
+	for _, field := range fields {
+		if field == RefreshCommandName {
+			return true
+		}
+	}
+	return false
 }
 
 func eligible(opts cmdutil.Options, commandPath string) bool {
@@ -95,7 +122,7 @@ func eligible(opts cmdutil.Options, commandPath string) bool {
 	if version == "" || version == "dev" || version == "test" {
 		return false
 	}
-	return !isCompletionCommand(commandPath)
+	return !isCompletionCommand(commandPath) && !IsRefreshCommand(commandPath)
 }
 
 func isCompletionCommand(commandPath string) bool {
@@ -114,15 +141,26 @@ func loadCache() (string, cacheState, bool) {
 		return "", cacheState{}, false
 	}
 	path := filepath.Join(dir, cacheFileName)
-	data, err := os.ReadFile(path)
+	state, ok, err := readCacheFile(path)
 	if err != nil {
 		return path, cacheState{}, os.IsNotExist(err)
 	}
-	var state cacheState
-	if err := json.Unmarshal(data, &state); err != nil {
+	if !ok {
 		return path, cacheState{}, true
 	}
 	return path, state, true
+}
+
+func readCacheFile(path string) (cacheState, bool, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return cacheState{}, false, err
+	}
+	var state cacheState
+	if err := json.Unmarshal(data, &state); err != nil {
+		return cacheState{}, false, nil
+	}
+	return state, true, nil
 }
 
 func saveCache(path string, state cacheState) error {
@@ -137,6 +175,39 @@ func saveCache(path string, state cacheState) error {
 		return err
 	}
 	return os.WriteFile(path, data, 0600)
+}
+
+func startRefreshProcess() {
+	path, err := executable()
+	if err != nil {
+		return
+	}
+	cmd := exec.Command(path, RefreshCommandName) //nolint:gosec // path is the current executable, not user input
+	cmd.Stdin = nil
+	cmd.Stdout = io.Discard
+	cmd.Stderr = io.Discard
+	if err := cmd.Start(); err != nil {
+		return
+	}
+	_ = cmd.Process.Release()
+}
+
+func refreshCacheOnce(parent context.Context, path string, state cacheState, checkedAt time.Time) error {
+	state.CheckedAt = checkedAt
+	latest, hasLatest := "", false
+	if fetched, err := checkLatest(parent); err == nil && fetched != "" {
+		latest = fetched
+		hasLatest = true
+		state.LatestVersion = fetched
+	}
+	if current, ok, err := readCacheFile(path); err == nil && ok {
+		current.CheckedAt = state.CheckedAt
+		if hasLatest {
+			current.LatestVersion = latest
+		}
+		state = current
+	}
+	return saveCache(path, state)
 }
 
 func shouldRefresh(state cacheState, t time.Time) bool {
