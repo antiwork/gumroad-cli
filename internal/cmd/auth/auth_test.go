@@ -494,6 +494,67 @@ func TestLogin_DryRunSkipsVerificationAndSave(t *testing.T) {
 	}
 }
 
+func TestLogin_WithTokenFlagReadsTokenFromStdin(t *testing.T) {
+	setupAuth(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer stdin-token" {
+			w.WriteHeader(401)
+			testutil.JSON(t, w, map[string]any{"success": false})
+			return
+		}
+		testutil.JSON(t, w, map[string]any{
+			"success": true,
+			"user":    map[string]any{"name": "Token User", "email": "token@example.com"},
+		})
+	})
+	cfgDir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", cfgDir)
+
+	cmd := testutil.Command(newLoginCmd(), testutil.Stdin(strings.NewReader("stdin-token\n")))
+	if err := cmd.Flags().Set("with-token", "true"); err != nil {
+		t.Fatalf("set --with-token: %v", err)
+	}
+	if err := cmd.RunE(cmd, []string{}); err != nil {
+		t.Fatalf("RunE failed: %v", err)
+	}
+
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("Load config failed: %v", err)
+	}
+	if cfg.AccessToken != "stdin-token" {
+		t.Fatalf("got token %q, want stdin-token", cfg.AccessToken)
+	}
+}
+
+func TestLogin_WithTokenFlagRejectsTerminalStdin(t *testing.T) {
+	withTerminal(t, true)
+	setupAuth(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Error("login --with-token without piped stdin should not reach API")
+	})
+
+	cmd := testutil.Command(newLoginCmd())
+	if err := cmd.Flags().Set("with-token", "true"); err != nil {
+		t.Fatalf("set --with-token: %v", err)
+	}
+	err := cmd.RunE(cmd, []string{})
+	if err == nil || !strings.Contains(err.Error(), "--with-token reads a token from stdin") {
+		t.Fatalf("expected stdin guidance error, got: %v", err)
+	}
+}
+
+func TestLogin_WebAndWithTokenFlagsConflict(t *testing.T) {
+	setupAuth(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Error("conflicting login flags should not reach API")
+	})
+
+	cmd := testutil.Command(newLoginCmd(), testutil.Stdin(strings.NewReader("stdin-token\n")))
+	cmd.SetArgs([]string{"--web", "--with-token"})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "if any flags in the group [web with-token] are set none of the others can be") {
+		t.Fatalf("expected flag conflict error, got: %v", err)
+	}
+}
+
 // --- Status ---
 
 func TestStatus_NotLoggedIn(t *testing.T) {
@@ -1274,6 +1335,70 @@ func TestAdminActorNameFallbacks(t *testing.T) {
 	}
 }
 
+// --- Token ---
+
+func TestToken_PrintsStoredToken(t *testing.T) {
+	t.Setenv(config.EnvAccessToken, "")
+	withConfig(t, "stored-token")
+
+	var out bytes.Buffer
+	cmd := testutil.Command(newTokenCmd(), testutil.Stdout(&out))
+	if err := cmd.RunE(cmd, []string{}); err != nil {
+		t.Fatalf("RunE failed: %v", err)
+	}
+	if strings.TrimSpace(out.String()) != "stored-token" {
+		t.Fatalf("got output %q, want stored-token", out.String())
+	}
+}
+
+func TestToken_PrefersEnvToken(t *testing.T) {
+	withConfig(t, "stored-token")
+	t.Setenv(config.EnvAccessToken, "env-token")
+
+	var out bytes.Buffer
+	cmd := testutil.Command(newTokenCmd(), testutil.Stdout(&out))
+	if err := cmd.RunE(cmd, []string{}); err != nil {
+		t.Fatalf("RunE failed: %v", err)
+	}
+	if strings.TrimSpace(out.String()) != "env-token" {
+		t.Fatalf("got output %q, want env-token", out.String())
+	}
+}
+
+func TestToken_JSONOutputIncludesSource(t *testing.T) {
+	t.Setenv(config.EnvAccessToken, "")
+	withConfig(t, "stored-token")
+
+	var out bytes.Buffer
+	cmd := testutil.Command(newTokenCmd(), testutil.JSONOutput(), testutil.Stdout(&out))
+	if err := cmd.RunE(cmd, []string{}); err != nil {
+		t.Fatalf("RunE failed: %v", err)
+	}
+
+	var resp map[string]any
+	if err := json.Unmarshal(out.Bytes(), &resp); err != nil {
+		t.Fatalf("token JSON output is invalid: %v\n%s", err, out.String())
+	}
+	if resp["token"] != "stored-token" || resp["source"] != string(config.TokenSourceConfig) {
+		t.Fatalf("unexpected token JSON: %#v", resp)
+	}
+}
+
+func TestToken_NotLoggedInShowsExistingTokenOptions(t *testing.T) {
+	t.Setenv(config.EnvAccessToken, "")
+	cfgDir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", cfgDir)
+
+	cmd := testutil.Command(newTokenCmd())
+	err := cmd.RunE(cmd, []string{})
+	if err == nil {
+		t.Fatal("expected not authenticated error")
+	}
+	if !strings.Contains(err.Error(), "gumroad auth login") || !strings.Contains(err.Error(), "gumroad auth login --with-token") || !strings.Contains(err.Error(), config.EnvAccessToken) {
+		t.Fatalf("expected auth recovery guidance, got: %v", err)
+	}
+}
+
 // --- Logout ---
 
 func TestLogout_WithYes(t *testing.T) {
@@ -2041,7 +2166,7 @@ func TestNewAuthCmd(t *testing.T) {
 	for _, c := range cmd.Commands() {
 		subs[c.Use] = true
 	}
-	for _, name := range []string{"login", "status", "logout"} {
+	for _, name := range []string{"login", "status", "token", "logout"} {
 		if !subs[name] {
 			t.Errorf("missing subcommand %q", name)
 		}

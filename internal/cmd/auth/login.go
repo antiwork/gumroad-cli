@@ -36,30 +36,30 @@ var isTerminalFunc = defaultIsTerminal
 
 func newLoginCmd() *cobra.Command {
 	var webFlag bool
+	var withTokenFlag bool
 
 	cmd := &cobra.Command{
 		Use:   "login",
 		Short: "Log in to Gumroad",
 		Args:  cmdutil.ExactArgs(0),
-		Long: `Log in to Gumroad via browser-based OAuth or a manual API token.
-
-By default, opens your browser for OAuth authorization.
-When stdin is piped (e.g. echo $TOKEN | gumroad auth login), reads a seller token directly.`,
-		Example: `  # Browser-based OAuth login (default)
-  gumroad auth login
-
-  # Explicit browser OAuth
-  gumroad auth login --web
-
-  # Pipe token from stdin (CI/scripts)
-  echo "your-token" | gumroad auth login`,
+		Long: "Log in to Gumroad via browser-based OAuth or a manual API token.\n\n" +
+			"By default, opens your browser for OAuth authorization.\n" +
+			"Use --with-token to read an existing seller token from stdin.\n" +
+			"Piped stdin without --with-token is still accepted for compatibility.",
+		Example: "  # Browser-based OAuth login (default)\n" +
+			"  gumroad auth login\n\n" +
+			"  # Explicit browser OAuth\n" +
+			"  gumroad auth login --web\n\n" +
+			"  # Store an existing token from stdin (CI/scripts)\n" +
+			"  gumroad auth login --with-token < token.txt\n" +
+			"  printf '%s\\n' \"$GUMROAD_ACCESS_TOKEN\" | gumroad auth login --with-token",
 		RunE: func(c *cobra.Command, args []string) error {
 			opts := cmdutil.OptionsFrom(c)
 			if opts.DryRun {
 				return cmdutil.PrintDryRunAction(opts, "store API token")
 			}
 
-			creds, err := resolveLoginCredentials(opts, webFlag)
+			creds, err := resolveLoginCredentials(opts, webFlag, withTokenFlag)
 			if err != nil {
 				return err
 			}
@@ -72,16 +72,28 @@ When stdin is piped (e.g. echo $TOKEN | gumroad auth login), reads a seller toke
 	}
 
 	cmd.Flags().BoolVar(&webFlag, "web", false, "Force browser-based OAuth login")
+	cmd.Flags().BoolVar(&withTokenFlag, "with-token", false, "Read an existing seller token from stdin")
+	cmd.MarkFlagsMutuallyExclusive("web", "with-token")
 
 	return cmd
 }
 
-func resolveLoginCredentials(opts cmdutil.Options, webFlag bool) (loginCredentials, error) {
+func resolveLoginCredentials(opts cmdutil.Options, webFlag, withTokenFlag bool) (loginCredentials, error) {
+	if withTokenFlag {
+		return stdinTokenCredentials(opts)
+	}
 	if !isTerminalFunc(opts.In()) {
-		token, err := prompt.TokenInput(opts.In(), opts.Err(), opts.NoInput)
-		return loginCredentials{SellerToken: token}, err
+		return stdinTokenCredentials(opts)
 	}
 	return oauthLogin(opts, webFlag)
+}
+
+func stdinTokenCredentials(opts cmdutil.Options) (loginCredentials, error) {
+	if isTerminalFunc(opts.In()) {
+		return loginCredentials{}, fmt.Errorf("--with-token reads a token from stdin. Run: gumroad auth login --with-token < token.txt")
+	}
+	token, err := prompt.TokenInput(opts.In(), opts.Err(), opts.NoInput)
+	return loginCredentials{SellerToken: token}, err
 }
 
 func defaultIsTerminal(r interface{}) bool {

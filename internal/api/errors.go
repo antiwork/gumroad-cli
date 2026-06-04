@@ -6,7 +6,7 @@ import (
 	"fmt"
 )
 
-const HintRunAuthLogin = "Run: gumroad auth login — or set GUMROAD_ACCESS_TOKEN"
+const HintRunAuthLogin = "Run: gumroad auth login. For CI/agents with an existing token, set GUMROAD_ACCESS_TOKEN or run: gumroad auth login --with-token < token.txt"
 
 var (
 	ErrNotAuthenticated = errors.New("not authenticated")

@@ -197,7 +197,7 @@ func ResolveToken() (TokenInfo, error) {
 		return TokenInfo{}, err
 	}
 	if cfg.AccessToken == "" {
-		return TokenInfo{}, fmt.Errorf("%w. Run `gumroad auth login` first or set `%s`", ErrNotAuthenticated, EnvAccessToken)
+		return TokenInfo{}, fmt.Errorf("%w. Run `gumroad auth login`, set `%s`, or pipe an existing token into `gumroad auth login --with-token`", ErrNotAuthenticated, EnvAccessToken)
 	}
 	return TokenInfo{Value: cfg.AccessToken, Source: TokenSourceConfig}, nil
 }

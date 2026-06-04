@@ -63,11 +63,13 @@ gumroad sales refund abc123 --amount 5.00 --dry-run
 ```sh
 gumroad auth login          # Browser-based OAuth (default)
 gumroad auth login --web    # Force browser OAuth, no fallback
+gumroad auth login --with-token < token.txt
 gumroad auth status         # Check seller auth and stored admin auth
+gumroad auth token          # Print the active seller token
 gumroad auth logout         # Revoke/delete stored tokens
 ```
 
-When a browser isn't available, the CLI prints the authorize URL and you paste the redirect URL back. For CI and agents, set `GUMROAD_ACCESS_TOKEN`; it takes precedence over stored seller config and needs no interactive login.
+When a browser isn't available, the CLI prints the authorize URL and you paste the redirect URL back. For CI and agents with an existing token, set `GUMROAD_ACCESS_TOKEN` or pipe the token into `gumroad auth login --with-token`; `GUMROAD_ACCESS_TOKEN` takes precedence over stored seller config and needs no interactive login. The CLI cannot yet create a fresh creator token headlessly.
 
 ## Commands
 
@@ -147,7 +149,7 @@ Paginated commands (`sales list`, `payouts list`, `subscribers list`) accept `--
 
 ## AI agents
 
-`gumroad` is built to work with AI agents. The `--json`, `--jq`, `--no-input`, and `--non-interactive` flags make it easy to query Gumroad data programmatically, and `GUMROAD_ACCESS_TOKEN` gives agents a no-persistence seller auth path.
+`gumroad` is built to work with AI agents. The `--json`, `--jq`, `--no-input`, and `--non-interactive` flags make it easy to query Gumroad data programmatically, and `GUMROAD_ACCESS_TOKEN` gives agents a no-persistence seller auth path when a token already exists.
 
 An [agent skill](skills/gumroad/SKILL.md) is included. Run `gumroad skill` to install or refresh it.
 

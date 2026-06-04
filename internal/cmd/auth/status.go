@@ -76,7 +76,7 @@ func newStatusCmd() *cobra.Command {
 				if opts.PlainOutput {
 					return printStatusPlain(opts, status)
 				}
-				if err := output.Writeln(opts.Out(), "Not logged in. Run "+style.Bold("gumroad auth login")+" or set "+style.Bold(config.EnvAccessToken)+" to authenticate."); err != nil {
+				if err := output.Writeln(opts.Out(), "Not logged in. Run "+style.Bold("gumroad auth login")+", set "+style.Bold(config.EnvAccessToken)+", or pipe an existing token into "+style.Bold("gumroad auth login --with-token")+"."); err != nil {
 					return err
 				}
 				if status.Admin != nil {
