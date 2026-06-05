@@ -40,8 +40,8 @@ Always follow these rules:
 - Product cover and thumbnail uploads support JPEG, PNG, and GIF. WebP is not supported by the API and the CLI rejects it before upload.
 - Product custom HTML landing pages use `gumroad products page preview <id> ./landing.html` to run the backend sanitizer without writing, `gumroad products page publish <id> ./landing.html` to store the page, `gumroad products page clear <id> --yes` to remove it, and `gumroad products page url <id>` to print the live URL. `--dry-run` only previews the CLI request body; it does not call the backend sanitizer. Inspect `.sanitization_report` in `preview` and `publish` JSON output for server-side changes.
 - Custom HTML pages can use `data-gumroad-field="name"`, `data-gumroad-field="price"`, `data-gumroad-field="description"`, and `data-gumroad-action="buy"`. To preselect checkout state, add `data-gumroad-option="<variant name>"`, `data-gumroad-quantity="<integer>"`, `data-gumroad-price="<decimal>"`, or `data-gumroad-recurrence="monthly|quarterly|biannually|yearly|every_two_years"`. Production validates these values and falls back to product defaults when invalid. Prefer anchors for buy CTAs so production can add a checkout href; non-anchor buy elements also post to checkout.
-- If a command fails with a seller auth error, run `gumroad auth status --json --no-input` first. Agents can use an existing seller token via `GUMROAD_ACCESS_TOKEN` or `gumroad auth login --with-token`; creating a fresh creator token still requires a human browser/session until device auth exists.
-- For admin commands in agents/CI, pass `--non-interactive` and set `GUMROAD_ADMIN_TOKEN`; interactive shells can store an admin token with `gumroad auth login`.
+- If a command fails with a seller auth error, run `gumroad auth status --json --no-input` first. Agents can start seller auth with `gumroad auth login --no-input` and hand the printed approval URL to a human, or use an existing seller token via `GUMROAD_ACCESS_TOKEN` or `gumroad auth login --with-token`.
+- For admin commands in agents/CI, pass `--non-interactive` and set `GUMROAD_ADMIN_TOKEN`; interactive shells can store an admin token with `gumroad auth login --web`.
 
 ## Response shapes
 
@@ -117,15 +117,18 @@ When creating or updating many products:
 # Check auth (do this first if unsure)
 gumroad auth status --json --no-input
 
-# Use an existing seller token without a browser
+# Start device authorization and wait for human approval
+gumroad auth login --no-input
+
+# Use an existing seller token without browser approval
 gumroad auth login --with-token --json --no-input < token.txt
 printf '%s\n' "$GUMROAD_ACCESS_TOKEN" | gumroad auth login --with-token --json --no-input
 
 # Print the active resolved seller token for another tool
 gumroad auth token --no-input
 
-# Browser login still requires a human/session
-# gumroad auth login
+# Force the local browser OAuth flow
+gumroad auth login --web
 
 # Logout
 gumroad auth logout --yes --no-input

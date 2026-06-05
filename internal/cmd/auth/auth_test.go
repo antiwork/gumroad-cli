@@ -2,6 +2,7 @@ package auth
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -10,7 +11,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -20,24 +20,6 @@ import (
 	"github.com/antiwork/gumroad-cli/internal/oauth"
 	"github.com/antiwork/gumroad-cli/internal/testutil"
 )
-
-// syncBuffer is a thread-safe bytes.Buffer for concurrent test read/write.
-type syncBuffer struct {
-	mu  sync.Mutex
-	buf bytes.Buffer
-}
-
-func (b *syncBuffer) Write(p []byte) (int, error) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.buf.Write(p)
-}
-
-func (b *syncBuffer) String() string {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.buf.String()
-}
 
 func setupAuth(t *testing.T, handler http.HandlerFunc) {
 	t.Helper()
@@ -160,6 +142,9 @@ func TestLogin_EmptyToken(t *testing.T) {
 	cfgDir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", cfgDir)
 	cmd := testutil.Command(newLoginCmd(), testutil.Stdin(strings.NewReader("  \n")))
+	if err := cmd.Flags().Set("with-token", "true"); err != nil {
+		t.Fatalf("set --with-token flag: %v", err)
+	}
 
 	err := cmd.RunE(cmd, []string{})
 	if err == nil || !strings.Contains(err.Error(), "token cannot be empty") {
@@ -1845,6 +1830,72 @@ func setupOAuthTokenServerWithResponse(t *testing.T, tokenResponse oauth.TokenRe
 	t.Cleanup(func() { oauth.DefaultFlowConfigFunc = oldCfg })
 }
 
+func setupOAuthDeviceServer(t *testing.T) {
+	t.Helper()
+	setupOAuthDeviceServerWithResponse(t, oauth.TokenResponse{
+		AccessToken: "device-access-token-from-server",
+		TokenType:   "bearer",
+		Scope:       "edit_products view_sales",
+	})
+}
+
+func setupOAuthDeviceServerWithResponse(t *testing.T, tokenResponse oauth.TokenResponse) {
+	t.Helper()
+
+	oauthSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			t.Errorf("ParseForm failed: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+
+		switch r.URL.Path {
+		case "/oauth/device/code":
+			if r.PostForm.Get("client_id") == "" {
+				t.Error("device code request missing client_id")
+			}
+			if r.PostForm.Get("admin_scope") != "optional" {
+				t.Errorf("admin_scope=%q, want optional", r.PostForm.Get("admin_scope"))
+			}
+			if err := json.NewEncoder(w).Encode(oauth.DeviceCodeResponse{
+				DeviceCode:              "test-device-code",
+				UserCode:                "GRD-TEST-1234",
+				VerificationURI:         "http://" + r.Host + "/oauth/device",
+				VerificationURIComplete: "http://" + r.Host + "/oauth/device?user_code=GRD-TEST-1234",
+				ExpiresIn:               600,
+				Interval:                1,
+			}); err != nil {
+				t.Errorf("encode device response: %v", err)
+			}
+		case "/oauth/token":
+			if r.PostForm.Get("grant_type") != oauth.DeviceGrantType {
+				t.Errorf("grant_type=%q, want %s", r.PostForm.Get("grant_type"), oauth.DeviceGrantType)
+			}
+			if r.PostForm.Get("device_code") != "test-device-code" {
+				t.Errorf("device_code=%q, want test-device-code", r.PostForm.Get("device_code"))
+			}
+			if err := json.NewEncoder(w).Encode(tokenResponse); err != nil {
+				t.Errorf("encode token response: %v", err)
+			}
+		default:
+			t.Errorf("unexpected OAuth path %q", r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(oauthSrv.Close)
+
+	oldCfg := oauth.DefaultFlowConfigFunc
+	oauth.DefaultFlowConfigFunc = func() oauth.FlowConfig {
+		cfg := oldCfg()
+		cfg.DeviceCodeURL = oauthSrv.URL + "/oauth/device/code"
+		cfg.TokenURL = oauthSrv.URL + "/oauth/token"
+		cfg.Sleep = func(context.Context, time.Duration) error {
+			return nil
+		}
+		return cfg
+	}
+	t.Cleanup(func() { oauth.DefaultFlowConfigFunc = oldCfg })
+}
+
 func TestLogin_OAuth_BrowserFlow(t *testing.T) {
 	withTerminal(t, true)
 	withMockBrowser(t)
@@ -1869,6 +1920,9 @@ func TestLogin_OAuth_BrowserFlow(t *testing.T) {
 
 	var out bytes.Buffer
 	cmd := testutil.Command(newLoginCmd(), testutil.Quiet(false), testutil.Stdout(&out))
+	if err := cmd.Flags().Set("web", "true"); err != nil {
+		t.Fatalf("set --web flag: %v", err)
+	}
 	if err := cmd.RunE(cmd, []string{}); err != nil {
 		t.Fatalf("RunE: %v", err)
 	}
@@ -1918,6 +1972,9 @@ func TestLogin_OAuth_BrowserFlowSavesAdminTokenFromSameApproval(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", cfgDir)
 
 	cmd := testutil.Command(newLoginCmd())
+	if err := cmd.Flags().Set("web", "true"); err != nil {
+		t.Fatalf("set --web flag: %v", err)
+	}
 	if err := cmd.RunE(cmd, []string{}); err != nil {
 		t.Fatalf("RunE: %v", err)
 	}
@@ -1945,14 +2002,20 @@ func TestLogin_OAuth_BrowserFlowSavesAdminTokenFromSameApproval(t *testing.T) {
 	}
 }
 
-func TestLogin_OAuth_BrowserFails_FallsBackToHeadless(t *testing.T) {
+func TestLogin_OAuth_DefaultDeviceFlow(t *testing.T) {
 	withTerminal(t, true)
-	withMockBrowserFail(t)
-	setupOAuthTokenServer(t)
+	setupOAuthDeviceServer(t)
 	setupAuth(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer device-access-token-from-server" {
+			w.WriteHeader(401)
+			if err := json.NewEncoder(w).Encode(map[string]any{"success": false}); err != nil {
+				t.Errorf("encode response: %v", err)
+			}
+			return
+		}
 		if err := json.NewEncoder(w).Encode(map[string]any{
 			"success": true,
-			"user":    map[string]any{"name": "Headless User", "email": "h@test.com"},
+			"user":    map[string]any{"name": "Device User", "email": "device@test.com"},
 		}); err != nil {
 			t.Errorf("encode response: %v", err)
 		}
@@ -1961,48 +2024,81 @@ func TestLogin_OAuth_BrowserFails_FallsBackToHeadless(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", cfgDir)
 
 	var out bytes.Buffer
+	var errOut bytes.Buffer
 
-	// Use a mutex-protected buffer for stderr to avoid data races
-	// between the command goroutine writing and the test goroutine reading.
-	errOut := &syncBuffer{}
-
-	pr, pw, _ := os.Pipe()
-	cmd := testutil.Command(newLoginCmd(), testutil.Quiet(false), testutil.Stdout(&out), testutil.Stderr(errOut), testutil.Stdin(pr))
-
-	done := make(chan error, 1)
-	go func() {
-		done <- cmd.RunE(cmd, []string{})
-	}()
-
-	// Poll stderr until the headless prompt appears.
-	var state string
-	for i := 0; i < 200; i++ {
-		time.Sleep(10 * time.Millisecond)
-		content := errOut.String()
-		if strings.Contains(content, "Paste the full URL") {
-			for _, line := range strings.Split(content, "\n") {
-				line = strings.TrimSpace(line)
-				if strings.HasPrefix(line, "http") {
-					u, _ := url.Parse(line)
-					state = u.Query().Get("state")
-					break
-				}
-			}
-			break
+	cmd := testutil.Command(newLoginCmd(), testutil.Quiet(false), testutil.Stdout(&out), testutil.Stderr(&errOut))
+	if err := cmd.RunE(cmd, []string{}); err != nil {
+		t.Fatalf("RunE: %v", err)
+	}
+	if !strings.Contains(out.String(), "Device User") {
+		t.Fatalf("expected device user in output: %q", out.String())
+	}
+	for _, want := range []string{"Open this URL to authorize Gumroad CLI", "user_code=GRD-TEST-1234", "Waiting for approval"} {
+		if !strings.Contains(errOut.String(), want) {
+			t.Fatalf("device flow stderr missing %q:\n%s", want, errOut.String())
 		}
 	}
+	if strings.Contains(errOut.String(), "Paste the full URL") {
+		t.Fatalf("device flow should not ask for redirect URL paste:\n%s", errOut.String())
+	}
+}
 
-	if state == "" {
-		pw.Close()
-		<-done
-		t.Fatalf("could not extract state from headless prompt. stderr: %q", errOut.String())
+func TestLogin_OAuth_DefaultDeviceFlowSavesAdminTokenFromSameApproval(t *testing.T) {
+	withTerminal(t, true)
+	setupOAuthDeviceServerWithResponse(t, oauth.TokenResponse{
+		AccessToken: "device-access-token-from-server",
+		TokenType:   "bearer",
+		Scope:       "edit_products view_sales",
+		AdminToken: &oauth.AdminTokenResponse{
+			Token:           "admin-token-from-device-oauth",
+			TokenExternalID: "adm_device_123",
+			Actor:           oauth.AdminActor{Name: "Device Admin", Email: "device-admin@example.com"},
+			ExpiresAt:       "2026-06-01T00:00:00Z",
+		},
+	})
+	setupAuth(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer device-access-token-from-server" {
+			w.WriteHeader(401)
+			if err := json.NewEncoder(w).Encode(map[string]any{"success": false}); err != nil {
+				t.Errorf("encode response: %v", err)
+			}
+			return
+		}
+		if err := json.NewEncoder(w).Encode(map[string]any{
+			"success": true,
+			"user":    map[string]any{"name": "Device User", "email": "device@test.com"},
+		}); err != nil {
+			t.Errorf("encode response: %v", err)
+		}
+	})
+	cfgDir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", cfgDir)
+
+	cmd := testutil.Command(newLoginCmd())
+	if err := cmd.RunE(cmd, []string{}); err != nil {
+		t.Fatalf("RunE: %v", err)
 	}
 
-	fmt.Fprintf(pw, "http://127.0.0.1/callback?code=headless-code&state=%s\n", state)
-	pw.Close()
+	publicData, err := os.ReadFile(filepath.Join(cfgDir, "gumroad", "config.json"))
+	if err != nil {
+		t.Fatalf("public config not saved: %v", err)
+	}
+	if !strings.Contains(string(publicData), "device-access-token-from-server") {
+		t.Fatalf("public config should contain device OAuth token, got %s", publicData)
+	}
 
-	if err := <-done; err != nil {
-		t.Fatalf("RunE: %v", err)
+	adminPath, err := adminconfig.Path()
+	if err != nil {
+		t.Fatalf("adminconfig.Path: %v", err)
+	}
+	adminData, err := os.ReadFile(adminPath)
+	if err != nil {
+		t.Fatalf("admin config not saved: %v", err)
+	}
+	for _, want := range []string{"admin-token-from-device-oauth", "adm_device_123", "device-admin@example.com", "2026-06-01T00:00:00Z"} {
+		if !strings.Contains(string(adminData), want) {
+			t.Fatalf("admin config missing %q: %s", want, adminData)
+		}
 	}
 }
 
@@ -2028,8 +2124,7 @@ func TestLogin_OAuth_WebFlag_NoFallback(t *testing.T) {
 
 func TestLogin_OAuth_VerifyAndSave_401(t *testing.T) {
 	withTerminal(t, true)
-	withMockBrowser(t)
-	setupOAuthTokenServer(t)
+	setupOAuthDeviceServer(t)
 	setupAuth(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(401)
 		if err := json.NewEncoder(w).Encode(map[string]any{"success": false, "message": "Unauthorized"}); err != nil {
@@ -2048,8 +2143,7 @@ func TestLogin_OAuth_VerifyAndSave_401(t *testing.T) {
 
 func TestLogin_OAuth_JSONOutput(t *testing.T) {
 	withTerminal(t, true)
-	withMockBrowser(t)
-	setupOAuthTokenServer(t)
+	setupOAuthDeviceServer(t)
 	setupAuth(t, func(w http.ResponseWriter, r *http.Request) {
 		if err := json.NewEncoder(w).Encode(map[string]any{
 			"success": true,
@@ -2077,8 +2171,7 @@ func TestLogin_OAuth_JSONOutput(t *testing.T) {
 
 func TestLogin_OAuth_PlainOutput(t *testing.T) {
 	withTerminal(t, true)
-	withMockBrowser(t)
-	setupOAuthTokenServer(t)
+	setupOAuthDeviceServer(t)
 	setupAuth(t, func(w http.ResponseWriter, r *http.Request) {
 		if err := json.NewEncoder(w).Encode(map[string]any{
 			"success": true,
@@ -2102,8 +2195,7 @@ func TestLogin_OAuth_PlainOutput(t *testing.T) {
 
 func TestLogin_OAuth_QuietOutput(t *testing.T) {
 	withTerminal(t, true)
-	withMockBrowser(t)
-	setupOAuthTokenServer(t)
+	setupOAuthDeviceServer(t)
 	setupAuth(t, func(w http.ResponseWriter, r *http.Request) {
 		if err := json.NewEncoder(w).Encode(map[string]any{
 			"success": true,
@@ -2122,6 +2214,33 @@ func TestLogin_OAuth_QuietOutput(t *testing.T) {
 	}
 	if out.String() != "" {
 		t.Errorf("quiet mode should produce no output, got: %q", out.String())
+	}
+}
+
+func TestLogin_NonTTYEmptyStdinUsesDeviceFlow(t *testing.T) {
+	withTerminal(t, false)
+	setupOAuthDeviceServer(t)
+	setupAuth(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer device-access-token-from-server" {
+			w.WriteHeader(401)
+			if err := json.NewEncoder(w).Encode(map[string]any{"success": false}); err != nil {
+				t.Errorf("encode response: %v", err)
+			}
+			return
+		}
+		if err := json.NewEncoder(w).Encode(map[string]any{
+			"success": true,
+			"user":    map[string]any{"name": "Device User", "email": "device@test.com"},
+		}); err != nil {
+			t.Errorf("encode response: %v", err)
+		}
+	})
+	cfgDir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", cfgDir)
+
+	cmd := testutil.Command(newLoginCmd(), testutil.Stdin(strings.NewReader("")))
+	if err := cmd.RunE(cmd, []string{}); err != nil {
+		t.Fatalf("RunE: %v", err)
 	}
 }
 

@@ -256,7 +256,7 @@ func TestBrowserFlow_TokenExchangeFailure(t *testing.T) {
 		resp.Body.Close()
 		return nil
 	})
-	if err == nil || !strings.Contains(err.Error(), "token exchange failed (HTTP 400)") {
+	if err == nil || !strings.Contains(err.Error(), "token exchange failed: invalid_grant (HTTP 400)") {
 		t.Fatalf("expected token exchange error, got: %v", err)
 	}
 }
@@ -427,6 +427,176 @@ func TestHeadlessFlow_NoCode(t *testing.T) {
 	}
 }
 
+func deviceFlowConfig(srv *httptest.Server) FlowConfig {
+	return FlowConfig{
+		ClientID:      "test-client-id",
+		DeviceCodeURL: srv.URL + "/oauth/device/code",
+		TokenURL:      srv.URL + "/oauth/token",
+		Scopes:        "view_profile edit_products",
+		OptionalAdmin: true,
+		HTTPClient:    srv.Client(),
+		Sleep: func(context.Context, time.Duration) error {
+			return nil
+		},
+	}
+}
+
+func TestDeviceFlow_PollsUntilApproved(t *testing.T) {
+	var deviceRequest url.Values
+	var tokenRequests []url.Values
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			t.Fatalf("ParseForm: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+
+		switch r.URL.Path {
+		case "/oauth/device/code":
+			deviceRequest = r.PostForm
+			mustEncode(t, w, DeviceCodeResponse{
+				DeviceCode:              "device-code-123",
+				UserCode:                "GRD-ABCD-1234",
+				VerificationURI:         "https://gumroad.com/oauth/device",
+				VerificationURIComplete: "https://gumroad.com/oauth/device?user_code=GRD-ABCD-1234",
+				ExpiresIn:               600,
+				Interval:                1,
+			})
+		case "/oauth/token":
+			tokenRequests = append(tokenRequests, r.PostForm)
+			if len(tokenRequests) == 1 {
+				w.WriteHeader(http.StatusBadRequest)
+				mustEncode(t, w, oauthErrorResponse{Error: "authorization_pending", ErrorDescription: "Authorization is pending"})
+				return
+			}
+			mustEncode(t, w, TokenResponse{AccessToken: "device-access-token", TokenType: "Bearer", Scope: "view_profile"})
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer srv.Close()
+
+	var output strings.Builder
+	result, err := DeviceFlowResult(context.Background(), deviceFlowConfig(srv), &output)
+	if err != nil {
+		t.Fatalf("DeviceFlowResult: %v", err)
+	}
+	if result.AccessToken != "device-access-token" {
+		t.Fatalf("got access token %q, want device-access-token", result.AccessToken)
+	}
+	if deviceRequest.Get("client_id") != "test-client-id" ||
+		deviceRequest.Get("scope") != "view_profile edit_products" ||
+		deviceRequest.Get("admin_scope") != "optional" {
+		t.Fatalf("unexpected device request: %v", deviceRequest)
+	}
+	if len(tokenRequests) != 2 {
+		t.Fatalf("got %d token requests, want 2", len(tokenRequests))
+	}
+	if tokenRequests[0].Get("grant_type") != DeviceGrantType || tokenRequests[0].Get("device_code") != "device-code-123" {
+		t.Fatalf("unexpected token request: %v", tokenRequests[0])
+	}
+	for _, want := range []string{
+		"Open this URL to authorize Gumroad CLI:",
+		"https://gumroad.com/oauth/device?user_code=GRD-ABCD-1234",
+		"Code: GRD-ABCD-1234",
+		"Waiting for approval...",
+	} {
+		if !strings.Contains(output.String(), want) {
+			t.Fatalf("device flow output missing %q:\n%s", want, output.String())
+		}
+	}
+	if strings.Contains(output.String(), "Paste the full URL") {
+		t.Fatalf("device flow should not ask for redirect URL paste:\n%s", output.String())
+	}
+}
+
+func TestDeviceFlow_SlowDownUsesServerInterval(t *testing.T) {
+	var sleeps []time.Duration
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			t.Fatalf("ParseForm: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+
+		switch r.URL.Path {
+		case "/oauth/device/code":
+			mustEncode(t, w, DeviceCodeResponse{
+				DeviceCode:      "device-code-123",
+				UserCode:        "GRD-ABCD-1234",
+				VerificationURI: "https://gumroad.com/oauth/device",
+				ExpiresIn:       600,
+				Interval:        1,
+			})
+		case "/oauth/token":
+			if len(sleeps) == 1 {
+				w.WriteHeader(http.StatusBadRequest)
+				mustEncode(t, w, oauthErrorResponse{Error: "slow_down", ErrorDescription: "Polling too quickly", Interval: 7})
+				return
+			}
+			mustEncode(t, w, TokenResponse{AccessToken: "device-access-token", TokenType: "Bearer"})
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer srv.Close()
+
+	cfg := deviceFlowConfig(srv)
+	cfg.Sleep = func(_ context.Context, d time.Duration) error {
+		sleeps = append(sleeps, d)
+		return nil
+	}
+
+	_, err := DeviceFlowResult(context.Background(), cfg, io.Discard)
+	if err != nil {
+		t.Fatalf("DeviceFlowResult: %v", err)
+	}
+	if len(sleeps) != 2 || sleeps[0] != time.Second || sleeps[1] != 7*time.Second {
+		t.Fatalf("got sleeps %v, want [1s 7s]", sleeps)
+	}
+}
+
+func TestDeviceFlow_AccessDenied(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/oauth/device/code":
+			mustEncode(t, w, DeviceCodeResponse{
+				DeviceCode:      "device-code-123",
+				UserCode:        "GRD-ABCD-1234",
+				VerificationURI: "https://gumroad.com/oauth/device",
+				ExpiresIn:       600,
+				Interval:        1,
+			})
+		case "/oauth/token":
+			w.WriteHeader(http.StatusBadRequest)
+			mustEncode(t, w, oauthErrorResponse{Error: "access_denied", ErrorDescription: "Access was denied"})
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer srv.Close()
+
+	_, err := DeviceFlowResult(context.Background(), deviceFlowConfig(srv), io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "authorization denied") {
+		t.Fatalf("expected authorization denied, got: %v", err)
+	}
+}
+
+func TestDeviceFlow_DeviceCodeRequestError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		mustEncode(t, w, oauthErrorResponse{Error: "unauthorized_client", ErrorDescription: "Client is not allowed to use device authorization"})
+	}))
+	defer srv.Close()
+
+	_, err := DeviceFlowResult(context.Background(), deviceFlowConfig(srv), io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "unauthorized_client") {
+		t.Fatalf("expected unauthorized_client error, got: %v", err)
+	}
+}
+
 func TestBrowserFlow_NoCode(t *testing.T) {
 	tokenSrv := httptest.NewServer(tokenHandler(t, false))
 	defer tokenSrv.Close()
@@ -500,6 +670,9 @@ func TestDefaultFlowConfig(t *testing.T) {
 	}
 	if cfg.TokenURL != TokenURL {
 		t.Errorf("TokenURL = %q, want %q", cfg.TokenURL, TokenURL)
+	}
+	if cfg.DeviceCodeURL != DeviceCodeURL {
+		t.Errorf("DeviceCodeURL = %q, want %q", cfg.DeviceCodeURL, DeviceCodeURL)
 	}
 	if cfg.Scopes != Scopes {
 		t.Errorf("Scopes = %q, want %q", cfg.Scopes, Scopes)

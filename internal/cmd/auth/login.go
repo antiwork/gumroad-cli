@@ -1,11 +1,9 @@
 package auth
 
 import (
-	"bufio"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/url"
 	"os"
 	"strings"
@@ -42,13 +40,14 @@ func newLoginCmd() *cobra.Command {
 		Use:   "login",
 		Short: "Log in to Gumroad",
 		Args:  cmdutil.ExactArgs(0),
-		Long: "Log in to Gumroad via browser-based OAuth or a manual API token.\n\n" +
-			"By default, opens your browser for OAuth authorization.\n" +
+		Long: "Log in to Gumroad via OAuth device authorization or a manual API token.\n\n" +
+			"By default, starts device authorization and waits for approval.\n" +
+			"Use --web to force the local browser OAuth flow.\n" +
 			"Use --with-token to read an existing seller token from stdin.\n" +
 			"Piped stdin without --with-token is still accepted for compatibility.",
-		Example: "  # Browser-based OAuth login (default)\n" +
+		Example: "  # Device authorization login (default)\n" +
 			"  gumroad auth login\n\n" +
-			"  # Explicit browser OAuth\n" +
+			"  # Local browser OAuth\n" +
 			"  gumroad auth login --web\n\n" +
 			"  # Store an existing token from stdin (CI/scripts)\n" +
 			"  gumroad auth login --with-token < token.txt\n" +
@@ -56,7 +55,7 @@ func newLoginCmd() *cobra.Command {
 		RunE: func(c *cobra.Command, args []string) error {
 			opts := cmdutil.OptionsFrom(c)
 			if opts.DryRun {
-				return cmdutil.PrintDryRunAction(opts, "store API token")
+				return cmdutil.PrintDryRunAction(opts, "authenticate and store API token")
 			}
 
 			creds, err := resolveLoginCredentials(opts, webFlag, withTokenFlag)
@@ -83,7 +82,10 @@ func resolveLoginCredentials(opts cmdutil.Options, webFlag, withTokenFlag bool) 
 		return stdinTokenCredentials(opts)
 	}
 	if !isTerminalFunc(opts.In()) {
-		return stdinTokenCredentials(opts)
+		creds, ok, err := stdinTokenCredentialsIfProvided(opts)
+		if err != nil || ok {
+			return creds, err
+		}
 	}
 	return oauthLogin(opts, webFlag)
 }
@@ -96,6 +98,17 @@ func stdinTokenCredentials(opts cmdutil.Options) (loginCredentials, error) {
 	return loginCredentials{SellerToken: token}, err
 }
 
+func stdinTokenCredentialsIfProvided(opts cmdutil.Options) (loginCredentials, bool, error) {
+	token, err := prompt.TokenInput(opts.In(), opts.Err(), opts.NoInput)
+	if err != nil {
+		return loginCredentials{}, false, err
+	}
+	if token == "" {
+		return loginCredentials{}, false, nil
+	}
+	return loginCredentials{SellerToken: token}, true, nil
+}
+
 func defaultIsTerminal(r interface{}) bool {
 	if f, ok := r.(*os.File); ok {
 		return term.IsTerminal(int(f.Fd()))
@@ -106,22 +119,17 @@ func defaultIsTerminal(r interface{}) bool {
 func oauthLogin(opts cmdutil.Options, webFlag bool) (loginCredentials, error) {
 	cfg := oauth.DefaultFlowConfig()
 
-	result, browserErr := tryBrowserFlow(opts, cfg)
-	if browserErr == nil {
+	if webFlag {
+		result, err := tryBrowserFlow(opts, cfg)
+		if err != nil {
+			return loginCredentials{}, fmt.Errorf("browser login failed: %w", err)
+		}
 		return loginCredentialsFromOAuthResult(opts, result)
 	}
 
-	if webFlag {
-		return loginCredentials{}, fmt.Errorf("browser login failed: %w", browserErr)
-	}
-
-	// Fall back to headless flow.
-	fmt.Fprintln(opts.Err(), "Could not open browser. Falling back to manual flow.")
-	fmt.Fprintln(opts.Err())
-
-	result, err := oauth.HeadlessFlowResult(opts.Context, cfg, opts.Err(), stdinReader(opts.In()))
+	result, err := oauth.DeviceFlowResult(opts.Context, cfg, opts.Err())
 	if err != nil {
-		return loginCredentials{}, err
+		return loginCredentials{}, fmt.Errorf("device login failed: %w. Use `gumroad auth login --web` for browser OAuth", err)
 	}
 	return loginCredentialsFromOAuthResult(opts, result)
 }
@@ -141,19 +149,6 @@ func tryBrowserFlow(opts cmdutil.Options, cfg oauth.FlowConfig) (oauth.FlowResul
 		fmt.Fprintln(opts.Err(), "Waiting for authorization in browser...")
 		return nil
 	})
-}
-
-func stdinReader(in io.Reader) func() (string, error) {
-	return func() (string, error) {
-		scanner := bufio.NewScanner(in)
-		if !scanner.Scan() {
-			if err := scanner.Err(); err != nil {
-				return "", err
-			}
-			return "", fmt.Errorf("no input received")
-		}
-		return scanner.Text(), nil
-	}
 }
 
 func loginCredentialsFromOAuthResult(opts cmdutil.Options, result oauth.FlowResult) (loginCredentials, error) {

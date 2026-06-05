@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html"
 	"io"
@@ -49,10 +50,12 @@ type FlowConfig struct {
 	ClientID      string
 	AuthorizeURL  string
 	TokenURL      string
+	DeviceCodeURL string
 	Scopes        string
 	OptionalAdmin bool
 	Timeout       time.Duration
 	HTTPClient    *http.Client // optional; defaults to http.DefaultClient
+	Sleep         func(context.Context, time.Duration) error
 }
 
 // DefaultFlowConfigFunc returns a FlowConfig using the built-in constants.
@@ -69,10 +72,26 @@ func defaultFlowConfig() FlowConfig {
 		ClientID:      ClientID,
 		AuthorizeURL:  AuthorizeURL,
 		TokenURL:      TokenURL,
+		DeviceCodeURL: DeviceCodeURL,
 		Scopes:        Scopes,
 		OptionalAdmin: true,
 		Timeout:       DefaultTimeout,
 	}
+}
+
+type DeviceCodeResponse struct {
+	DeviceCode              string `json:"device_code"`
+	UserCode                string `json:"user_code"`
+	VerificationURI         string `json:"verification_uri"`
+	VerificationURIComplete string `json:"verification_uri_complete"`
+	ExpiresIn               int    `json:"expires_in"`
+	Interval                int    `json:"interval"`
+}
+
+type oauthErrorResponse struct {
+	Error            string `json:"error"`
+	ErrorDescription string `json:"error_description"`
+	Interval         int    `json:"interval"`
 }
 
 type callbackPayload struct {
@@ -258,6 +277,194 @@ func HeadlessFlowResult(ctx context.Context, cfg FlowConfig, out io.Writer, read
 	return exchangeCodeResult(ctx, cfg, payload, redirectURI, verifier)
 }
 
+func DeviceFlowResult(ctx context.Context, cfg FlowConfig, out io.Writer) (FlowResult, error) {
+	if cfg.HTTPClient == nil {
+		cfg.HTTPClient = http.DefaultClient
+	}
+	if cfg.Sleep == nil {
+		cfg.Sleep = sleepContext
+	}
+
+	deviceCode, err := requestDeviceCode(ctx, cfg)
+	if err != nil {
+		return FlowResult{}, err
+	}
+	if deviceCode.DeviceCode == "" {
+		return FlowResult{}, fmt.Errorf("device code response did not contain a device code")
+	}
+	if deviceCode.ExpiresIn <= 0 {
+		return FlowResult{}, fmt.Errorf("device code response did not contain a valid expiration")
+	}
+
+	writeDeviceInstructions(out, deviceCode)
+	return pollDeviceToken(ctx, cfg, deviceCode)
+}
+
+func requestDeviceCode(ctx context.Context, cfg FlowConfig) (DeviceCodeResponse, error) {
+	data := url.Values{
+		"client_id": {cfg.ClientID},
+		"scope":     {cfg.Scopes},
+	}
+	if cfg.OptionalAdmin {
+		data.Set("admin_scope", "optional")
+	}
+
+	requestCtx, cancel := requestContext(ctx, cfg)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(requestCtx, "POST", cfg.DeviceCodeURL, strings.NewReader(data.Encode()))
+	if err != nil {
+		return DeviceCodeResponse{}, fmt.Errorf("could not build device authorization request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	resp, err := cfg.HTTPClient.Do(req)
+	if err != nil {
+		return DeviceCodeResponse{}, fmt.Errorf("device authorization failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return DeviceCodeResponse{}, fmt.Errorf("could not read device authorization response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return DeviceCodeResponse{}, oauthHTTPError("device authorization failed", resp.StatusCode, body)
+	}
+
+	var deviceCode DeviceCodeResponse
+	if err := json.Unmarshal(body, &deviceCode); err != nil {
+		return DeviceCodeResponse{}, fmt.Errorf("could not parse device authorization response: %w", err)
+	}
+	return deviceCode, nil
+}
+
+func writeDeviceInstructions(out io.Writer, deviceCode DeviceCodeResponse) {
+	if out == nil {
+		return
+	}
+
+	verificationURL := strings.TrimSpace(deviceCode.VerificationURIComplete)
+	if verificationURL == "" {
+		verificationURL = strings.TrimSpace(deviceCode.VerificationURI)
+	}
+
+	fmt.Fprintf(out, "Open this URL to authorize Gumroad CLI:\n  %s\n\n", verificationURL)
+	if strings.TrimSpace(deviceCode.UserCode) != "" {
+		fmt.Fprintf(out, "Code: %s\n\n", deviceCode.UserCode)
+	}
+	fmt.Fprintln(out, "Waiting for approval...")
+}
+
+func pollDeviceToken(ctx context.Context, cfg FlowConfig, deviceCode DeviceCodeResponse) (FlowResult, error) {
+	interval := time.Duration(deviceCode.Interval) * time.Second
+	if interval <= 0 {
+		interval = 5 * time.Second
+	}
+	expiresAt := time.Now().Add(time.Duration(deviceCode.ExpiresIn) * time.Second)
+
+	for {
+		remaining := time.Until(expiresAt)
+		if remaining <= 0 {
+			return FlowResult{}, fmt.Errorf("authorization expired")
+		}
+		wait := interval
+		if wait > remaining {
+			wait = remaining
+		}
+		if err := cfg.Sleep(ctx, wait); err != nil {
+			return FlowResult{}, fmt.Errorf("authorization cancelled")
+		}
+
+		result, nextInterval, err := pollDeviceTokenOnce(ctx, cfg, deviceCode.DeviceCode, interval)
+		if err == nil {
+			return result, nil
+		}
+		var oauthErr *oauthDevicePollError
+		if !errors.As(err, &oauthErr) {
+			return FlowResult{}, err
+		}
+		switch oauthErr.Code {
+		case "authorization_pending":
+			continue
+		case "slow_down":
+			interval = nextInterval
+			continue
+		case "access_denied":
+			return FlowResult{}, fmt.Errorf("authorization denied: access was denied")
+		case "expired_token":
+			return FlowResult{}, fmt.Errorf("authorization expired")
+		default:
+			return FlowResult{}, oauthErr
+		}
+	}
+}
+
+type oauthDevicePollError struct {
+	Code        string
+	Description string
+}
+
+func (e *oauthDevicePollError) Error() string {
+	if e.Description == "" || e.Description == e.Code {
+		return e.Code
+	}
+	return e.Code + ": " + e.Description
+}
+
+func pollDeviceTokenOnce(ctx context.Context, cfg FlowConfig, deviceCode string, currentInterval time.Duration) (FlowResult, time.Duration, error) {
+	data := url.Values{
+		"grant_type":  {DeviceGrantType},
+		"client_id":   {cfg.ClientID},
+		"device_code": {deviceCode},
+	}
+
+	requestCtx, cancel := requestContext(ctx, cfg)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(requestCtx, "POST", cfg.TokenURL, strings.NewReader(data.Encode()))
+	if err != nil {
+		return FlowResult{}, currentInterval, fmt.Errorf("could not build token request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	resp, err := cfg.HTTPClient.Do(req)
+	if err != nil {
+		return FlowResult{}, currentInterval, fmt.Errorf("token exchange failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return FlowResult{}, currentInterval, fmt.Errorf("could not read token response: %w", err)
+	}
+
+	if resp.StatusCode == http.StatusOK {
+		result, err := tokenResponseResult(body, "", "")
+		return result, currentInterval, err
+	}
+
+	oauthErr := parseOAuthError(body)
+	if oauthErr.Error == "slow_down" {
+		if oauthErr.Interval > 0 {
+			return FlowResult{}, time.Duration(oauthErr.Interval) * time.Second, &oauthDevicePollError{Code: oauthErr.Error, Description: oauthErr.ErrorDescription}
+		}
+		return FlowResult{}, currentInterval + 5*time.Second, &oauthDevicePollError{Code: oauthErr.Error, Description: oauthErr.ErrorDescription}
+	}
+	if oauthErr.Error != "" {
+		return FlowResult{}, currentInterval, &oauthDevicePollError{Code: oauthErr.Error, Description: oauthErr.ErrorDescription}
+	}
+	return FlowResult{}, currentInterval, fmt.Errorf("token exchange failed (HTTP %d)", resp.StatusCode)
+}
+
+func requestContext(ctx context.Context, cfg FlowConfig) (context.Context, context.CancelFunc) {
+	if cfg.Timeout <= 0 {
+		return ctx, func() {}
+	}
+	return context.WithTimeout(ctx, cfg.Timeout)
+}
+
 func generateState() (string, error) {
 	buf := make([]byte, 16)
 	if _, err := rand.Read(buf); err != nil {
@@ -378,9 +585,13 @@ func exchangeCodeResult(ctx context.Context, cfg FlowConfig, payload callbackPay
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return FlowResult{}, fmt.Errorf("token exchange failed (HTTP %d)", resp.StatusCode)
+		return FlowResult{}, oauthHTTPError("token exchange failed", resp.StatusCode, body)
 	}
 
+	return tokenResponseResult(body, payload.AdminCode, verifier)
+}
+
+func tokenResponseResult(body []byte, adminCode, verifier string) (FlowResult, error) {
 	var tokenResp TokenResponse
 	if err := json.Unmarshal(body, &tokenResp); err != nil {
 		return FlowResult{}, fmt.Errorf("could not parse token response: %w", err)
@@ -397,9 +608,39 @@ func exchangeCodeResult(ctx context.Context, cfg FlowConfig, payload callbackPay
 	return FlowResult{
 		AccessToken:            tokenResp.AccessToken,
 		AdminToken:             adminToken,
-		AdminAuthorizationCode: payload.AdminCode,
+		AdminAuthorizationCode: adminCode,
 		CodeVerifier:           verifier,
 	}, nil
+}
+
+func oauthHTTPError(prefix string, statusCode int, body []byte) error {
+	oauthErr := parseOAuthError(body)
+	if oauthErr.Error == "" {
+		return fmt.Errorf("%s (HTTP %d)", prefix, statusCode)
+	}
+	desc := oauthErr.ErrorDescription
+	if desc == "" || desc == oauthErr.Error {
+		return fmt.Errorf("%s: %s (HTTP %d)", prefix, oauthErr.Error, statusCode)
+	}
+	return fmt.Errorf("%s: %s: %s (HTTP %d)", prefix, oauthErr.Error, desc, statusCode)
+}
+
+func parseOAuthError(body []byte) oauthErrorResponse {
+	var oauthErr oauthErrorResponse
+	_ = json.Unmarshal(body, &oauthErr)
+	return oauthErr
+}
+
+func sleepContext(ctx context.Context, d time.Duration) error {
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+
+	select {
+	case <-timer.C:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 func htmlPage(title, message string, isError bool) string {

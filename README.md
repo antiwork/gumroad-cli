@@ -29,7 +29,7 @@ make install PREFIX="$HOME/.local"
 ## Quick start
 
 ```sh
-# Authenticate (opens browser for OAuth)
+# Authenticate with device approval
 gumroad auth login
 
 # Or use an environment variable for CI / agents
@@ -58,24 +58,24 @@ gumroad sales refund abc123 --amount 5.00 --dry-run
 
 ## Authentication
 
-`gumroad auth login` opens your browser for OAuth authorization. After you approve, the CLI stores the seller token locally.
+`gumroad auth login` starts OAuth device authorization. It prints a Gumroad approval URL, waits while you approve in the browser, then stores the seller token locally.
 
 ```sh
-gumroad auth login          # Browser-based OAuth (default)
-gumroad auth login --web    # Force browser OAuth, no fallback
+gumroad auth login          # Device authorization (default)
+gumroad auth login --web    # Local browser OAuth
 gumroad auth login --with-token < token.txt
 gumroad auth status         # Check seller auth and stored admin auth
 gumroad auth token          # Print the active seller token
 gumroad auth logout         # Revoke/delete stored tokens
 ```
 
-When a browser isn't available, the CLI prints the authorize URL and you paste the redirect URL back. For CI and agents with an existing token, set `GUMROAD_ACCESS_TOKEN` or pipe the token into `gumroad auth login --with-token`; `GUMROAD_ACCESS_TOKEN` takes precedence over stored seller config and needs no interactive login. The CLI cannot yet create a fresh creator token headlessly.
+For CI and agents with an existing token, set `GUMROAD_ACCESS_TOKEN` or pipe the token into `gumroad auth login --with-token`; `GUMROAD_ACCESS_TOKEN` takes precedence over stored seller config and needs no interactive login. Use `--web` only when you specifically want the local browser PKCE flow.
 
 ## Commands
 
 Run `gumroad --help` and `gumroad <command> --help` for subcommands, usage details, and examples.
 
-Admin commands use a separate internal token. Run `gumroad auth login` and check the admin box to store one locally, or use `GUMROAD_ADMIN_TOKEN` with `--non-interactive` in CI and agent runs. For local testing, set `GUMROAD_ADMIN_API_BASE_URL`.
+Admin commands use a separate internal token. Run `gumroad auth login --web` and check the admin box to store one locally, or use `GUMROAD_ADMIN_TOKEN` with `--non-interactive` in CI and agent runs. For local testing, set `GUMROAD_ADMIN_API_BASE_URL`.
 
 ## Refund policy
 
@@ -149,7 +149,7 @@ Paginated commands (`sales list`, `payouts list`, `subscribers list`) accept `--
 
 ## AI agents
 
-`gumroad` is built to work with AI agents. The `--json`, `--jq`, `--no-input`, and `--non-interactive` flags make it easy to query Gumroad data programmatically, and `GUMROAD_ACCESS_TOKEN` gives agents a no-persistence seller auth path when a token already exists.
+`gumroad` is built to work with AI agents. The `--json`, `--jq`, `--no-input`, and `--non-interactive` flags make it easy to query Gumroad data programmatically. Agents can start fresh seller auth with `gumroad auth login` and hand the printed approval URL to a human, or use `GUMROAD_ACCESS_TOKEN` for a no-persistence auth path when a token already exists.
 
 An [agent skill](skills/gumroad/SKILL.md) is included. Run `gumroad skill` to install or refresh it.
 
