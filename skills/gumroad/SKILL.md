@@ -295,6 +295,45 @@ Use `products update --file` for shared product Content. For products with per-v
 
 Use `--cover-image` for the primary cover, repeat `--preview-image` for additional gallery/preview images, and `--thumbnail` for the card/library thumbnail. These media flags run the required two-step API flow: direct upload first, then attach by signed blob ID. For an existing product, `products thumbnail set --url` asks Gumroad to download and attach a public HTTP(S) image directly.
 
+### Rolling a new build or replacing download files
+
+When a creator asks to publish a new software/plugin build, update attached
+download files, replace an existing ZIP, or push a new version to an existing
+product, do not send them to the web editor first. The CLI supports this path.
+
+Default to a dry run, then execute after confirmation:
+
+```sh
+# Add a new downloadable build while preserving current attachments.
+gumroad products update <id> --file ./dist/build.zip --file-name "Build.zip" --dry-run --json --no-input
+gumroad products update <id> --file ./dist/build.zip --file-name "Build.zip" --json --no-input
+
+# Inspect existing file IDs before replacing or removing downloads.
+gumroad products view <id> --json --jq '.product.files[]? | {id, name}' --no-input
+
+# Replace the file set, preserving selected files by ID.
+gumroad products update <id> \
+  --replace-files \
+  --keep-file file_existing_docs \
+  --file ./dist/build.zip \
+  --file-name "Build.zip" \
+  --dry-run --json --no-input
+gumroad products update <id> \
+  --replace-files \
+  --keep-file file_existing_docs \
+  --file ./dist/build.zip \
+  --file-name "Build.zip" \
+  --yes --json --no-input
+
+# Remove an obsolete build file by ID.
+gumroad products update <id> --remove-file file_old_build --dry-run --json --no-input
+gumroad products update <id> --remove-file file_old_build --yes --json --no-input
+```
+
+Preserve existing files by default. Use `--replace-files` only when the user
+explicitly wants a file-set swap, and keep any file IDs that should survive the
+swap with repeated `--keep-file` flags.
+
 ### files — Upload and recover file attachments
 
 ```sh

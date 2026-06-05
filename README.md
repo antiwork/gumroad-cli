@@ -120,6 +120,34 @@ gumroad products update <product_id> --file ./pack.zip
 
 `gumroad files upload` prints the canonical `file_url`; product create/update commands accept repeatable `--file` flags. Run command help for metadata, removal, replacement, and per-variant Content options.
 
+### Roll a new build
+
+For software, plugin, and asset creators, you can push a new downloadable build without opening the web editor:
+
+```sh
+# Add the latest build while preserving existing downloads
+gumroad products update <product_id> --file ./dist/plugin-v1.2.3.zip --file-name "Plugin v1.2.3.zip"
+```
+
+To replace the downloadable file set, inspect the current files first, then keep or remove the existing IDs explicitly:
+
+```sh
+# See the product payload, including existing file IDs
+gumroad products view <product_id> --json --jq '.product.files[]? | {id, name}'
+
+# Swap to a new build, preserving one existing file such as docs or examples
+gumroad products update <product_id> \
+  --replace-files \
+  --keep-file file_existing_docs \
+  --file ./dist/plugin-v1.2.3.zip \
+  --file-name "Plugin v1.2.3.zip"
+
+# Remove one obsolete file without touching the rest
+gumroad products update <product_id> --remove-file file_old_build
+```
+
+Use `--dry-run` before a scripted release, and add `--yes` when `--replace-files` or `--remove-file` would otherwise ask for confirmation in non-interactive runs.
+
 ## Product media
 
 ```sh
