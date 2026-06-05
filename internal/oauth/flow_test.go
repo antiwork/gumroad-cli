@@ -3,6 +3,7 @@ package oauth
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -553,6 +554,40 @@ func TestDeviceFlow_SlowDownUsesServerInterval(t *testing.T) {
 	}
 	if len(sleeps) != 2 || sleeps[0] != time.Second || sleeps[1] != 7*time.Second {
 		t.Fatalf("got sleeps %v, want [1s 7s]", sleeps)
+	}
+}
+
+func TestDeviceFlow_SleepErrorPreservesContextCause(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/oauth/device/code":
+			mustEncode(t, w, DeviceCodeResponse{
+				DeviceCode:      "device-code-123",
+				UserCode:        "GRD-ABCD-1234",
+				VerificationURI: "https://gumroad.com/oauth/device",
+				ExpiresIn:       600,
+				Interval:        1,
+			})
+		case "/oauth/token":
+			t.Fatal("token endpoint should not be reached when sleep is cancelled")
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer srv.Close()
+
+	cfg := deviceFlowConfig(srv)
+	cfg.Sleep = func(context.Context, time.Duration) error {
+		return context.Canceled
+	}
+
+	_, err := DeviceFlowResult(context.Background(), cfg, io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "authorization cancelled") {
+		t.Fatalf("expected authorization cancelled error, got: %v", err)
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context.Canceled in error chain, got: %v", err)
 	}
 }
 

@@ -81,7 +81,7 @@ func resolveLoginCredentials(opts cmdutil.Options, webFlag, withTokenFlag bool) 
 	if withTokenFlag {
 		return stdinTokenCredentials(opts)
 	}
-	if !isTerminalFunc(opts.In()) {
+	if !isTerminalFunc(opts.In()) && !webFlag {
 		creds, ok, err := stdinTokenCredentialsIfProvided(opts)
 		if err != nil || ok {
 			return creds, err

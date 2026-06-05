@@ -1939,6 +1939,33 @@ func TestLogin_OAuth_BrowserFlow(t *testing.T) {
 	}
 }
 
+func TestLogin_OAuth_WebFlagIgnoresPipedStdin(t *testing.T) {
+	withTerminal(t, false)
+	withMockBrowser(t)
+	setupOAuthTokenServer(t)
+	setupAuth(t, func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "Bearer oauth-access-token-from-server" {
+			t.Fatalf("got Authorization=%q, want OAuth token", got)
+		}
+		if err := json.NewEncoder(w).Encode(map[string]any{
+			"success": true,
+			"user":    map[string]any{"name": "OAuth User", "email": "oauth@test.com"},
+		}); err != nil {
+			t.Errorf("encode response: %v", err)
+		}
+	})
+	cfgDir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", cfgDir)
+
+	cmd := testutil.Command(newLoginCmd(), testutil.Stdin(strings.NewReader("piped-token\n")))
+	if err := cmd.Flags().Set("web", "true"); err != nil {
+		t.Fatalf("set --web flag: %v", err)
+	}
+	if err := cmd.RunE(cmd, []string{}); err != nil {
+		t.Fatalf("RunE: %v", err)
+	}
+}
+
 func TestLogin_OAuth_BrowserFlowSavesAdminTokenFromSameApproval(t *testing.T) {
 	withTerminal(t, true)
 	withMockBrowser(t)

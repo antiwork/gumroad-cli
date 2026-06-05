@@ -374,7 +374,7 @@ func pollDeviceToken(ctx context.Context, cfg FlowConfig, deviceCode DeviceCodeR
 			wait = remaining
 		}
 		if err := cfg.Sleep(ctx, wait); err != nil {
-			return FlowResult{}, fmt.Errorf("authorization cancelled")
+			return FlowResult{}, fmt.Errorf("authorization cancelled: %w", err)
 		}
 
 		result, nextInterval, err := pollDeviceTokenOnce(ctx, cfg, deviceCode.DeviceCode, interval)
