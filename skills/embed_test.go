@@ -109,6 +109,28 @@ func TestSkillMarkdown_ContainsProductMediaAndBulkGuidance(t *testing.T) {
 	}
 }
 
+func TestSkillMarkdown_ContainsBuildRollFileReplacementGuidance(t *testing.T) {
+	data, err := SkillMarkdown()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	content := string(data)
+	for _, example := range []string{
+		"### Rolling a new build or replacing download files",
+		"gumroad products update <id> --file ./dist/build.zip --file-name \"Build.zip\" --dry-run --json --no-input",
+		"gumroad products view <id> --json --jq '.product.files[]? | {id, name}' --no-input",
+		"gumroad products update <id> --remove-file file_old_build --yes --json --no-input",
+		"Preserve existing files by default",
+		"Use `--replace-files` only when the user",
+		"swap with repeated `--keep-file` flags",
+	} {
+		if !strings.Contains(content, example) {
+			t.Errorf("expected skill to mention build roll or file replacement guidance %q", example)
+		}
+	}
+}
+
 func TestSkillMarkdown_ContainsAdminRolloutCommands(t *testing.T) {
 	data, err := SkillMarkdown()
 	if err != nil {
