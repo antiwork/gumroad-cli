@@ -3,12 +3,14 @@ package products
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/antiwork/gumroad-cli/internal/cmdutil"
 	"github.com/antiwork/gumroad-cli/internal/testutil"
 )
 
@@ -67,6 +69,28 @@ func TestContentGet_PerVariantProductErrors(t *testing.T) {
 
 	if err == nil || !strings.Contains(err.Error(), "per-variant rich content") {
 		t.Fatalf("expected per-variant guard error, got %v", err)
+	}
+	var invalidInputErr *cmdutil.InvalidInputError
+	if !errors.As(err, &invalidInputErr) {
+		t.Fatalf("expected invalid input error, got %T", err)
+	}
+}
+
+func TestContentGet_OmittedRichContentPrintsEmptyArray(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, sharedContentProductResponseWithoutRichContent())
+	})
+
+	cmd := testutil.Command(newContentGetCmd(), testutil.JSONOutput())
+	cmd.SetArgs([]string{"prod_123"})
+	out := testutil.CaptureStdout(func() {
+		if err := cmd.Execute(); err != nil {
+			t.Fatalf("Execute failed: %v", err)
+		}
+	})
+
+	if strings.TrimSpace(out) != "[]" {
+		t.Fatalf("got omitted rich_content output %q, want []", out)
 	}
 }
 
@@ -283,8 +307,53 @@ func TestContentSet_PerVariantProductErrorsBeforePUT(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "per-variant rich content") {
 		t.Fatalf("expected per-variant guard error, got %v", err)
 	}
+	var invalidInputErr *cmdutil.InvalidInputError
+	if !errors.As(err, &invalidInputErr) {
+		t.Fatalf("expected invalid input error, got %T", err)
+	}
 	if putCalls != 0 {
 		t.Fatalf("content set PUT %d times for per-variant product", putCalls)
+	}
+}
+
+func TestContentSet_OmittedExistingRichContentActsEmpty(t *testing.T) {
+	path := writeContentFixture(t, `[{"id":"page_1","title":"Start","position":0,"description":{"type":"doc","content":[]}}]`)
+	var putCalls int
+
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			testutil.JSON(t, w, sharedContentProductResponseWithoutRichContent())
+		case http.MethodPut:
+			putCalls++
+			http.Error(w, "dry-run must not PUT", http.StatusInternalServerError)
+		default:
+			t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
+			http.Error(w, "unexpected", http.StatusMethodNotAllowed)
+		}
+	})
+
+	cmd := testutil.Command(newContentSetCmd(), testutil.DryRun(true), testutil.JSONOutput())
+	cmd.SetArgs([]string{"prod_123", path})
+	out := testutil.CaptureStdout(func() {
+		if err := cmd.Execute(); err != nil {
+			t.Fatalf("Execute failed: %v", err)
+		}
+	})
+
+	if putCalls != 0 {
+		t.Fatalf("dry-run PUT %d times", putCalls)
+	}
+	var payload productContentSetDryRun
+	if err := json.Unmarshal([]byte(out), &payload); err != nil {
+		t.Fatalf("dry-run output is not valid JSON: %v\n%s", err, out)
+	}
+	if len(payload.DeletedPageIDs) != 0 {
+		t.Fatalf("omitted existing rich_content should be empty, got deleted IDs %#v", payload.DeletedPageIDs)
+	}
+	pages := richContentPagesFromBody(t, payload.Request.Body)
+	if len(pages) != 1 || pages[0]["id"] != "page_1" {
+		t.Fatalf("dry-run body should keep provided content, got %#v", pages)
 	}
 }
 
@@ -411,8 +480,12 @@ func TestProductContentHelpers(t *testing.T) {
 	if string(normalized) != "[]" {
 		t.Fatalf("normalizeProductRichContent(null) = %s, want []", normalized)
 	}
-	if _, err := normalizeProductRichContent(nil); err == nil {
-		t.Fatal("expected missing product rich_content to error")
+	normalized, err = normalizeProductRichContent(nil)
+	if err != nil {
+		t.Fatalf("normalizeProductRichContent(nil) failed: %v", err)
+	}
+	if string(normalized) != "[]" {
+		t.Fatalf("normalizeProductRichContent(nil) = %s, want []", normalized)
 	}
 	if _, err := parseProductContentDocument([]byte("")); err == nil {
 		t.Fatal("expected empty rich content input to error")
@@ -445,6 +518,16 @@ func sharedContentProductResponse(richContent []map[string]any) map[string]any {
 			"id":                                     "prod_123",
 			"has_same_rich_content_for_all_variants": true,
 			"rich_content":                           richContent,
+		},
+	}
+}
+
+func sharedContentProductResponseWithoutRichContent() map[string]any {
+	return map[string]any{
+		"success": true,
+		"product": map[string]any{
+			"id":                                     "prod_123",
+			"has_same_rich_content_for_all_variants": true,
 		},
 	}
 }

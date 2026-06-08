@@ -109,7 +109,7 @@ func ensureSharedProductContent(productID string, state productContentState) err
 	}) {
 		return nil
 	}
-	return fmt.Errorf("product %s uses per-variant rich content; product-level content get/set only supports shared rich content", productID)
+	return cmdutil.InvalidInputErrorf("product %s uses per-variant rich content; product-level content get/set only supports shared rich content", productID)
 }
 
 func readProductContentInput(r io.Reader, path string) (productContentInput, error) {
@@ -156,10 +156,7 @@ func parseProductContentDocument(data []byte) (json.RawMessage, error) {
 
 func normalizeProductRichContent(data json.RawMessage) (json.RawMessage, error) {
 	trimmed := bytes.TrimSpace(data)
-	if len(trimmed) == 0 {
-		return nil, fmt.Errorf("product rich_content is not available in this API response")
-	}
-	if bytes.Equal(trimmed, []byte("null")) {
+	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
 		return json.RawMessage("[]"), nil
 	}
 	if err := validateRichContentArray(trimmed); err != nil {
