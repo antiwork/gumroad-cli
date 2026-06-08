@@ -1379,10 +1379,13 @@ func TestNewProductsCmd(t *testing.T) {
 	for _, c := range cmd.Commands() {
 		subs[c.Use] = true
 	}
-	for _, name := range []string{"create", "update <product_id>", "list", "view <id>", "delete <id>", "publish <id>", "unpublish <id>", "covers", "thumbnail", "sections", "skus <id>"} {
+	for _, name := range []string{"create", "update <product_id>", "list", "view <id>", "delete <id>", "publish <id>", "unpublish <id>", "covers", "thumbnail", "skus <id>"} {
 		if !subs[name] {
 			t.Errorf("missing subcommand %q", name)
 		}
+	}
+	if subs["sections"] {
+		t.Error("sections subcommand should not be registered")
 	}
 }
 
@@ -1397,13 +1400,19 @@ func TestNewProductsCmd_HelpIncludesProductScopedReads(t *testing.T) {
 	})
 
 	for _, want := range []string{
-		"gumroad products sections list <product_id>",
-		"sections    Manage product page sections",
 		"gumroad products skus <id>",
 		"skus        List SKUs for a product",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("missing %q in help output %q", want, out)
+		}
+	}
+	for _, removed := range []string{
+		"gumroad products sections list <product_id>",
+		"sections    Manage product page sections",
+	} {
+		if strings.Contains(out, removed) {
+			t.Fatalf("removed sections command still appears in help output %q", out)
 		}
 	}
 }
