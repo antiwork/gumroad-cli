@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -14,6 +16,7 @@ import (
 	"github.com/antiwork/gumroad-cli/internal/cmdutil"
 	"github.com/antiwork/gumroad-cli/internal/config"
 	"github.com/antiwork/gumroad-cli/internal/output"
+	"github.com/antiwork/gumroad-cli/internal/testutil"
 	"github.com/antiwork/gumroad-cli/internal/updatecheck"
 	"github.com/antiwork/gumroad-cli/internal/upload"
 	"github.com/spf13/cobra"
@@ -393,6 +396,96 @@ func TestExecuteCommand_JSONFlagConflictIsUsageError(t *testing.T) {
 		t.Fatalf("unexpected structured error: %+v", payload.Error)
 	}
 	if !strings.Contains(payload.Error.Message, "--plain cannot be combined with --json") {
+		t.Fatalf("unexpected error message %q", payload.Error.Message)
+	}
+}
+
+func TestExecuteCommand_JSONContentSetLocalInputErrorIsUsageError(t *testing.T) {
+	missingPath := filepath.Join(t.TempDir(), "missing.json")
+	cmd := NewRootCmd()
+	cmd.SetArgs([]string{"products", "content", "set", "prod_123", missingPath, "--json"})
+
+	var stdout, stderr bytes.Buffer
+	if code := executeCommand(cmd, &stdout, &stderr); code != 1 {
+		t.Fatalf("got exit code %d, want 1", code)
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("expected no stderr output, got %q", stderr.String())
+	}
+
+	var payload struct {
+		Success bool `json:"success"`
+		Error   struct {
+			Type    string `json:"type"`
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &payload); err != nil {
+		t.Fatalf("expected JSON output, got error %v with %q", err, stdout.String())
+	}
+	if payload.Success {
+		t.Fatal("expected success=false")
+	}
+	if payload.Error.Type != "usage_error" || payload.Error.Code != "invalid_input" {
+		t.Fatalf("unexpected structured error: %+v", payload.Error)
+	}
+	if !strings.Contains(payload.Error.Message, "cannot read "+missingPath) {
+		t.Fatalf("unexpected error message %q", payload.Error.Message)
+	}
+	if strings.Contains(payload.Error.Message, "Usage:") || strings.Contains(payload.Error.Message, "--help") {
+		t.Fatalf("expected no usage help in message, got %q", payload.Error.Message)
+	}
+}
+
+func TestExecuteCommand_JSONContentGetPerVariantIsUsageError(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{
+			"success": true,
+			"product": map[string]any{
+				"id":                                     "prod_123",
+				"has_same_rich_content_for_all_variants": false,
+				"rich_content":                           []map[string]any{},
+				"variants": []map[string]any{
+					{
+						"options": []map[string]any{
+							{"name": "Large"},
+						},
+					},
+				},
+			},
+		})
+	})
+
+	cmd := NewRootCmd()
+	cmd.SetArgs([]string{"products", "content", "get", "prod_123", "--json"})
+
+	var stdout, stderr bytes.Buffer
+	if code := executeCommand(cmd, &stdout, &stderr); code != 1 {
+		t.Fatalf("got exit code %d, want 1", code)
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("expected no stderr output, got %q", stderr.String())
+	}
+
+	var payload struct {
+		Success bool `json:"success"`
+		Error   struct {
+			Type    string `json:"type"`
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &payload); err != nil {
+		t.Fatalf("expected JSON output, got error %v with %q", err, stdout.String())
+	}
+	if payload.Success {
+		t.Fatal("expected success=false")
+	}
+	if payload.Error.Type != "usage_error" || payload.Error.Code != "invalid_input" {
+		t.Fatalf("unexpected structured error: %+v", payload.Error)
+	}
+	if !strings.Contains(payload.Error.Message, "per-variant rich content") {
 		t.Fatalf("unexpected error message %q", payload.Error.Message)
 	}
 }

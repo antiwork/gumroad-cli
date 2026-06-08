@@ -9,7 +9,7 @@ description: >
   Also trigger on "check my Gumroad", "look up a sale", "verify a license",
   "list my products", "how much have I made", "who bought", "recent sales",
   "refund a sale", "create a product", "upload a file", "attach a file to a product",
-  "add a cover image", "set a product thumbnail", "upload product media",
+  "add a cover image", "set a product thumbnail", "get product content", "set product content", "upload product media",
   "publish a product landing page", "publish custom HTML", "clear custom HTML",
   "attach a file to a variant", "finish a failed upload", "abort an upload", "manage webhooks",
   "set refund policy", "check my refund policy", "check my earnings", "see my revenue", "who subscribed", "manage my store",
@@ -31,7 +31,7 @@ Always follow these rules:
 - **Always** pass `--no-input` to prevent interactive prompts from blocking.
 - **Always** pass `--json` for programmatic access.
 - Use `--json --jq <expr>` together to extract exactly what you need.
-- For operations that can prompt for confirmation (delete, refund, mutating admin actions, `files abort`, `files complete` replay, or product updates that remove files), add `--yes` to skip confirmation.
+- For operations that can prompt for confirmation (delete, refund, mutating admin actions, `files abort`, `files complete` replay, product updates that remove files, or `products content set` when omitted page IDs will be deleted), add `--yes` to skip confirmation.
 - Pass `--quiet` to suppress spinners and status messages.
 - Pass `--dry-run` to preview mutating requests without executing them.
 - Use `--page-delay 200ms` with `--all` to avoid rate limits on large datasets.
@@ -39,18 +39,21 @@ Always follow these rules:
 - Products are created as drafts — use `gumroad products publish <id>` to make them live.
 - Product cover and thumbnail uploads support JPEG, PNG, and GIF. WebP is not supported by the API and the CLI rejects it before upload.
 - Product custom HTML landing pages use `gumroad products page preview <id> ./landing.html` to run the backend sanitizer without writing, `gumroad products page publish <id> ./landing.html` to store the page, `gumroad products page clear <id> --yes` to remove it, and `gumroad products page url <id>` to print the live URL. `--dry-run` only previews the CLI request body; it does not call the backend sanitizer. Inspect `.sanitization_report` in `preview` and `publish` JSON output for server-side changes.
+- Product rich content uses `gumroad products content get <id> --json --no-input` to dump the shared `rich_content` page array and `gumroad products content set <id> content.json --dry-run --json --no-input` to preview a whole-document replacement. `set` deletes existing pages omitted from the JSON and currently supports shared product content, not per-variant rich content.
 - Custom HTML pages can use `data-gumroad-field="name"`, `data-gumroad-field="price"`, `data-gumroad-field="description"`, and `data-gumroad-action="buy"`. To preselect checkout state, add `data-gumroad-option="<variant name>"`, `data-gumroad-quantity="<integer>"`, `data-gumroad-price="<decimal>"`, or `data-gumroad-recurrence="monthly|quarterly|biannually|yearly|every_two_years"`. Production validates these values and falls back to product defaults when invalid. Prefer anchors for buy CTAs so production can add a checkout href; non-anchor buy elements also post to checkout.
 - If a command fails with a seller auth error, run `gumroad auth status --json --no-input` first. Agents can start seller auth with `gumroad auth login --no-input` and hand the printed approval URL to a human, or use an existing seller token via `GUMROAD_ACCESS_TOKEN` or `gumroad auth login --with-token`.
 - For admin commands in agents/CI, pass `--non-interactive` and set `GUMROAD_ADMIN_TOKEN`; interactive shells can store an admin token with `gumroad auth login --web`.
 
 ## Response shapes
 
-Responses are wrapped in `{"success": true, ...}` with resource-specific keys:
+Most responses are wrapped in `{"success": true, ...}` with resource-specific keys:
 
 - `user` → `.user`
 - `refund-policy view/set` → `.refund_policy`
 - `products list` → `.products[]`
 - `products view` → `.product`
+- `products content get` → rich content page array directly
+- `products content set` → mutation envelope with `.result`
 - `sales list` → `.sales[]`
 - `sales view` → `.sale`
 - `sales export` → `.status`, `.recipient_email`
@@ -257,6 +260,11 @@ gumroad products covers remove <id> <cover_id> --yes --json --no-input
 gumroad products thumbnail set <id> --image ./thumb.jpg --json --no-input
 gumroad products thumbnail set <id> --url https://example.com/thumb.png --json --no-input
 gumroad products thumbnail remove <id> --yes --json --no-input
+
+# Shared product rich content. `set` replaces the whole page array; dry-run first.
+gumroad products content get <id> --json --no-input > content.json
+gumroad products content set <id> content.json --dry-run --json --no-input
+gumroad products content set <id> content.json --yes --json --no-input
 
 # Publish / unpublish
 gumroad products publish <id> --json --no-input

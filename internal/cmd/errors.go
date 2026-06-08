@@ -132,12 +132,15 @@ func primaryCause(err error) error {
 }
 
 func classifyPrimaryCause(err error) commandErrorDetail {
+	var invalidInputErr *cmdutil.InvalidInputError
 	var usageErr *cmdutil.UsageError
 	var apiErr *api.APIError
 	var unknownState *upload.UnknownStateError
 	var cleanupFailed *upload.CleanupFailedError
 	var rejected *files.CompleteRejectedError
 	switch {
+	case errors.As(err, &invalidInputErr):
+		return invalidInputErrorDetail(invalidInputErr.Error())
 	case errors.As(err, &usageErr):
 		return invalidInputErrorDetail(usageErr.Error())
 	case errors.As(err, &unknownState):

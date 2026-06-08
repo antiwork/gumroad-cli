@@ -118,7 +118,22 @@ gumroad products create --name "Art Pack" --price 10.00 --file ./pack.zip --file
 gumroad products update <product_id> --file ./pack.zip
 ```
 
-`gumroad files upload` prints the canonical `file_url`; product create/update commands accept repeatable `--file` flags. Run command help for metadata, removal, replacement, and per-variant Content options.
+`gumroad files upload` prints the canonical `file_url`; product create/update commands accept repeatable `--file` flags. Run command help for metadata, removal, replacement, and per-variant content options.
+
+## Product content
+
+```sh
+# Dump the shared rich content document for editing
+gumroad products content get <product_id> > content.json
+
+# Preview the whole-document replacement request
+gumroad products content set <product_id> content.json --dry-run
+
+# Replace the shared rich content document
+gumroad products content set <product_id> content.json --yes
+```
+
+`products content set` sends the whole `rich_content` page array back to Gumroad. Existing pages omitted from the JSON are deleted, so the command prompts before replacing a document that drops existing page IDs; use `--dry-run` to inspect the exact `PUT` body first. This command currently supports products with shared rich content, not per-variant rich content.
 
 ## Product media
 
