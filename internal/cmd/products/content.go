@@ -176,6 +176,11 @@ func validateRichContentArray(data []byte) error {
 	if err := json.Unmarshal(data, &pages); err != nil {
 		return fmt.Errorf("rich content JSON must be an array: %w", err)
 	}
+	for idx, page := range pages {
+		if !bytes.HasPrefix(bytes.TrimSpace(page), []byte("{")) {
+			return fmt.Errorf("rich content JSON page %d must be an object", idx)
+		}
+	}
 	return nil
 }
 

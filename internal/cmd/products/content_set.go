@@ -35,7 +35,7 @@ func newContentSetCmd() *cobra.Command {
 
 			input, err := readProductContentInput(opts.In(), productContentPath(args))
 			if err != nil {
-				return cmdutil.UsageErrorf(c, "%s", err)
+				return cmdutil.InvalidInputErrorf("%s", err)
 			}
 
 			token, err := config.Token()

@@ -12,7 +12,18 @@ type UsageError struct {
 	Message string
 }
 
+type InvalidInputError struct {
+	Message string
+}
+
 func (e *UsageError) Error() string {
+	if e == nil {
+		return ""
+	}
+	return e.Message
+}
+
+func (e *InvalidInputError) Error() string {
 	if e == nil {
 		return ""
 	}
@@ -22,6 +33,11 @@ func (e *UsageError) Error() string {
 // UsageErrorf returns a human-facing usage error with concise help.
 func UsageErrorf(cmd *cobra.Command, format string, args ...any) error {
 	return NewUsageError(cmd, fmt.Sprintf(format, args...))
+}
+
+// InvalidInputErrorf returns an invalid-input error without appending usage help.
+func InvalidInputErrorf(format string, args ...any) error {
+	return &InvalidInputError{Message: fmt.Sprintf(format, args...)}
 }
 
 // NewUsageError returns a human-facing usage error with concise help.

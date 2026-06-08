@@ -308,6 +308,48 @@ func TestContentSet_InvalidDocumentDoesNotCallAPI(t *testing.T) {
 	}
 }
 
+func TestContentSet_InvalidPageShapeDoesNotCallAPI(t *testing.T) {
+	path := writeContentFixture(t, `[1, "a", true]`)
+	var calls int
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		http.Error(w, "should not call API for invalid local page JSON", http.StatusInternalServerError)
+	})
+
+	cmd := testutil.Command(newContentSetCmd())
+	cmd.SetArgs([]string{"prod_123", path})
+	err := cmd.Execute()
+
+	if err == nil || !strings.Contains(err.Error(), "rich content JSON page 0 must be an object") {
+		t.Fatalf("expected page-shape validation error, got %v", err)
+	}
+	if calls != 0 {
+		t.Fatalf("invalid page shape made %d API calls", calls)
+	}
+}
+
+func TestContentSet_FileReadErrorDoesNotPrintUsage(t *testing.T) {
+	var calls int
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		http.Error(w, "should not call API when local file cannot be read", http.StatusInternalServerError)
+	})
+
+	cmd := testutil.Command(newContentSetCmd())
+	cmd.SetArgs([]string{"prod_123", filepath.Join(t.TempDir(), "missing.json")})
+	err := cmd.Execute()
+
+	if err == nil || !strings.Contains(err.Error(), "cannot read") {
+		t.Fatalf("expected read error, got %v", err)
+	}
+	if strings.Contains(err.Error(), "Usage:") || strings.Contains(err.Error(), "--help") {
+		t.Fatalf("read error should not include usage help, got %v", err)
+	}
+	if calls != 0 {
+		t.Fatalf("file read error made %d API calls", calls)
+	}
+}
+
 func TestContentSet_DryRunPlainPreviewsPUTBody(t *testing.T) {
 	var out bytes.Buffer
 	opts := testutil.TestOptions(testutil.PlainOutput(), testutil.Stdout(&out))

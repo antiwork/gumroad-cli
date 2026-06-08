@@ -130,6 +130,16 @@ func TestClassifyCommandError_Usage(t *testing.T) {
 	}
 }
 
+func TestClassifyCommandError_InvalidInput(t *testing.T) {
+	detail := classifyCommandError(cmdutil.InvalidInputErrorf("bad local input"))
+	if detail.Type != "usage_error" || detail.Code != "invalid_input" {
+		t.Fatalf("unexpected detail: %+v", detail)
+	}
+	if detail.Message != "bad local input" {
+		t.Fatalf("unexpected message %q", detail.Message)
+	}
+}
+
 func TestClassifyCommandError_API(t *testing.T) {
 	detail := classifyCommandError(&api.APIError{StatusCode: 429, Message: "Rate limited"})
 	if detail.Type != "api_error" || detail.Code != "rate_limited" || detail.StatusCode != 429 {
