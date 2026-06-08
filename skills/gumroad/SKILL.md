@@ -9,7 +9,7 @@ description: >
   Also trigger on "check my Gumroad", "look up a sale", "verify a license",
   "list my products", "how much have I made", "who bought", "recent sales",
   "refund a sale", "create a product", "upload a file", "attach a file to a product",
-  "add a cover image", "set a product thumbnail", "get product content", "set product content", "list product sections", "upload product media",
+  "add a cover image", "set a product thumbnail", "get product content", "set product content", "upload product media",
   "publish a product landing page", "publish custom HTML", "clear custom HTML",
   "attach a file to a variant", "finish a failed upload", "abort an upload", "manage webhooks",
   "set refund policy", "check my refund policy", "check my earnings", "see my revenue", "who subscribed", "manage my store",
@@ -54,7 +54,6 @@ Most responses are wrapped in `{"success": true, ...}` with resource-specific ke
 - `products view` → `.product`
 - `products content get` → rich content page array directly
 - `products content set` → mutation envelope with `.result`
-- `products sections list` → `.sections[]`, `.main_section_index`
 - `sales list` → `.sales[]`
 - `sales view` → `.sale`
 - `sales export` → `.status`, `.recipient_email`
@@ -277,8 +276,6 @@ gumroad products delete <id> --yes --json --no-input
 # List SKUs for a product
 gumroad products skus <id> --json --no-input
 
-# List product page sections
-gumroad products sections list <id> --json --no-input
 ```
 
 In custom HTML, use Gumroad data attributes for live product values and checkout:
