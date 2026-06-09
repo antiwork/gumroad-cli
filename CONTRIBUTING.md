@@ -75,7 +75,7 @@ Do not push code with failing tests. CI is not a substitute for local verificati
 ## Code standards
 
 - Run `gofmt` before committing (the linter enforces this)
-- Follow [Effective Go](https://go.dev/doc/effective_go) conventions
+- Follow [Effective Go](https://go.dev/doc/effective_go) for Go style and the [Command Line Interface Guidelines](https://clig.dev/) (clig.dev) for CLI UX — flags, output, errors, and help text. clig.dev is the design baseline this CLI is built on.
 - Don't leave comments in the code
 - No explanatory comments please
 - Don't apologize for errors, fix them
@@ -103,6 +103,7 @@ Do not push code with failing tests. CI is not a substitute for local verificati
 3. Each subcommand: parse flags → call `api.Client` → format via `output` package
 4. Always use `RunE` (not `Run`) to propagate errors
 5. Add tests — coverage must meet gates
+6. Document the command in its `--help` text and `skills/gumroad/SKILL.md` — not the README (see [Documentation](#documentation))
 
 ### Output pipeline
 
@@ -139,6 +140,14 @@ testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
 cmd := testutil.Command(newListCmd(), testutil.JSONOutput())
 out := testutil.CaptureStdout(func() { _ = cmd.RunE(cmd, []string{}) })
 ```
+
+## Documentation
+
+The CLI is used mostly by AI agents, so the canonical command reference lives where they read it: each command's `--help` text and the agent skill at `skills/gumroad/SKILL.md`. Keep the README lean and stable.
+
+- The README covers install, quick start, authentication, output modes, the AI-agent entry point, and development — not per-command reference.
+- When you add or change a command, update its `--help` and `skills/gumroad/SKILL.md`. Do **not** add a per-command section to the README.
+- If you're about to explain a command's flags, behavior, or examples in the README, that content belongs in `--help` or the skill instead.
 
 ## Gumroad API quirks
 
