@@ -1461,7 +1461,7 @@ func TestNewSalesCmd_Subcommands(t *testing.T) {
 	if cmd.Use != "sales" {
 		t.Fatalf("got use=%q, want %q", cmd.Use, "sales")
 	}
-	for _, name := range []string{"list", "summary", "export", "view", "refund", "ship", "resend-receipt"} {
+	for _, name := range []string{"list", "buyers", "summary", "export", "view", "refund", "ship", "resend-receipt"} {
 		if child, _, err := cmd.Find([]string{name}); err != nil || child == nil || child.Name() != name {
 			t.Fatalf("expected subcommand %q to be registered, got child=%v err=%v", name, child, err)
 		}

@@ -55,6 +55,7 @@ Most responses are wrapped in `{"success": true, ...}` with resource-specific ke
 - `products content get` → rich content page array directly
 - `products content set` → mutation envelope with `.result`
 - `sales list` → `.sales[]`
+- `sales buyers` → `.buyers[]`
 - `sales view` → `.sale`
 - `sales export` → `.status`, `.recipient_email`
 - `sales summary` → `.gross_cents`, `.net_cents`, `.breakdown[]`
@@ -329,6 +330,12 @@ gumroad sales list --after 2024-01-01 --before 2024-01-31 --csv --no-input
 
 # Find a sale by email
 gumroad sales list --json --jq '.sales[] | select(.email == "user@example.com")' --no-input
+
+# Deduplicated buyer list for one or more products (email, name, purchase count, last purchase date)
+gumroad sales buyers --product <id> --json --no-input
+gumroad sales buyers --product <old-id> --product <new-id> --json --no-input
+gumroad sales buyers --product <id> --after 2024-01-01 --csv --no-input
+gumroad sales buyers --product <id> --json --jq '.buyers[].email' --no-input
 
 # Show sales totals
 gumroad sales summary --json --no-input
