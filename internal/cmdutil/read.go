@@ -247,17 +247,16 @@ func RunRequestWithResource(opts Options, spinnerMessage, method, path string, p
 
 // withTopLevelID returns data with a top-level "id" field set to id. It is a
 // no-op when id is empty or the response already carries a top-level "id", so
-// responses that already expose the resource pass through unchanged.
+// responses that already expose the resource pass through unchanged. The id is
+// appended after the existing fields, preserving the API's original key order.
 func withTopLevelID(data json.RawMessage, id string) (json.RawMessage, error) {
 	if id == "" {
 		return data, nil
 	}
+	normalized := normalizeJSONBody(data)
 	fields := map[string]json.RawMessage{}
-	if err := json.Unmarshal(normalizeJSONBody(data), &fields); err != nil {
+	if err := json.Unmarshal(normalized, &fields); err != nil {
 		return nil, fmt.Errorf("could not parse response: %w", err)
-	}
-	if fields == nil {
-		fields = map[string]json.RawMessage{}
 	}
 	if _, ok := fields["id"]; ok {
 		return data, nil
@@ -266,12 +265,47 @@ func withTopLevelID(data json.RawMessage, id string) (json.RawMessage, error) {
 	if err != nil {
 		return nil, fmt.Errorf("could not encode id: %w", err)
 	}
-	fields["id"] = idData
-	merged, err := json.Marshal(fields)
-	if err != nil {
-		return nil, fmt.Errorf("could not encode JSON output: %w", err)
+	object := normalized
+	if bytes.Equal(bytes.TrimSpace(object), []byte("null")) {
+		object = nil
 	}
-	return merged, nil
+	return AppendJSONField(object, "id", idData)
+}
+
+// AppendJSONField returns object with key:value appended as a top-level field,
+// preserving the order of any existing fields. A nil, empty, or whitespace-only
+// object yields {"key":value}. It returns an error when object is non-empty but
+// not a JSON object. Surrounding whitespace is tolerated.
+func AppendJSONField(object json.RawMessage, key string, value json.RawMessage) (json.RawMessage, error) {
+	keyData, err := json.Marshal(key)
+	if err != nil {
+		return nil, fmt.Errorf("could not encode response key: %w", err)
+	}
+	object = bytes.TrimSpace(object)
+	if len(object) == 0 {
+		out := make([]byte, 0, len(keyData)+len(value)+4)
+		out = append(out, '{')
+		out = append(out, keyData...)
+		out = append(out, ':')
+		out = append(out, value...)
+		out = append(out, '}')
+		return out, nil
+	}
+	if !json.Valid(object) || len(object) < 2 || object[0] != '{' || object[len(object)-1] != '}' {
+		return nil, fmt.Errorf("could not parse response: expected JSON object")
+	}
+	inner := bytes.TrimSpace(object[1 : len(object)-1])
+	out := make([]byte, 0, len(object)+len(keyData)+len(value)+2)
+	out = append(out, '{')
+	if len(inner) > 0 {
+		out = append(out, inner...)
+		out = append(out, ',')
+	}
+	out = append(out, keyData...)
+	out = append(out, ':')
+	out = append(out, value...)
+	out = append(out, '}')
+	return out, nil
 }
 
 func renderMutationSuccess(opts Options, data json.RawMessage, id, successMessage string) error {

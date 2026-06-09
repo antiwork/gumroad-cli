@@ -75,6 +75,7 @@ Most responses are wrapped in `{"success": true, ...}` with resource-specific ke
 - `products page preview` → `.custom_html`, `.sanitization_report`
 - `products page publish` / `products page clear` → `.product.custom_html`, `.product.landing_url`, `.previous_custom_html`, `.sanitization_report`
 - `products update --custom-html` → `.product.custom_html`, `.product.landing_url`, `.previous_custom_html`, `.sanitization_report`
+- Not every `products` write verb is flat: `create`, `update`, `unpublish`, and `delete` return top-level fields, but `covers add`, `thumbnail set`, and `content set` still wrap their payload in the `{success, …, result}` envelope — read those under `.result`
 - `webhooks list` → `.resource_subscriptions[]`
 - `admin users info` → `.user`
 - `admin users affiliates` → `.affiliates[]`

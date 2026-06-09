@@ -565,6 +565,9 @@ func TestRunRequestWithResource_JSONMergesIDWhenResponseOmitsResource(t *testing
 	if resp["id"] != "prod_123" {
 		t.Fatalf("expected merged top-level id for resource-less response: %s", out.String())
 	}
+	if body := out.String(); strings.Index(body, `"id"`) < strings.Index(body, `"success"`) {
+		t.Fatalf("merged id must be appended after existing fields, not reordered to the front: %s", body)
+	}
 }
 
 func TestRunRequestWithResource_PlainOutput(t *testing.T) {
@@ -692,5 +695,33 @@ func TestPrintResourceSuccess_JSONKeepsExistingTopLevelID(t *testing.T) {
 	}
 	if resp["id"] != "from_api" {
 		t.Fatalf("must not overwrite an existing top-level id: %s", out.String())
+	}
+}
+
+func TestAppendJSONField(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		object json.RawMessage
+		want   string
+	}{
+		{name: "nil object", object: nil, want: `{"id":"p1"}`},
+		{name: "whitespace only", object: json.RawMessage("  \n"), want: `{"id":"p1"}`},
+		{name: "empty object", object: json.RawMessage(`{}`), want: `{"id":"p1"}`},
+		{name: "populated object", object: json.RawMessage(`{"success":true}`), want: `{"success":true,"id":"p1"}`},
+		{name: "object with surrounding whitespace", object: json.RawMessage(" {\"success\":true} \n"), want: `{"success":true,"id":"p1"}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := AppendJSONField(tc.object, "id", json.RawMessage(`"p1"`))
+			if err != nil {
+				t.Fatalf("AppendJSONField: %v", err)
+			}
+			if string(got) != tc.want {
+				t.Fatalf("got %s, want %s", got, tc.want)
+			}
+		})
+	}
+
+	if _, err := AppendJSONField(json.RawMessage(`[1,2]`), "id", json.RawMessage(`"p1"`)); err == nil {
+		t.Fatal("expected error appending to a non-object JSON value")
 	}
 }
