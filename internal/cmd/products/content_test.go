@@ -164,6 +164,25 @@ func TestContentGet_VariantRequiresCategoryBeforeAPI(t *testing.T) {
 	}
 }
 
+func TestContentGet_CategoryRequiresVariantBeforeAPI(t *testing.T) {
+	var calls int
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		http.Error(w, "should not call API without variant", http.StatusInternalServerError)
+	})
+
+	cmd := testutil.Command(newContentGetCmd())
+	cmd.SetArgs([]string{"prod_123", "--category", "cat_123"})
+	err := cmd.Execute()
+
+	if err == nil || !strings.Contains(err.Error(), "--category can only be used with --variant") {
+		t.Fatalf("expected category-without-variant usage error, got %v", err)
+	}
+	if calls != 0 {
+		t.Fatalf("missing variant made %d API calls", calls)
+	}
+}
+
 func TestContentGet_VariantOnSharedProductErrorsBeforeVariantGET(t *testing.T) {
 	var variantGetCalls int
 	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
@@ -553,6 +572,25 @@ func TestContentSet_VariantDryRunJSONPreviewsVariantPUTBodyAndSkipsPUT(t *testin
 	pages := richContentPagesFromBody(t, payload.Request.Body)
 	if len(pages) != 1 || pages[0]["id"] != "variant_page_1" {
 		t.Fatalf("dry-run body should preview variant rich_content PUT body, got %#v", pages)
+	}
+}
+
+func TestContentSet_CategoryRequiresVariantBeforeFileReadOrAPI(t *testing.T) {
+	var calls int
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		http.Error(w, "should not call API without variant", http.StatusInternalServerError)
+	})
+
+	cmd := testutil.Command(newContentSetCmd())
+	cmd.SetArgs([]string{"prod_123", filepath.Join(t.TempDir(), "missing.json"), "--category", "cat_123"})
+	err := cmd.Execute()
+
+	if err == nil || !strings.Contains(err.Error(), "--category can only be used with --variant") {
+		t.Fatalf("expected category-without-variant usage error, got %v", err)
+	}
+	if calls != 0 {
+		t.Fatalf("missing variant made %d API calls", calls)
 	}
 }
 
