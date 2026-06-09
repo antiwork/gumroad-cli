@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 
@@ -20,6 +21,14 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
+
+// Pin an empty auth env so the env-aware hint tests ignore the runner's
+// ambient tokens; per-test t.Setenv restores to this baseline.
+func TestMain(m *testing.M) {
+	os.Unsetenv(config.EnvAccessToken)
+	os.Unsetenv(adminconfig.EnvAccessToken)
+	os.Exit(m.Run())
+}
 
 func TestPrintStructuredCommandError(t *testing.T) {
 	var buf bytes.Buffer
@@ -67,6 +76,90 @@ func TestClassifyCommandError_AuthHint(t *testing.T) {
 	detail := classifyCommandError(config.ErrNotAuthenticated)
 	if detail.Hint != api.HintRunAuthLogin {
 		t.Errorf("got hint %q, want %q", detail.Hint, api.HintRunAuthLogin)
+	}
+}
+
+func TestClassifySellerAuthErrorWithOnlyAdminTokenAddsCrossTokenHint(t *testing.T) {
+	t.Setenv(adminconfig.EnvAccessToken, "admin-tok")
+	t.Setenv(config.EnvAccessToken, "")
+	detail := classifyCommandError(config.ErrNotAuthenticated)
+	if detail.Hint != crossTokenAuthHintNoSellerEnv {
+		t.Fatalf("expected Path-A cross-token hint, got %q", detail.Hint)
+	}
+}
+
+func TestClassifyConfigAuthWithRemediationAndAdminTokenShowsCrossTokenHint(t *testing.T) {
+	t.Setenv(adminconfig.EnvAccessToken, "admin-tok")
+	t.Setenv(config.EnvAccessToken, "")
+	wrapped := fmt.Errorf("%w. Run `gumroad auth login`, set `GUMROAD_ACCESS_TOKEN`, or pipe an existing token into `gumroad auth login --with-token`", config.ErrNotAuthenticated)
+	detail := classifyCommandError(wrapped)
+	if detail.Hint != crossTokenAuthHintNoSellerEnv {
+		t.Fatalf("expected cross-token hint to override suppressed hint, got %q", detail.Hint)
+	}
+}
+
+func TestClassifySeller401WithAdminTokenInAccessSlotAddsCrossTokenHint(t *testing.T) {
+	t.Setenv(adminconfig.EnvAccessToken, "tok")
+	t.Setenv(config.EnvAccessToken, "tok")
+	detail := classifyCommandError(&api.APIError{StatusCode: 401, Message: "Not authenticated.", Hint: api.HintRunAuthLogin})
+	if detail.Hint != crossTokenAuthHintAdminInAccessSlot {
+		t.Fatalf("expected Path-B cross-token hint, got %q", detail.Hint)
+	}
+}
+
+func TestClassifyCompleteRejected401WithAdminTokenInAccessSlotAddsCrossTokenHint(t *testing.T) {
+	t.Setenv(adminconfig.EnvAccessToken, "tok")
+	t.Setenv(config.EnvAccessToken, "tok")
+	rejected := &files.CompleteRejectedError{
+		UploadID:       "up-x",
+		Key:            "attachments/u/k/original/p.bin",
+		CompletedParts: []upload.CompletedPart{{PartNumber: 1, ETag: "e1"}},
+		Cause:          &api.APIError{StatusCode: 401, Message: "Not authenticated.", Hint: api.HintRunAuthLogin},
+	}
+	detail := classifyCommandError(rejected)
+	if detail.Hint != crossTokenAuthHintAdminInAccessSlot {
+		t.Fatalf("expected Path-B cross-token hint on complete-rejected, got %q", detail.Hint)
+	}
+	if detail.Recovery == nil || detail.Recovery.UploadID != "up-x" {
+		t.Fatalf("recovery handles must be preserved, got %+v", detail.Recovery)
+	}
+}
+
+func TestClassifySeller401WithStoredSellerTokenKeepsGenericHint(t *testing.T) {
+	t.Setenv(adminconfig.EnvAccessToken, "admin-tok")
+	t.Setenv(config.EnvAccessToken, "")
+	detail := classifyCommandError(&api.APIError{StatusCode: 401, Message: "Not authenticated.", Hint: api.HintRunAuthLogin})
+	if detail.Hint != api.HintRunAuthLogin {
+		t.Fatalf("empty access env must not trigger cross-token hint on 401, got %q", detail.Hint)
+	}
+}
+
+func TestClassifySeller401WithDistinctSellerTokenKeepsGenericHint(t *testing.T) {
+	t.Setenv(adminconfig.EnvAccessToken, "admin-tok")
+	t.Setenv(config.EnvAccessToken, "some-other-seller-tok")
+	detail := classifyCommandError(&api.APIError{StatusCode: 401, Message: "Not authenticated.", Hint: api.HintRunAuthLogin})
+	if detail.Hint != api.HintRunAuthLogin {
+		t.Fatalf("expected generic hint, got %q", detail.Hint)
+	}
+}
+
+func TestClassifyAdminSurface401KeepsAdminHint(t *testing.T) {
+	t.Setenv(adminconfig.EnvAccessToken, "admin-tok")
+	t.Setenv(config.EnvAccessToken, "admin-tok")
+	detail := classifyCommandError(&api.APIError{StatusCode: 401, Message: "Not authenticated.", Hint: adminconfig.HintSetAdminToken})
+	if detail.Hint != adminconfig.HintSetAdminToken {
+		t.Fatalf("admin hint must be preserved, got %q", detail.Hint)
+	}
+}
+
+func TestClassifySellerAuthErrorsWithoutAdminTokenKeepGenericHint(t *testing.T) {
+	t.Setenv(adminconfig.EnvAccessToken, "")
+	t.Setenv(config.EnvAccessToken, "")
+	if got := classifyCommandError(&api.APIError{StatusCode: 401, Message: "x", Hint: api.HintRunAuthLogin}).Hint; got != api.HintRunAuthLogin {
+		t.Fatalf("401 without admin token: expected generic hint, got %q", got)
+	}
+	if got := classifyCommandError(config.ErrNotAuthenticated).Hint; got != api.HintRunAuthLogin {
+		t.Fatalf("config.ErrNotAuthenticated without admin token: expected generic hint, got %q", got)
 	}
 }
 
