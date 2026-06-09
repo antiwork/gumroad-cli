@@ -196,6 +196,45 @@ func TestBuyers_DedupesEmailCaseInsensitively(t *testing.T) {
 	}
 }
 
+func TestBuyers_SameDateNameTieKeepsFirstSeenAcrossProducts(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Query().Get("product_id") {
+		case "p1":
+			testutil.JSON(t, w, map[string]any{
+				"sales": []map[string]any{
+					{"email": "tie@example.com", "full_name": "First Seen", "created_at": "2024-06-01"},
+				},
+			})
+		case "p2":
+			testutil.JSON(t, w, map[string]any{
+				"sales": []map[string]any{
+					{"email": "tie@example.com", "full_name": "Second Seen", "created_at": "2024-06-01"},
+				},
+			})
+		default:
+			t.Fatalf("unexpected product_id %q", r.URL.Query().Get("product_id"))
+		}
+	})
+
+	cmd := testutil.Command(newBuyersCmd(), testutil.JSONOutput())
+	cmd.SetArgs([]string{"--product", "p1", "--product", "p2"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	var resp buyersResponse
+	if err := json.Unmarshal([]byte(out), &resp); err != nil {
+		t.Fatalf("not valid JSON: %v\n%s", err, out)
+	}
+	if len(resp.Buyers) != 1 {
+		t.Fatalf("expected 1 buyer, got %+v", resp.Buyers)
+	}
+	if resp.Buyers[0].Name != "First Seen" {
+		t.Fatalf("got name %q, want First Seen (same-date tie must keep first-seen deterministically)", resp.Buyers[0].Name)
+	}
+	if resp.Buyers[0].PurchaseCount != 2 {
+		t.Fatalf("got count %d, want 2", resp.Buyers[0].PurchaseCount)
+	}
+}
+
 func TestBuyers_KeepsLatestNonEmptyName(t *testing.T) {
 	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
 		testutil.JSON(t, w, map[string]any{
@@ -397,6 +436,42 @@ func TestBuyers_Empty(t *testing.T) {
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 	if !strings.Contains(out, "No buyers found.") {
 		t.Fatalf("expected empty message, got %q", out)
+	}
+}
+
+func TestBuyers_EmptyPlainIsSilent(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{"sales": []any{}})
+	})
+
+	cmd := testutil.Command(newBuyersCmd(), testutil.PlainOutput(), testutil.Quiet(false))
+	cmd.SetArgs([]string{"--product", "p1"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	if strings.TrimSpace(out) != "" {
+		t.Fatalf("expected empty --plain output for pipe-friendliness, got %q", out)
+	}
+}
+
+func TestBuyers_CapturesNameWhenCreatedAtMissing(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{
+			"sales": []map[string]any{
+				{"email": "a@example.com", "full_name": "Anonymous Date"},
+			},
+		})
+	})
+
+	cmd := testutil.Command(newBuyersCmd(), testutil.JSONOutput())
+	cmd.SetArgs([]string{"--product", "p1"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	var resp buyersResponse
+	if err := json.Unmarshal([]byte(out), &resp); err != nil {
+		t.Fatalf("not valid JSON: %v\n%s", err, out)
+	}
+	if len(resp.Buyers) != 1 || resp.Buyers[0].Name != "Anonymous Date" {
+		t.Fatalf("expected name captured even without created_at, got %+v", resp.Buyers)
 	}
 }
 

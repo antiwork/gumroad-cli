@@ -41,6 +41,10 @@ type buyersResponse struct {
 	Buyers  []buyer `json:"buyers"`
 }
 
+func (b buyer) fields() []string {
+	return []string{b.Email, b.Name, strconv.Itoa(b.PurchaseCount), b.LastPurchaseDate}
+}
+
 func newBuyersCmd() *cobra.Command {
 	var products []string
 	var before, after string
@@ -194,7 +198,7 @@ func (i *buyerIndex) add(sale buyersSaleItem) {
 	}
 
 	name := strings.TrimSpace(sale.FullName)
-	if name != "" && sale.CreatedAt >= aggregate.nameDate {
+	if name != "" && (aggregate.name == "" || sale.CreatedAt > aggregate.nameDate) {
 		aggregate.name = name
 		aggregate.nameDate = sale.CreatedAt
 	}
@@ -227,11 +231,11 @@ func renderBuyers(opts cmdutil.Options, buyers []buyer, csvOutput bool) error {
 	if csvOutput {
 		return writeBuyersCSV(opts.Out(), buyers)
 	}
-	if len(buyers) == 0 {
-		return cmdutil.PrintInfo(opts, "No buyers found.")
-	}
 	if opts.PlainOutput {
 		return writeBuyersPlain(opts.Out(), buyers)
+	}
+	if len(buyers) == 0 {
+		return cmdutil.PrintInfo(opts, "No buyers found.")
 	}
 
 	style := opts.Style()
@@ -256,7 +260,7 @@ func writeBuyersCSV(w io.Writer, buyers []buyer) error {
 		return err
 	}
 	for _, b := range buyers {
-		if err := cw.Write([]string{b.Email, b.Name, strconv.Itoa(b.PurchaseCount), b.LastPurchaseDate}); err != nil {
+		if err := cw.Write(b.fields()); err != nil {
 			return err
 		}
 	}
@@ -267,7 +271,7 @@ func writeBuyersCSV(w io.Writer, buyers []buyer) error {
 func writeBuyersPlain(w io.Writer, buyers []buyer) error {
 	var rows [][]string
 	for _, b := range buyers {
-		rows = append(rows, []string{b.Email, b.Name, strconv.Itoa(b.PurchaseCount), b.LastPurchaseDate})
+		rows = append(rows, b.fields())
 	}
 	return output.PrintPlain(w, rows)
 }
@@ -275,7 +279,7 @@ func writeBuyersPlain(w io.Writer, buyers []buyer) error {
 func writeBuyersTable(w io.Writer, style output.Styler, buyers []buyer) error {
 	tbl := output.NewStyledTable(style, "EMAIL", "NAME", "PURCHASES", "LAST PURCHASE")
 	for _, b := range buyers {
-		tbl.AddRow(b.Email, b.Name, strconv.Itoa(b.PurchaseCount), b.LastPurchaseDate)
+		tbl.AddRow(b.fields()...)
 	}
 	return tbl.Render(w)
 }
