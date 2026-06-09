@@ -31,6 +31,7 @@ func NewProductsCmd() *cobra.Command {
   gumroad products content get <product_id> --variant <variant_id> --category <cat_id> > content.json
   gumroad products content set <product_id> content.json --dry-run
   gumroad products view <id>
+  gumroad products url <id>
   gumroad products publish <id>
   gumroad products unpublish <id>
   gumroad products delete <id>
@@ -42,6 +43,7 @@ func NewProductsCmd() *cobra.Command {
 	cmd.AddCommand(newCategoriesCmd())
 	cmd.AddCommand(newListCmd())
 	cmd.AddCommand(newViewCmd())
+	cmd.AddCommand(newURLCmd())
 	cmd.AddCommand(newDeleteCmd())
 	cmd.AddCommand(newPublishCmd())
 	cmd.AddCommand(newUnpublishCmd())
