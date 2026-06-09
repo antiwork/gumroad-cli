@@ -175,7 +175,7 @@ func classifyPrimaryCause(err error) commandErrorDetail {
 			Type:       "api_error",
 			Code:       apiErrorCode(apiErr.StatusCode),
 			Message:    apiErr.Error(),
-			Hint:       apiErr.GetHint(),
+			Hint:       sellerAuthHint(apiErr),
 			StatusCode: apiErr.StatusCode,
 		}
 	case errors.Is(err, adminconfig.ErrNotAuthenticated):
@@ -193,6 +193,9 @@ func classifyPrimaryCause(err error) commandErrorDetail {
 		hint := api.HintRunAuthLogin
 		if strings.Contains(err.Error(), "gumroad auth login") {
 			hint = ""
+		}
+		if errors.Is(err, config.ErrNotAuthenticated) && adminEnvTokenButNoSellerEnv() {
+			hint = crossTokenAuthHintNoSellerEnv
 		}
 		return commandErrorDetail{
 			Type:    "auth_error",
@@ -225,6 +228,34 @@ func invalidInputErrorDetail(message string) commandErrorDetail {
 		Code:    "invalid_input",
 		Message: message,
 	}
+}
+
+const crossTokenAuthHintTail = " This is a seller command and needs a seller access token (a different credential). " +
+	"Run `gumroad auth login`, or set " + config.EnvAccessToken + " to a seller token. " +
+	"Admin commands use `gumroad admin ...`."
+
+const crossTokenAuthHintNoSellerEnv = adminconfig.EnvAccessToken + " is set but " + config.EnvAccessToken + " is not." + crossTokenAuthHintTail
+
+const crossTokenAuthHintAdminInAccessSlot = config.EnvAccessToken + " is set to your admin token." + crossTokenAuthHintTail
+
+// Guards on HintRunAuthLogin so admin-surface 401s are left alone: adminapi
+// rewrites their hint to HintSetAdminToken.
+func sellerAuthHint(apiErr *api.APIError) string {
+	if apiErr.StatusCode == 401 && apiErr.GetHint() == api.HintRunAuthLogin && sellerEnvTokenIsAdminToken() {
+		return crossTokenAuthHintAdminInAccessSlot
+	}
+	return apiErr.GetHint()
+}
+
+func adminEnvTokenButNoSellerEnv() bool {
+	return adminconfig.HasEnvToken() && strings.TrimSpace(os.Getenv(config.EnvAccessToken)) == ""
+}
+
+// Requires an exact env match, not just an empty access var: on a 401 the
+// rejected token may have been a stored seller token, which is no mismatch.
+func sellerEnvTokenIsAdminToken() bool {
+	access := strings.TrimSpace(os.Getenv(config.EnvAccessToken))
+	return access != "" && access == strings.TrimSpace(os.Getenv(adminconfig.EnvAccessToken))
 }
 
 // mergeCleanupRecovery attaches cleanup orphan handles as secondary recovery
@@ -385,7 +416,7 @@ func completeRejectedClassification(err error, rejected *files.CompleteRejectedE
 				Type:       "api_error",
 				Code:       code,
 				Message:    apiErr.Error(),
-				Hint:       apiErr.GetHint(),
+				Hint:       sellerAuthHint(apiErr),
 				StatusCode: apiErr.StatusCode,
 				Recovery:   recovery,
 			}

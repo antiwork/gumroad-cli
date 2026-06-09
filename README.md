@@ -77,6 +77,15 @@ Run `gumroad --help` and `gumroad <command> --help` for subcommands, usage detai
 
 Admin commands use a separate internal token. Run `gumroad auth login --web` and check the admin box to store one locally, or use `GUMROAD_ADMIN_TOKEN` with `--non-interactive` in CI and agent runs. For local testing, set `GUMROAD_ADMIN_API_BASE_URL`.
 
+### Which token does a command use?
+
+| Command group | Token | Env var |
+|---|---|---|
+| `user`, `products`, `sales`, `files`, `subscribers`, `payouts`, `licenses`, `offercodes`, `webhooks`, … | Seller access token | `GUMROAD_ACCESS_TOKEN` |
+| `gumroad admin …` | Admin token (separate credential) | `GUMROAD_ADMIN_TOKEN` |
+
+The two are not interchangeable. If a seller command fails with `not_authenticated` while `GUMROAD_ADMIN_TOKEN` is set — either alone, or copied into `GUMROAD_ACCESS_TOKEN` — you need a seller token: set `GUMROAD_ACCESS_TOKEN` to a seller token or run `gumroad auth login`.
+
 ## Refund policy
 
 ```sh
