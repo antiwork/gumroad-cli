@@ -126,14 +126,20 @@ gumroad products update <product_id> --file ./pack.zip
 # Dump the shared rich content document for editing
 gumroad products content get <product_id> > content.json
 
+# Dump a per-variant rich content document for editing
+gumroad products content get <product_id> --variant <variant_id> --category <cat_id> > content.json
+
 # Preview the whole-document replacement request
 gumroad products content set <product_id> content.json --dry-run
+
+# Preview a per-variant whole-document replacement request
+gumroad products content set <product_id> content.json --variant <variant_id> --category <cat_id> --dry-run
 
 # Replace the shared rich content document
 gumroad products content set <product_id> content.json --yes
 ```
 
-`products content set` sends the whole `rich_content` page array back to Gumroad. Existing pages omitted from the JSON are deleted, so the command prompts before replacing a document that drops existing page IDs; use `--dry-run` to inspect the exact `PUT` body first. This command currently supports products with shared rich content, not per-variant rich content.
+`products content set` sends the whole `rich_content` page array back to Gumroad. Existing pages omitted from the JSON are deleted, so the command prompts before replacing a document that drops existing page IDs; use `--dry-run` to inspect the exact `PUT` body first. Omit `--variant` for shared product content. For per-variant content, pass both `--variant` and `--category` because the Gumroad API addresses variants through their category path.
 
 ## Product media
 

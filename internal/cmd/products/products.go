@@ -28,6 +28,7 @@ func NewProductsCmd() *cobra.Command {
   gumroad products update <product_id> --file ./pack.zip
   gumroad products update <product_id> --replace-files --keep-file file_123 --file ./new-pack.zip
   gumroad products content get <product_id> > content.json
+  gumroad products content get <product_id> --variant <variant_id> --category <cat_id> > content.json
   gumroad products content set <product_id> content.json --dry-run
   gumroad products view <id>
   gumroad products url <id>

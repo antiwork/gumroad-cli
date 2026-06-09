@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/antiwork/gumroad-cli/internal/api"
 	"github.com/antiwork/gumroad-cli/internal/cmdutil"
 	"github.com/antiwork/gumroad-cli/internal/config"
 	"github.com/antiwork/gumroad-cli/internal/output"
@@ -20,18 +21,24 @@ type productContentSetDryRun struct {
 }
 
 func newContentSetCmd() *cobra.Command {
-	return &cobra.Command{
+	var variantID, categoryID string
+
+	cmd := &cobra.Command{
 		Use:   "set <product_id> [path|-]",
 		Short: "Replace product rich content JSON",
-		Long: "Replace a product's shared rich content page array from a JSON file or stdin.\n\n" +
+		Long: "Replace a product's rich content page array from a JSON file or stdin.\n\n" +
 			"This is a whole-document write. Existing pages omitted from the JSON are deleted, so run `--dry-run` before writing and pass `--yes` when you intend to delete omitted pages.",
 		Args: productContentSetArgs,
 		Example: `  gumroad products content set <product_id> content.json --dry-run
+  gumroad products content set <product_id> content.json --variant <variant_id> --category <cat_id> --dry-run
   gumroad products content set <product_id> content.json --yes
   gumroad products content set <product_id> - < content.json`,
 		RunE: func(c *cobra.Command, args []string) error {
 			opts := cmdutil.OptionsFrom(c)
 			productID := args[0]
+			if err := validateProductContentVariantFlags(c, variantID, categoryID); err != nil {
+				return err
+			}
 
 			input, err := readProductContentInput(opts.In(), productContentPath(args))
 			if err != nil {
@@ -48,10 +55,19 @@ func newContentSetCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if err := ensureSharedProductContent(productID, state); err != nil {
+			target, err := resolveProductContentTarget(productID, state, variantID, categoryID)
+			if err != nil {
 				return err
 			}
-			existingRichContent, err := normalizeProductRichContent(state.RichContent)
+			existingRawRichContent := state.RichContent
+			if target.usesVariant() {
+				variantState, err := fetchVariantContentState(client, target.Path)
+				if err != nil {
+					return err
+				}
+				existingRawRichContent = variantState.RichContent
+			}
+			existingRichContent, err := normalizeProductRichContent(existingRawRichContent)
 			if err != nil {
 				return err
 			}
@@ -60,41 +76,53 @@ func newContentSetCmd() *cobra.Command {
 				return err
 			}
 
-			ok, err := confirmProductContentDeletion(opts, productID, deletedIDs)
+			ok, err := confirmProductContentDeletion(opts, target, deletedIDs)
 			if err != nil {
 				return err
 			}
 			if !ok {
-				return cmdutil.PrintCancelledAction(opts, "set content for product "+productID, productID)
+				return printProductContentSetCancelled(opts, target)
 			}
 
-			path := cmdutil.JoinPath("products", productID)
 			body := map[string]any{"rich_content": input.RichContent}
 			if opts.DryRun {
-				return renderProductContentSetDryRun(opts, path, input.Source, deletedIDs, body)
+				return renderProductContentSetDryRun(opts, target.Path, input.Source, deletedIDs, body)
 			}
 
-			data, err := runProductUpdateJSONData(opts, client, path, body, nil)
+			data, err := runContentSetJSONData(opts, client, target.Path, body)
 			if err != nil {
 				return err
 			}
-			return cmdutil.PrintMutationSuccess(opts, data, productID, "Product content updated.")
+			if target.usesVariant() {
+				return cmdutil.PrintMutationSuccess(opts, data, target.mutationID(), "Variant content updated.")
+			}
+			return cmdutil.PrintMutationSuccess(opts, data, target.mutationID(), "Product content updated.")
 		},
 	}
+
+	cmd.Flags().StringVar(&variantID, "variant", "", "Variant ID for per-variant content")
+	cmd.Flags().StringVar(&categoryID, "category", "", "Variant category ID for per-variant content")
+
+	return cmd
 }
 
-func confirmProductContentDeletion(opts cmdutil.Options, productID string, deletedIDs []string) (bool, error) {
+func printProductContentSetCancelled(opts cmdutil.Options, target productContentTarget) error {
+	return cmdutil.PrintCancelledAction(opts, "set content for "+target.confirmationSubject(), target.mutationID())
+}
+
+func confirmProductContentDeletion(opts cmdutil.Options, target productContentTarget, deletedIDs []string) (bool, error) {
 	if len(deletedIDs) == 0 {
 		return true, nil
 	}
-	return cmdutil.ConfirmAction(opts, productContentDeletionMessage(productID, deletedIDs))
+	return cmdutil.ConfirmAction(opts, productContentDeletionMessage(target, deletedIDs))
 }
 
-func productContentDeletionMessage(productID string, deletedIDs []string) string {
+func productContentDeletionMessage(target productContentTarget, deletedIDs []string) string {
+	subject := target.confirmationSubject()
 	if len(deletedIDs) == 1 {
-		return fmt.Sprintf("Set content for product %s and delete rich content page %s?", productID, deletedIDs[0])
+		return fmt.Sprintf("Set content for %s and delete rich content page %s?", subject, deletedIDs[0])
 	}
-	return fmt.Sprintf("Set content for product %s and delete %d rich content pages: %s?", productID, len(deletedIDs), summarizeRichContentPageIDs(deletedIDs, 5))
+	return fmt.Sprintf("Set content for %s and delete %d rich content pages: %s?", subject, len(deletedIDs), summarizeRichContentPageIDs(deletedIDs, 5))
 }
 
 func summarizeRichContentPageIDs(ids []string, max int) string {
@@ -158,4 +186,20 @@ func renderProductContentSetDryRun(
 		}
 		return output.Writeln(opts.Out(), string(data))
 	}
+}
+
+func runContentSetJSONData(
+	opts cmdutil.Options,
+	client *api.Client,
+	path string,
+	body map[string]any,
+) (json.RawMessage, error) {
+	var sp *output.Spinner
+	if cmdutil.ShouldShowSpinner(opts) {
+		sp = output.NewSpinnerTo("Updating content...", opts.Err())
+		sp.Start()
+		defer sp.Stop()
+	}
+
+	return client.PutJSON(path, body)
 }

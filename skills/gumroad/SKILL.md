@@ -39,7 +39,7 @@ Always follow these rules:
 - Products are created as drafts — use `gumroad products publish <id>` to make them live.
 - Product cover and thumbnail uploads support JPEG, PNG, and GIF. WebP is not supported by the API and the CLI rejects it before upload.
 - Product custom HTML landing pages use `gumroad products page preview <id> ./landing.html` to run the backend sanitizer without writing, `gumroad products page publish <id> ./landing.html` to store the page, `gumroad products page clear <id> --yes` to remove it, and `gumroad products page url <id>` to print the live URL. `--dry-run` only previews the CLI request body; it does not call the backend sanitizer. Inspect `.sanitization_report` in `preview` and `publish` JSON output for server-side changes.
-- Product rich content uses `gumroad products content get <id> --json --no-input` to dump the shared `rich_content` page array and `gumroad products content set <id> content.json --dry-run --json --no-input` to preview a whole-document replacement. `set` deletes existing pages omitted from the JSON and currently supports shared product content, not per-variant rich content.
+- Product rich content uses `gumroad products content get <id> --json --no-input` to dump the shared `rich_content` page array and `gumroad products content set <id> content.json --dry-run --json --no-input` to preview a whole-document replacement. For per-variant content, pass both `--variant <variant_id>` and `--category <cat_id>`. `set` deletes existing pages omitted from the JSON.
 - Custom HTML pages can use `data-gumroad-field="name"`, `data-gumroad-field="price"`, `data-gumroad-field="description"`, and `data-gumroad-action="buy"`. To preselect checkout state, add `data-gumroad-option="<variant name>"`, `data-gumroad-quantity="<integer>"`, `data-gumroad-price="<decimal>"`, or `data-gumroad-recurrence="monthly|quarterly|biannually|yearly|every_two_years"`. Production validates these values and falls back to product defaults when invalid. Prefer anchors for buy CTAs so production can add a checkout href; non-anchor buy elements also post to checkout.
 - If a command fails with a seller auth error, run `gumroad auth status --json --no-input` first. Agents can start seller auth with `gumroad auth login --no-input` and hand the printed approval URL to a human, or use an existing seller token via `GUMROAD_ACCESS_TOKEN` or `gumroad auth login --with-token`.
 - For admin commands in agents/CI, pass `--non-interactive` and set `GUMROAD_ADMIN_TOKEN`; interactive shells can store an admin token with `gumroad auth login --web`.
@@ -266,6 +266,11 @@ gumroad products thumbnail remove <id> --yes --json --no-input
 gumroad products content get <id> --json --no-input > content.json
 gumroad products content set <id> content.json --dry-run --json --no-input
 gumroad products content set <id> content.json --yes --json --no-input
+
+# Per-variant rich content. `--category` is required because the variant endpoint is category-scoped.
+gumroad products content get <id> --variant <variant_id> --category <cat_id> --json --no-input > content.json
+gumroad products content set <id> content.json --variant <variant_id> --category <cat_id> --dry-run --json --no-input
+gumroad products content set <id> content.json --variant <variant_id> --category <cat_id> --yes --json --no-input
 
 # Publish / unpublish
 gumroad products publish <id> --json --no-input
