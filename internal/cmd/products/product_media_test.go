@@ -469,6 +469,108 @@ func TestUpdate_WithPreviewImageDryRunJSONShowsDirectUploadAndAttachRequests(t *
 	}
 }
 
+func TestCoversAdd_WithImageDryRunStandaloneShowsUploadAndAttachRequests(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		mutators []testutil.OptionsMutator
+		assert   func(t *testing.T, out string, path string)
+	}{
+		{
+			name:     "json",
+			mutators: []testutil.OptionsMutator{testutil.DryRun(true), testutil.JSONOutput()},
+			assert: func(t *testing.T, out string, path string) {
+				t.Helper()
+
+				var payload dryRunCreatePayload
+				if err := json.Unmarshal([]byte(out), &payload); err != nil {
+					t.Fatalf("parse JSON dry-run output: %v\n%s", err, out)
+				}
+				if !payload.DryRun {
+					t.Fatal("expected dry_run to be true")
+				}
+				if len(payload.Uploads) != 1 {
+					t.Fatalf("uploads = %d, want 1", len(payload.Uploads))
+				}
+				upload := payload.Uploads[0]
+				if upload.Action != "direct_upload" || upload.Kind != "cover" || upload.Path != path || upload.Filename != "cover.jpg" || upload.ContentType != "image/jpeg" {
+					t.Fatalf("unexpected upload plan: %+v", upload)
+				}
+				if upload.Size != int64(len(jpegFixtureContents())) || upload.PartCount != 1 || upload.PartSize != upload.Size || upload.Checksum == "" {
+					t.Fatalf("unexpected upload sizing/checksum: %+v", upload)
+				}
+
+				requests := append([]dryRunCreateRequest{payload.Request}, payload.FollowUpRequests...)
+				if len(requests) != 2 {
+					t.Fatalf("requests = %d, want 2", len(requests))
+				}
+				if requests[0].Method != http.MethodPost || requests[0].Path != "/direct_uploads" {
+					t.Fatalf("unexpected direct upload request: %+v", requests[0])
+				}
+				blob, ok := requests[0].Body["blob"].(map[string]any)
+				if !ok || blob["filename"] != "cover.jpg" || blob["content_type"] != "image/jpeg" {
+					t.Fatalf("unexpected direct upload body: %#v", requests[0].Body)
+				}
+				if requests[1].Method != http.MethodPost || requests[1].Path != "/products/prod1/covers" || requests[1].Body["signed_blob_id"] != "<signed_blob:cover:0>" {
+					t.Fatalf("unexpected attach request: %+v", requests[1])
+				}
+			},
+		},
+		{
+			name:     "plain",
+			mutators: []testutil.OptionsMutator{testutil.DryRun(true), testutil.PlainOutput()},
+			assert: func(t *testing.T, out string, path string) {
+				t.Helper()
+
+				for _, want := range []string{
+					"direct_upload\tcover\t" + path + "\tcover.jpg",
+					"\timage/jpeg",
+					"POST\t/direct_uploads\t",
+					"POST\t/products/prod1/covers\t",
+					"signed_blob:cover:0",
+				} {
+					if !strings.Contains(out, want) {
+						t.Fatalf("expected %q in plain output:\n%s", want, out)
+					}
+				}
+			},
+		},
+		{
+			name:     "human",
+			mutators: []testutil.OptionsMutator{testutil.DryRun(true)},
+			assert: func(t *testing.T, out string, path string) {
+				t.Helper()
+
+				for _, want := range []string{
+					"Dry run: direct upload " + path,
+					"Filename: cover.jpg",
+					"Content type: image/jpeg",
+					"Size: 12 B",
+					"Dry run: POST /direct_uploads",
+					"Dry run: POST /products/prod1/covers",
+					"signed_blob:cover:0",
+				} {
+					if !strings.Contains(out, want) {
+						t.Fatalf("expected %q in human output:\n%s", want, out)
+					}
+				}
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			testutil.Setup(t, func(http.ResponseWriter, *http.Request) {
+				t.Fatal("dry run must not reach the API")
+			})
+
+			path := writeMediaFixture(t, "cover.jpg", jpegFixtureContents())
+			cmd := testutil.Command(newCoversAddCmd(), tc.mutators...)
+			cmd.SetArgs([]string{"prod1", "--image", path})
+			out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+			tc.assert(t, out, path)
+		})
+	}
+}
+
 func TestCreate_WithMediaDryRunPlainAndHumanShowsDirectUploadFlow(t *testing.T) {
 	testutil.Setup(t, func(http.ResponseWriter, *http.Request) {
 		t.Fatal("dry run must not reach the API")
