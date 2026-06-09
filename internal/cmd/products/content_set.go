@@ -27,9 +27,10 @@ func newContentSetCmd() *cobra.Command {
 		Use:   "set <product_id> [path|-]",
 		Short: "Replace product rich content JSON",
 		Long: "Replace a product's rich content page array from a JSON file or stdin.\n\n" +
-			"This is a whole-document write. Existing pages omitted from the JSON are deleted, so run `--dry-run` before writing and pass `--yes` when you intend to delete omitted pages. Pass `--page` to read one page object and merge it into the existing document before writing.",
+			"This is a whole-document write. Existing pages omitted from the JSON are deleted, so run `--dry-run` before writing and pass `--yes` when you intend to delete omitted pages. Without a path, whole-document writes read ./content.json. Pass `--page` to read one page object from ./page.json by default and merge it into the existing document before writing.",
 		Args: productContentSetArgs,
 		Example: `  gumroad products content set <product_id> content.json --dry-run
+  gumroad products content set <product_id> --page <page_id> --dry-run
   gumroad products content set <product_id> page.json --page <page_id> --dry-run
   gumroad products content set <product_id> content.json --variant <variant_id> --category <cat_id> --dry-run
   gumroad products content set <product_id> content.json --yes
@@ -47,7 +48,7 @@ func newContentSetCmd() *cobra.Command {
 
 			var input productContentInput
 			if selectedPageID != "" {
-				input, err = readProductContentPageInput(opts.In(), productContentPath(args))
+				input, err = readProductContentPageInput(opts.In(), productContentPagePath(args))
 			} else {
 				input, err = readProductContentInput(opts.In(), productContentPath(args))
 			}

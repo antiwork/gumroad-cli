@@ -516,6 +516,43 @@ func TestContentSet_PageMergesSinglePageJSON(t *testing.T) {
 	}
 }
 
+func TestContentSet_PageDefaultsToPageJSON(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := os.WriteFile("page.json", []byte(`{"id":"page_2","title":"Default page file","position":1,"description":{"type":"doc","content":[]}}`), 0600); err != nil {
+		t.Fatalf("write page.json: %v", err)
+	}
+	var putBody map[string]any
+
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			testutil.JSON(t, w, sharedContentProductResponse([]map[string]any{
+				contentPage("page_1", "Start", 0),
+				contentPage("page_2", "Old files", 1),
+			}))
+		case http.MethodPut:
+			if err := json.NewDecoder(r.Body).Decode(&putBody); err != nil {
+				t.Fatalf("decode PUT body: %v", err)
+			}
+			testutil.JSON(t, w, map[string]any{"success": true, "product": map[string]any{"id": "prod_123"}})
+		default:
+			t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
+			http.Error(w, "unexpected", http.StatusMethodNotAllowed)
+		}
+	})
+
+	cmd := testutil.Command(newContentSetCmd())
+	cmd.SetArgs([]string{"prod_123", "--page", "page_2"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute failed: %v", err)
+	}
+
+	pages := richContentPagesFromBody(t, putBody)
+	if len(pages) != 2 || pages[1]["title"] != "Default page file" {
+		t.Fatalf("page-scoped set did not read default page.json: %#v", pages)
+	}
+}
+
 func TestContentSet_PageIDMismatchDoesNotPUT(t *testing.T) {
 	path := writeContentFixture(t, `{"id":"page_3","title":"Wrong page","position":1,"description":{"type":"doc","content":[]}}`)
 	var putCalls int
@@ -1062,6 +1099,12 @@ func TestProductContentHelpers(t *testing.T) {
 	}
 	if got := productContentPath([]string{"prod_123", "custom.json"}); got != "custom.json" {
 		t.Fatalf("got explicit content path %q, want custom.json", got)
+	}
+	if got := productContentPagePath([]string{"prod_123"}); got != defaultProductContentPagePath {
+		t.Fatalf("got default page path %q, want %q", got, defaultProductContentPagePath)
+	}
+	if got := productContentPagePath([]string{"prod_123", "custom-page.json"}); got != "custom-page.json" {
+		t.Fatalf("got explicit page path %q, want custom-page.json", got)
 	}
 
 	productTarget := productContentTarget{ProductID: "prod_123"}

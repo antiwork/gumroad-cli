@@ -14,7 +14,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const defaultProductContentPath = "./content.json"
+const (
+	defaultProductContentPath     = "./content.json"
+	defaultProductContentPagePath = "./page.json"
+)
 
 type productContentState struct {
 	RichContent                      json.RawMessage
@@ -70,6 +73,7 @@ func newContentCmd() *cobra.Command {
   gumroad products content get <product_id> --page <page_id> > page.json
   gumroad products content list <product_id>
   gumroad products content set <product_id> content.json --dry-run
+  gumroad products content set <product_id> --page <page_id> --dry-run
   gumroad products content set <product_id> page.json --page <page_id> --dry-run
   gumroad products content set <product_id> content.json --variant <variant_id> --category <cat_id> --dry-run
   gumroad products content set <product_id> content.json --yes
@@ -83,10 +87,18 @@ func newContentCmd() *cobra.Command {
 }
 
 func productContentPath(args []string) string {
+	return productContentPathWithDefault(args, defaultProductContentPath)
+}
+
+func productContentPagePath(args []string) string {
+	return productContentPathWithDefault(args, defaultProductContentPagePath)
+}
+
+func productContentPathWithDefault(args []string, defaultPath string) string {
 	if len(args) > 1 {
 		return args[1]
 	}
-	return defaultProductContentPath
+	return defaultPath
 }
 
 func productContentSetArgs(cmd *cobra.Command, args []string) error {

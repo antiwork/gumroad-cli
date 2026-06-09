@@ -139,6 +139,7 @@ gumroad products content get <product_id> --page <page_id> > page.json
 gumroad products content set <product_id> content.json --dry-run
 
 # Preview a single-page replacement after merging it into the existing document
+gumroad products content set <product_id> --page <page_id> --dry-run
 gumroad products content set <product_id> page.json --page <page_id> --dry-run
 
 # Preview a per-variant whole-document replacement request
@@ -148,7 +149,7 @@ gumroad products content set <product_id> content.json --variant <variant_id> --
 gumroad products content set <product_id> content.json --yes
 ```
 
-`products content set` sends the whole `rich_content` page array back to Gumroad. Existing pages omitted from the JSON are deleted, so the command prompts before replacing a document that drops existing page IDs; use `--dry-run` to inspect the exact `PUT` body first. `--page <page_id>` reads one page object, requires its `id` to match, merges it into the fetched document, and then sends the merged whole-document `PUT`. Omit `--variant` for shared product content. For per-variant content, pass both `--variant` and `--category` because the Gumroad API addresses variants through their category path.
+`products content set` sends the whole `rich_content` page array back to Gumroad. Existing pages omitted from the JSON are deleted, so the command prompts before replacing a document that drops existing page IDs; use `--dry-run` to inspect the exact `PUT` body first. Without a path, whole-document `set` reads `./content.json`. `--page <page_id>` reads one page object from `./page.json` by default, requires its `id` to match, merges it into the fetched document, and then sends the merged whole-document `PUT`. Omit `--variant` for shared product content. For per-variant content, pass both `--variant` and `--category` because the Gumroad API addresses variants through their category path.
 
 ## Product media
 
