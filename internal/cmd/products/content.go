@@ -22,10 +22,18 @@ type productContentState struct {
 	Variants                         *[]productVariantCategoryRef
 }
 
+type variantContentState struct {
+	RichContent json.RawMessage
+}
+
 type rawProductContentState struct {
 	RichContent                      json.RawMessage              `json:"rich_content"`
 	HasSameRichContentForAllVariants bool                         `json:"has_same_rich_content_for_all_variants"`
 	Variants                         *[]productVariantCategoryRef `json:"variants"`
+}
+
+type rawVariantContentState struct {
+	RichContent json.RawMessage `json:"rich_content"`
 }
 
 type productContentResponse struct {
@@ -35,9 +43,19 @@ type productContentResponse struct {
 	Variants                         *[]productVariantCategoryRef `json:"variants,omitempty"`
 }
 
+type variantContentResponse struct {
+	Variant *rawVariantContentState `json:"variant,omitempty"`
+}
+
 type productContentInput struct {
 	Source      string
 	RichContent json.RawMessage
+}
+
+type productContentTarget struct {
+	ProductID string
+	VariantID string
+	Path      string
 }
 
 func newContentCmd() *cobra.Command {
@@ -45,9 +63,11 @@ func newContentCmd() *cobra.Command {
 		Use:   "content",
 		Short: "Manage product rich content",
 		Long: "Manage product rich content.\n\n" +
-			"Get or replace the whole rich content document for products that use shared content.",
+			"Get or replace the whole rich content document for products that use shared content or per-variant content.",
 		Example: `  gumroad products content get <product_id> > content.json
+  gumroad products content get <product_id> --variant <variant_id> --category <cat_id> > content.json
   gumroad products content set <product_id> content.json --dry-run
+  gumroad products content set <product_id> content.json --variant <variant_id> --category <cat_id> --dry-run
   gumroad products content set <product_id> content.json --yes
   gumroad products content set <product_id> - < content.json`,
 	}
@@ -87,6 +107,24 @@ func fetchProductContentState(client *api.Client, productID string) (productCont
 	return resp.state(), nil
 }
 
+func fetchVariantContentState(client *api.Client, path string) (variantContentState, error) {
+	data, err := client.Get(path, url.Values{})
+	if err != nil {
+		return variantContentState{}, err
+	}
+
+	resp, err := cmdutil.DecodeJSON[variantContentResponse](data)
+	if err != nil {
+		return variantContentState{}, err
+	}
+	if resp.Variant == nil {
+		return variantContentState{}, fmt.Errorf("variant response is missing variant")
+	}
+	return variantContentState{
+		RichContent: resp.Variant.RichContent,
+	}, nil
+}
+
 func (r productContentResponse) state() productContentState {
 	if r.Product != nil {
 		return productContentState{
@@ -102,6 +140,65 @@ func (r productContentResponse) state() productContentState {
 	}
 }
 
+func validateProductContentVariantFlags(cmd *cobra.Command, variantID, categoryID string) error {
+	variantID = strings.TrimSpace(variantID)
+	categoryID = strings.TrimSpace(categoryID)
+	switch {
+	case variantID == "" && categoryID == "":
+		return nil
+	case variantID == "":
+		return cmdutil.UsageErrorf(cmd, "--category can only be used with --variant")
+	case categoryID == "":
+		return cmdutil.MissingFlagError(cmd, "--category")
+	default:
+		return nil
+	}
+}
+
+func resolveProductContentTarget(
+	productID string,
+	state productContentState,
+	variantID, categoryID string,
+) (productContentTarget, error) {
+	variantID = strings.TrimSpace(variantID)
+	categoryID = strings.TrimSpace(categoryID)
+	if variantID == "" {
+		if err := ensureSharedProductContent(productID, state); err != nil {
+			return productContentTarget{}, err
+		}
+		return productContentTarget{
+			ProductID: productID,
+			Path:      cmdutil.JoinPath("products", productID),
+		}, nil
+	}
+
+	if !productUsesPerVariantRichContent(productFileUpdateState{
+		HasSameRichContentForAllVariants: state.HasSameRichContentForAllVariants,
+		Variants:                         state.Variants,
+	}) {
+		return productContentTarget{}, cmdutil.InvalidInputErrorf(
+			"product %s uses shared rich content; omit --variant to edit product-level content, or switch the product to per-variant content first",
+			productID)
+	}
+
+	return productContentTarget{
+		ProductID: productID,
+		VariantID: variantID,
+		Path:      cmdutil.JoinPath("products", productID, "variant_categories", categoryID, "variants", variantID),
+	}, nil
+}
+
+func (t productContentTarget) usesVariant() bool {
+	return t.VariantID != ""
+}
+
+func (t productContentTarget) confirmationSubject() string {
+	if t.usesVariant() {
+		return fmt.Sprintf("variant %s for product %s", t.VariantID, t.ProductID)
+	}
+	return fmt.Sprintf("product %s", t.ProductID)
+}
+
 func ensureSharedProductContent(productID string, state productContentState) error {
 	if !productUsesPerVariantRichContent(productFileUpdateState{
 		HasSameRichContentForAllVariants: state.HasSameRichContentForAllVariants,
@@ -109,7 +206,7 @@ func ensureSharedProductContent(productID string, state productContentState) err
 	}) {
 		return nil
 	}
-	return cmdutil.InvalidInputErrorf("product %s uses per-variant rich content; product-level content get/set only supports shared rich content", productID)
+	return cmdutil.InvalidInputErrorf("product %s uses per-variant rich content; pass --variant <variant_id> --category <cat_id> to edit variant content", productID)
 }
 
 func readProductContentInput(r io.Reader, path string) (productContentInput, error) {
@@ -160,7 +257,7 @@ func normalizeProductRichContent(data json.RawMessage) (json.RawMessage, error) 
 		return json.RawMessage("[]"), nil
 	}
 	if err := validateRichContentArray(trimmed); err != nil {
-		return nil, fmt.Errorf("product rich_content response is invalid: %w", err)
+		return nil, fmt.Errorf("rich_content response is invalid: %w", err)
 	}
 	return append(json.RawMessage(nil), trimmed...), nil
 }

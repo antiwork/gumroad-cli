@@ -94,6 +94,105 @@ func TestContentGet_OmittedRichContentPrintsEmptyArray(t *testing.T) {
 	}
 }
 
+func TestContentGet_VariantProjectsVariantRichContent(t *testing.T) {
+	var productGetCalls, variantGetCalls int
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/products/prod_123":
+			productGetCalls++
+			if r.Method != http.MethodGet {
+				t.Errorf("product got method %s, want GET", r.Method)
+			}
+			testutil.JSON(t, w, perVariantContentProductResponse())
+		case "/products/prod_123/variant_categories/cat_123/variants/var_123":
+			variantGetCalls++
+			if r.Method != http.MethodGet {
+				t.Errorf("variant got method %s, want GET", r.Method)
+			}
+			testutil.JSON(t, w, map[string]any{
+				"success": true,
+				"variant": map[string]any{
+					"id":   "var_123",
+					"name": "Large",
+					"rich_content": []map[string]any{
+						contentPage("variant_page_1", "Variant files", 0),
+					},
+				},
+			})
+		default:
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+			http.Error(w, "unexpected", http.StatusNotFound)
+		}
+	})
+
+	cmd := testutil.Command(newContentGetCmd(), testutil.JSONOutput())
+	cmd.SetArgs([]string{"prod_123", "--variant", "var_123", "--category", "cat_123"})
+	out := testutil.CaptureStdout(func() {
+		if err := cmd.Execute(); err != nil {
+			t.Fatalf("Execute failed: %v", err)
+		}
+	})
+
+	if productGetCalls != 1 || variantGetCalls != 1 {
+		t.Fatalf("GET calls: product=%d variant=%d, want 1 each", productGetCalls, variantGetCalls)
+	}
+	var pages []map[string]any
+	if err := json.Unmarshal([]byte(out), &pages); err != nil {
+		t.Fatalf("output is not rich_content JSON: %v\n%s", err, out)
+	}
+	if len(pages) != 1 || pages[0]["id"] != "variant_page_1" {
+		t.Fatalf("unexpected variant rich_content projection: %#v", pages)
+	}
+}
+
+func TestContentGet_VariantRequiresCategoryBeforeAPI(t *testing.T) {
+	var calls int
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		http.Error(w, "should not call API without category", http.StatusInternalServerError)
+	})
+
+	cmd := testutil.Command(newContentGetCmd())
+	cmd.SetArgs([]string{"prod_123", "--variant", "var_123"})
+	err := cmd.Execute()
+
+	if err == nil || !strings.Contains(err.Error(), "--category") {
+		t.Fatalf("expected missing category error, got %v", err)
+	}
+	if calls != 0 {
+		t.Fatalf("missing category made %d API calls", calls)
+	}
+}
+
+func TestContentGet_VariantOnSharedProductErrorsBeforeVariantGET(t *testing.T) {
+	var variantGetCalls int
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/products/prod_123":
+			testutil.JSON(t, w, sharedContentProductResponse([]map[string]any{
+				contentPage("page_1", "Start", 0),
+			}))
+		case "/products/prod_123/variant_categories/cat_123/variants/var_123":
+			variantGetCalls++
+			http.Error(w, "should not fetch variant content for shared product", http.StatusInternalServerError)
+		default:
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+			http.Error(w, "unexpected", http.StatusNotFound)
+		}
+	})
+
+	cmd := testutil.Command(newContentGetCmd())
+	cmd.SetArgs([]string{"prod_123", "--variant", "var_123", "--category", "cat_123"})
+	err := cmd.Execute()
+
+	if err == nil || !strings.Contains(err.Error(), "shared rich content") {
+		t.Fatalf("expected shared-content guard error, got %v", err)
+	}
+	if variantGetCalls != 0 {
+		t.Fatalf("variant GET calls = %d, want 0", variantGetCalls)
+	}
+}
+
 func TestContentGet_RejectsPlainOutput(t *testing.T) {
 	var calls int
 	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
@@ -172,6 +271,73 @@ func TestContentSet_FileSendsWholeDocumentJSON(t *testing.T) {
 	}
 }
 
+func TestContentSet_VariantSendsWholeDocumentJSON(t *testing.T) {
+	path := writeContentFixture(t, `[
+  {"id":"variant_page_1","title":"Variant start","position":0,"description":{"type":"doc","content":[]}}
+]`)
+	var productPutCalls int
+	var variantPutBody map[string]any
+	var variantPutContentType string
+
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/products/prod_123":
+			switch r.Method {
+			case http.MethodGet:
+				testutil.JSON(t, w, perVariantContentProductResponse())
+			case http.MethodPut:
+				productPutCalls++
+				http.Error(w, "should not PUT product rich_content for variant target", http.StatusInternalServerError)
+			default:
+				t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
+				http.Error(w, "unexpected", http.StatusMethodNotAllowed)
+			}
+		case "/products/prod_123/variant_categories/cat_123/variants/var_123":
+			switch r.Method {
+			case http.MethodGet:
+				testutil.JSON(t, w, map[string]any{
+					"success": true,
+					"variant": map[string]any{
+						"id": "var_123",
+						"rich_content": []map[string]any{
+							contentPage("variant_page_1", "Variant start", 0),
+						},
+					},
+				})
+			case http.MethodPut:
+				variantPutContentType = r.Header.Get("Content-Type")
+				if err := json.NewDecoder(r.Body).Decode(&variantPutBody); err != nil {
+					t.Fatalf("decode variant PUT body: %v", err)
+				}
+				testutil.JSON(t, w, map[string]any{"success": true, "variant": map[string]any{"id": "var_123"}})
+			default:
+				t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
+				http.Error(w, "unexpected", http.StatusMethodNotAllowed)
+			}
+		default:
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+			http.Error(w, "unexpected", http.StatusNotFound)
+		}
+	})
+
+	cmd := testutil.Command(newContentSetCmd(), testutil.Yes(true))
+	cmd.SetArgs([]string{"prod_123", path, "--variant", "var_123", "--category", "cat_123"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute failed: %v", err)
+	}
+
+	if productPutCalls != 0 {
+		t.Fatalf("product PUT calls = %d, want 0", productPutCalls)
+	}
+	if !strings.HasPrefix(variantPutContentType, "application/json") {
+		t.Fatalf("got Content-Type %q, want application/json", variantPutContentType)
+	}
+	pages := richContentPagesFromBody(t, variantPutBody)
+	if len(pages) != 1 || pages[0]["id"] != "variant_page_1" {
+		t.Fatalf("variant set should send exactly the provided document, got %#v", pages)
+	}
+}
+
 func TestContentSet_DeletingPageRequiresConfirmation(t *testing.T) {
 	path := writeContentFixture(t, `[{"id":"page_1","title":"Start","position":0,"description":{"type":"doc","content":[]}}]`)
 	var putCalls int
@@ -201,6 +367,52 @@ func TestContentSet_DeletingPageRequiresConfirmation(t *testing.T) {
 	}
 	if putCalls != 0 {
 		t.Fatalf("content set PUT %d times without confirmation", putCalls)
+	}
+}
+
+func TestContentSet_VariantDeletingPageRequiresConfirmation(t *testing.T) {
+	path := writeContentFixture(t, `[{"id":"variant_page_1","title":"Start","position":0,"description":{"type":"doc","content":[]}}]`)
+	var variantPutCalls int
+
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/products/prod_123":
+			testutil.JSON(t, w, perVariantContentProductResponse())
+		case "/products/prod_123/variant_categories/cat_123/variants/var_123":
+			switch r.Method {
+			case http.MethodGet:
+				testutil.JSON(t, w, map[string]any{
+					"success": true,
+					"variant": map[string]any{
+						"id": "var_123",
+						"rich_content": []map[string]any{
+							contentPage("variant_page_1", "Start", 0),
+							contentPage("variant_page_2", "Old files", 1),
+						},
+					},
+				})
+			case http.MethodPut:
+				variantPutCalls++
+				http.Error(w, "should not PUT without confirmation", http.StatusInternalServerError)
+			default:
+				t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
+				http.Error(w, "unexpected", http.StatusMethodNotAllowed)
+			}
+		default:
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+			http.Error(w, "unexpected", http.StatusNotFound)
+		}
+	})
+
+	cmd := testutil.Command(newContentSetCmd(), testutil.NoInput(true))
+	cmd.SetArgs([]string{"prod_123", path, "--variant", "var_123", "--category", "cat_123"})
+	err := cmd.Execute()
+
+	if err == nil || !strings.Contains(err.Error(), "Use --yes to skip confirmation") {
+		t.Fatalf("expected confirmation-required error, got %v", err)
+	}
+	if variantPutCalls != 0 {
+		t.Fatalf("variant content set PUT %d times without confirmation", variantPutCalls)
 	}
 }
 
@@ -280,6 +492,67 @@ func TestContentSet_DryRunJSONPreviewsPUTBodyAndSkipsPUT(t *testing.T) {
 	pages := richContentPagesFromBody(t, payload.Request.Body)
 	if len(pages) != 1 || pages[0]["id"] != "page_1" {
 		t.Fatalf("dry-run body should preview rich_content PUT body, got %#v", pages)
+	}
+}
+
+func TestContentSet_VariantDryRunJSONPreviewsVariantPUTBodyAndSkipsPUT(t *testing.T) {
+	path := writeContentFixture(t, `[{"id":"variant_page_1","title":"Start","position":0,"description":{"type":"doc","content":[]}}]`)
+	var variantPutCalls int
+
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/products/prod_123":
+			testutil.JSON(t, w, perVariantContentProductResponse())
+		case "/products/prod_123/variant_categories/cat_123/variants/var_123":
+			switch r.Method {
+			case http.MethodGet:
+				testutil.JSON(t, w, map[string]any{
+					"success": true,
+					"variant": map[string]any{
+						"id": "var_123",
+						"rich_content": []map[string]any{
+							contentPage("variant_page_1", "Start", 0),
+							contentPage("variant_page_2", "Old files", 1),
+						},
+					},
+				})
+			case http.MethodPut:
+				variantPutCalls++
+				http.Error(w, "dry-run must not PUT", http.StatusInternalServerError)
+			default:
+				t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
+				http.Error(w, "unexpected", http.StatusMethodNotAllowed)
+			}
+		default:
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+			http.Error(w, "unexpected", http.StatusNotFound)
+		}
+	})
+
+	cmd := testutil.Command(newContentSetCmd(), testutil.DryRun(true), testutil.JSONOutput())
+	cmd.SetArgs([]string{"prod_123", path, "--variant", "var_123", "--category", "cat_123"})
+	out := testutil.CaptureStdout(func() {
+		if err := cmd.Execute(); err != nil {
+			t.Fatalf("Execute failed: %v", err)
+		}
+	})
+
+	if variantPutCalls != 0 {
+		t.Fatalf("dry-run variant PUT %d times", variantPutCalls)
+	}
+	var payload productContentSetDryRun
+	if err := json.Unmarshal([]byte(out), &payload); err != nil {
+		t.Fatalf("dry-run output is not valid JSON: %v\n%s", err, out)
+	}
+	if payload.Request.Method != http.MethodPut || payload.Request.Path != "/products/prod_123/variant_categories/cat_123/variants/var_123" {
+		t.Fatalf("unexpected dry-run request: %+v", payload.Request)
+	}
+	if len(payload.DeletedPageIDs) != 1 || payload.DeletedPageIDs[0] != "variant_page_2" {
+		t.Fatalf("dry-run should report omitted variant page IDs, got %#v", payload.DeletedPageIDs)
+	}
+	pages := richContentPagesFromBody(t, payload.Request.Body)
+	if len(pages) != 1 || pages[0]["id"] != "variant_page_1" {
+		t.Fatalf("dry-run body should preview variant rich_content PUT body, got %#v", pages)
 	}
 }
 
