@@ -21,15 +21,16 @@ type productContentSetDryRun struct {
 }
 
 func newContentSetCmd() *cobra.Command {
-	var variantID, categoryID string
+	var variantID, categoryID, pageID string
 
 	cmd := &cobra.Command{
 		Use:   "set <product_id> [path|-]",
 		Short: "Replace product rich content JSON",
 		Long: "Replace a product's rich content page array from a JSON file or stdin.\n\n" +
-			"This is a whole-document write. Existing pages omitted from the JSON are deleted, so run `--dry-run` before writing and pass `--yes` when you intend to delete omitted pages.",
+			"This is a whole-document write. Existing pages omitted from the JSON are deleted, so run `--dry-run` before writing and pass `--yes` when you intend to delete omitted pages. Pass `--page` to read one page object and merge it into the existing document before writing.",
 		Args: productContentSetArgs,
 		Example: `  gumroad products content set <product_id> content.json --dry-run
+  gumroad products content set <product_id> page.json --page <page_id> --dry-run
   gumroad products content set <product_id> content.json --variant <variant_id> --category <cat_id> --dry-run
   gumroad products content set <product_id> content.json --yes
   gumroad products content set <product_id> - < content.json`,
@@ -39,8 +40,17 @@ func newContentSetCmd() *cobra.Command {
 			if err := validateProductContentVariantFlags(c, variantID, categoryID); err != nil {
 				return err
 			}
+			selectedPageID, err := normalizeProductContentPageFlag(c, pageID)
+			if err != nil {
+				return err
+			}
 
-			input, err := readProductContentInput(opts.In(), productContentPath(args))
+			var input productContentInput
+			if selectedPageID != "" {
+				input, err = readProductContentPageInput(opts.In(), productContentPath(args))
+			} else {
+				input, err = readProductContentInput(opts.In(), productContentPath(args))
+			}
 			if err != nil {
 				return cmdutil.InvalidInputErrorf("%s", err)
 			}
@@ -51,27 +61,18 @@ func newContentSetCmd() *cobra.Command {
 			}
 			client := cmdutil.NewAPIClient(opts, token)
 
-			state, err := fetchProductContentState(client, productID)
+			target, existingRichContent, err := fetchTargetProductRichContent(client, productID, variantID, categoryID)
 			if err != nil {
 				return err
 			}
-			target, err := resolveProductContentTarget(productID, state, variantID, categoryID)
-			if err != nil {
-				return err
-			}
-			existingRawRichContent := state.RichContent
-			if target.usesVariant() {
-				variantState, err := fetchVariantContentState(client, target.Path)
+			nextRichContent := input.RichContent
+			if selectedPageID != "" {
+				nextRichContent, err = mergeRichContentPage(existingRichContent, input.Page, selectedPageID)
 				if err != nil {
 					return err
 				}
-				existingRawRichContent = variantState.RichContent
 			}
-			existingRichContent, err := normalizeProductRichContent(existingRawRichContent)
-			if err != nil {
-				return err
-			}
-			deletedIDs, err := deletedRichContentPageIDs(existingRichContent, input.RichContent)
+			deletedIDs, err := deletedRichContentPageIDs(existingRichContent, nextRichContent)
 			if err != nil {
 				return err
 			}
@@ -84,7 +85,7 @@ func newContentSetCmd() *cobra.Command {
 				return printProductContentSetCancelled(opts, target)
 			}
 
-			body := map[string]any{"rich_content": input.RichContent}
+			body := map[string]any{"rich_content": nextRichContent}
 			if opts.DryRun {
 				return renderProductContentSetDryRun(opts, target.Path, input.Source, deletedIDs, body)
 			}
@@ -102,6 +103,7 @@ func newContentSetCmd() *cobra.Command {
 
 	cmd.Flags().StringVar(&variantID, "variant", "", "Variant ID for per-variant content")
 	cmd.Flags().StringVar(&categoryID, "category", "", "Variant category ID for per-variant content")
+	cmd.Flags().StringVar(&pageID, "page", "", "Rich content page ID to replace")
 
 	return cmd
 }

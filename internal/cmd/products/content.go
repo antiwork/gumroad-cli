@@ -50,6 +50,7 @@ type variantContentResponse struct {
 type productContentInput struct {
 	Source      string
 	RichContent json.RawMessage
+	Page        json.RawMessage
 }
 
 type productContentTarget struct {
@@ -66,13 +67,17 @@ func newContentCmd() *cobra.Command {
 			"Get or replace the whole rich content document for products that use shared content or per-variant content.",
 		Example: `  gumroad products content get <product_id> > content.json
   gumroad products content get <product_id> --variant <variant_id> --category <cat_id> > content.json
+  gumroad products content get <product_id> --page <page_id> > page.json
+  gumroad products content list <product_id>
   gumroad products content set <product_id> content.json --dry-run
+  gumroad products content set <product_id> page.json --page <page_id> --dry-run
   gumroad products content set <product_id> content.json --variant <variant_id> --category <cat_id> --dry-run
   gumroad products content set <product_id> content.json --yes
   gumroad products content set <product_id> - < content.json`,
 	}
 
 	cmd.AddCommand(newContentGetCmd())
+	cmd.AddCommand(newContentListCmd())
 	cmd.AddCommand(newContentSetCmd())
 	return cmd
 }
@@ -155,6 +160,17 @@ func validateProductContentVariantFlags(cmd *cobra.Command, variantID, categoryI
 	}
 }
 
+func normalizeProductContentPageFlag(cmd *cobra.Command, pageID string) (string, error) {
+	if cmd == nil || cmd.Flags() == nil || !cmd.Flags().Changed("page") {
+		return "", nil
+	}
+	pageID = strings.TrimSpace(pageID)
+	if pageID == "" {
+		return "", cmdutil.MissingFlagError(cmd, "--page")
+	}
+	return pageID, nil
+}
+
 func resolveProductContentTarget(
 	productID string,
 	state productContentState,
@@ -188,6 +204,34 @@ func resolveProductContentTarget(
 	}, nil
 }
 
+func fetchTargetProductRichContent(
+	client *api.Client,
+	productID, variantID, categoryID string,
+) (productContentTarget, json.RawMessage, error) {
+	state, err := fetchProductContentState(client, productID)
+	if err != nil {
+		return productContentTarget{}, nil, err
+	}
+	target, err := resolveProductContentTarget(productID, state, variantID, categoryID)
+	if err != nil {
+		return productContentTarget{}, nil, err
+	}
+
+	rawRichContent := state.RichContent
+	if target.usesVariant() {
+		variantState, err := fetchVariantContentState(client, target.Path)
+		if err != nil {
+			return productContentTarget{}, nil, err
+		}
+		rawRichContent = variantState.RichContent
+	}
+	richContent, err := normalizeProductRichContent(rawRichContent)
+	if err != nil {
+		return productContentTarget{}, nil, err
+	}
+	return target, richContent, nil
+}
+
 func (t productContentTarget) usesVariant() bool {
 	return t.VariantID != ""
 }
@@ -217,6 +261,32 @@ func ensureSharedProductContent(productID string, state productContentState) err
 }
 
 func readProductContentInput(r io.Reader, path string) (productContentInput, error) {
+	source, data, err := readProductContentSource(r, path)
+	if err != nil {
+		return productContentInput{}, err
+	}
+
+	richContent, err := parseProductContentDocument(data)
+	if err != nil {
+		return productContentInput{}, err
+	}
+	return productContentInput{Source: source, RichContent: richContent}, nil
+}
+
+func readProductContentPageInput(r io.Reader, path string) (productContentInput, error) {
+	source, data, err := readProductContentSource(r, path)
+	if err != nil {
+		return productContentInput{}, err
+	}
+
+	page, err := parseProductContentPage(data)
+	if err != nil {
+		return productContentInput{}, err
+	}
+	return productContentInput{Source: source, Page: page}, nil
+}
+
+func readProductContentSource(r io.Reader, path string) (string, []byte, error) {
 	if path == "" {
 		path = defaultProductContentPath
 	}
@@ -230,21 +300,16 @@ func readProductContentInput(r io.Reader, path string) (productContentInput, err
 		source = "stdin"
 		data, err = io.ReadAll(r)
 		if err != nil {
-			return productContentInput{}, fmt.Errorf("cannot read stdin: %w", err)
+			return "", nil, fmt.Errorf("cannot read stdin: %w", err)
 		}
 	} else {
 		source = path
 		data, err = os.ReadFile(path)
 		if err != nil {
-			return productContentInput{}, fmt.Errorf("cannot read %s: %w", path, err)
+			return "", nil, fmt.Errorf("cannot read %s: %w", path, err)
 		}
 	}
-
-	richContent, err := parseProductContentDocument(data)
-	if err != nil {
-		return productContentInput{}, err
-	}
-	return productContentInput{Source: source, RichContent: richContent}, nil
+	return source, data, nil
 }
 
 func parseProductContentDocument(data []byte) (json.RawMessage, error) {
@@ -254,6 +319,21 @@ func parseProductContentDocument(data []byte) (json.RawMessage, error) {
 	}
 	if err := validateRichContentArray(trimmed); err != nil {
 		return nil, err
+	}
+	return append(json.RawMessage(nil), trimmed...), nil
+}
+
+func parseProductContentPage(data []byte) (json.RawMessage, error) {
+	trimmed := bytes.TrimSpace(data)
+	if len(trimmed) == 0 {
+		return nil, fmt.Errorf("rich content page JSON cannot be empty")
+	}
+	if !bytes.HasPrefix(trimmed, []byte("{")) {
+		return nil, fmt.Errorf("rich content page JSON must be an object")
+	}
+	var page map[string]json.RawMessage
+	if err := json.Unmarshal(trimmed, &page); err != nil {
+		return nil, fmt.Errorf("rich content page JSON must be an object: %w", err)
 	}
 	return append(json.RawMessage(nil), trimmed...), nil
 }
@@ -269,12 +349,68 @@ func normalizeProductRichContent(data json.RawMessage) (json.RawMessage, error) 
 	return append(json.RawMessage(nil), trimmed...), nil
 }
 
+func selectRichContentPage(richContent json.RawMessage, pageID string) (json.RawMessage, error) {
+	pages, err := decodeRichContentPages(richContent)
+	if err != nil {
+		return nil, err
+	}
+	for _, page := range pages {
+		id, err := richContentPageID(page)
+		if err != nil {
+			return nil, err
+		}
+		if id == pageID {
+			return append(json.RawMessage(nil), page...), nil
+		}
+	}
+	return nil, cmdutil.InvalidInputErrorf("rich content page %s not found", pageID)
+}
+
+func mergeRichContentPage(richContent, page json.RawMessage, pageID string) (json.RawMessage, error) {
+	id, err := richContentPageID(page)
+	if err != nil {
+		return nil, err
+	}
+	if id == "" {
+		return nil, cmdutil.InvalidInputErrorf("rich content page JSON must include id %q", pageID)
+	}
+	if id != pageID {
+		return nil, cmdutil.InvalidInputErrorf("rich content page JSON id %q does not match --page %q", id, pageID)
+	}
+
+	pages, err := decodeRichContentPages(richContent)
+	if err != nil {
+		return nil, err
+	}
+	found := false
+	for idx, existing := range pages {
+		existingID, err := richContentPageID(existing)
+		if err != nil {
+			return nil, err
+		}
+		if existingID == pageID {
+			pages[idx] = page
+			found = true
+			break
+		}
+	}
+	if !found {
+		return nil, cmdutil.InvalidInputErrorf("rich content page %s not found", pageID)
+	}
+
+	data, err := json.Marshal(pages)
+	if err != nil {
+		return nil, fmt.Errorf("could not encode merged rich_content JSON: %w", err)
+	}
+	return data, nil
+}
+
 func validateRichContentArray(data []byte) error {
 	if !bytes.HasPrefix(data, []byte("[")) {
 		return fmt.Errorf("rich content JSON must be an array")
 	}
-	var pages []json.RawMessage
-	if err := json.Unmarshal(data, &pages); err != nil {
+	pages, err := decodeRichContentPages(data)
+	if err != nil {
 		return fmt.Errorf("rich content JSON must be an array: %w", err)
 	}
 	for idx, page := range pages {
@@ -283,6 +419,24 @@ func validateRichContentArray(data []byte) error {
 		}
 	}
 	return nil
+}
+
+func decodeRichContentPages(data json.RawMessage) ([]json.RawMessage, error) {
+	var pages []json.RawMessage
+	if err := json.Unmarshal(data, &pages); err != nil {
+		return nil, err
+	}
+	return pages, nil
+}
+
+func richContentPageID(page json.RawMessage) (string, error) {
+	var parsed struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(page, &parsed); err != nil {
+		return "", fmt.Errorf("rich content page must have a string id: %w", err)
+	}
+	return parsed.ID, nil
 }
 
 func deletedRichContentPageIDs(existing, next json.RawMessage) ([]string, error) {

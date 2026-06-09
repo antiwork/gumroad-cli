@@ -10,16 +10,17 @@ import (
 )
 
 func newContentGetCmd() *cobra.Command {
-	var variantID, categoryID string
+	var variantID, categoryID, pageID string
 
 	cmd := &cobra.Command{
 		Use:   "get <product_id>",
 		Short: "Dump product rich content JSON",
 		Long: "Dump a product's rich content page array as JSON.\n\n" +
-			"The output is a JSON document intended for editing and passing back to `gumroad products content set`. Use `--jq` to filter it.",
+			"The output is a JSON document intended for editing and passing back to `gumroad products content set`. Pass `--page` to dump one page object. Use `--jq` to filter it.",
 		Args: cmdutil.ExactArgs(1),
 		Example: `  gumroad products content get <product_id> > content.json
   gumroad products content get <product_id> --variant <variant_id> --category <cat_id> > content.json
+  gumroad products content get <product_id> --page <page_id> > page.json
   gumroad products content get <product_id> --jq '.[].id'`,
 		RunE: func(c *cobra.Command, args []string) error {
 			opts := cmdutil.OptionsFrom(c)
@@ -27,6 +28,10 @@ func newContentGetCmd() *cobra.Command {
 				return cmdutil.UsageErrorf(c, "products content get outputs a rich content JSON document; omit --plain or use --jq to filter it")
 			}
 			if err := validateProductContentVariantFlags(c, variantID, categoryID); err != nil {
+				return err
+			}
+			selectedPageID, err := normalizeProductContentPageFlag(c, pageID)
+			if err != nil {
 				return err
 			}
 
@@ -38,22 +43,18 @@ func newContentGetCmd() *cobra.Command {
 
 			productID := args[0]
 			return cmdutil.Run(requestOpts, "Fetching content...", func(client *api.Client) (json.RawMessage, error) {
-				state, err := fetchProductContentState(client, productID)
+				_, richContent, err := fetchTargetProductRichContent(client, productID, variantID, categoryID)
 				if err != nil {
 					return nil, err
 				}
-				target, err := resolveProductContentTarget(productID, state, variantID, categoryID)
-				if err != nil {
-					return nil, err
-				}
-				if target.usesVariant() {
-					variantState, err := fetchVariantContentState(client, target.Path)
+				if selectedPageID != "" {
+					page, err := selectRichContentPage(richContent, selectedPageID)
 					if err != nil {
 						return nil, err
 					}
-					return normalizeProductRichContent(variantState.RichContent)
+					return page, nil
 				}
-				return normalizeProductRichContent(state.RichContent)
+				return richContent, nil
 			}, func(data json.RawMessage) error {
 				return output.PrintJSON(opts.Out(), data, opts.JQExpr)
 			})
@@ -62,6 +63,7 @@ func newContentGetCmd() *cobra.Command {
 
 	cmd.Flags().StringVar(&variantID, "variant", "", "Variant ID for per-variant content")
 	cmd.Flags().StringVar(&categoryID, "category", "", "Variant category ID for per-variant content")
+	cmd.Flags().StringVar(&pageID, "page", "", "Rich content page ID to dump")
 
 	return cmd
 }
