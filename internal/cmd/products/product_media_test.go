@@ -353,18 +353,20 @@ func TestUpdate_WithPreviewImageOnly_DoesNotPutProduct(t *testing.T) {
 		t.Fatalf("attached signed IDs = %#v", signedIDs)
 	}
 	var payload struct {
-		Result struct {
-			Success bool `json:"success"`
-			Product struct {
-				ID string `json:"id"`
-			} `json:"product"`
-			Media []productMediaAttachmentResult `json:"media"`
-		} `json:"result"`
+		Success bool `json:"success"`
+		Product struct {
+			ID string `json:"id"`
+		} `json:"product"`
+		Media  []productMediaAttachmentResult `json:"media"`
+		Result json.RawMessage                `json:"result"`
 	}
 	if err := json.Unmarshal([]byte(out), &payload); err != nil {
 		t.Fatalf("parse JSON output: %v\n%s", err, out)
 	}
-	if !payload.Result.Success || payload.Result.Product.ID != "prod1" || len(payload.Result.Media) != 1 {
+	if len(payload.Result) != 0 {
+		t.Fatalf("update --json must not nest under a result envelope: %s", out)
+	}
+	if !payload.Success || payload.Product.ID != "prod1" || len(payload.Media) != 1 {
 		t.Fatalf("unexpected JSON output: %+v", payload)
 	}
 }

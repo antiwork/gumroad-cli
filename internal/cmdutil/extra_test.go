@@ -508,3 +508,189 @@ func TestRunRequestWithSuccess_DryRunSkipsAuth(t *testing.T) {
 		t.Fatalf("unexpected dry-run output: %q", out.String())
 	}
 }
+
+func TestRunRequestWithResource_JSONPassesThroughFlatResponse(t *testing.T) {
+	setupAuthedAPI(t, func(w http.ResponseWriter, r *http.Request) {
+		writeSuccessJSON(t, w, map[string]any{"product": map[string]any{"id": "prod_123"}})
+	})
+
+	opts := DefaultOptions()
+	opts.JSONOutput = true
+	opts.Version = "test"
+	var out bytes.Buffer
+	opts.Stdout = &out
+
+	if err := RunRequestWithResource(opts, "Updating...", "PUT", "/products/prod_123", nil, "", "Product updated."); err != nil {
+		t.Fatalf("RunRequestWithResource failed: %v", err)
+	}
+
+	var resp map[string]any
+	if err := json.Unmarshal(out.Bytes(), &resp); err != nil {
+		t.Fatalf("resource JSON output is invalid: %v\n%s", err, out.String())
+	}
+	if _, ok := resp["result"]; ok {
+		t.Fatalf("resource mutation must not nest under a result envelope: %s", out.String())
+	}
+	if _, ok := resp["id"]; ok {
+		t.Fatalf("empty id must not inject a top-level id: %s", out.String())
+	}
+	product, ok := resp["product"].(map[string]any)
+	if !ok || product["id"] != "prod_123" {
+		t.Fatalf("expected product.id at top level: %s", out.String())
+	}
+}
+
+func TestRunRequestWithResource_JSONMergesIDWhenResponseOmitsResource(t *testing.T) {
+	setupAuthedAPI(t, func(w http.ResponseWriter, r *http.Request) {
+		writeSuccessJSON(t, w, map[string]any{"message": "The product was deleted successfully."})
+	})
+
+	opts := DefaultOptions()
+	opts.JSONOutput = true
+	opts.Version = "test"
+	var out bytes.Buffer
+	opts.Stdout = &out
+
+	if err := RunRequestWithResource(opts, "Deleting...", "DELETE", "/products/prod_123", nil, "prod_123", "Product deleted."); err != nil {
+		t.Fatalf("RunRequestWithResource failed: %v", err)
+	}
+
+	var resp map[string]any
+	if err := json.Unmarshal(out.Bytes(), &resp); err != nil {
+		t.Fatalf("resource JSON output is invalid: %v\n%s", err, out.String())
+	}
+	if _, ok := resp["result"]; ok {
+		t.Fatalf("resource mutation must not nest under a result envelope: %s", out.String())
+	}
+	if resp["id"] != "prod_123" {
+		t.Fatalf("expected merged top-level id for resource-less response: %s", out.String())
+	}
+}
+
+func TestRunRequestWithResource_PlainOutput(t *testing.T) {
+	setupAuthedAPI(t, func(w http.ResponseWriter, r *http.Request) {
+		writeSuccessJSON(t, w, map[string]any{})
+	})
+
+	opts := DefaultOptions()
+	opts.PlainOutput = true
+	opts.Version = "test"
+	var out bytes.Buffer
+	opts.Stdout = &out
+
+	if err := RunRequestWithResource(opts, "Deleting...", "DELETE", "/products/prod_123", nil, "prod_123", "Product deleted."); err != nil {
+		t.Fatalf("RunRequestWithResource failed: %v", err)
+	}
+
+	if strings.TrimSpace(out.String()) != "true\tProduct deleted." {
+		t.Fatalf("unexpected plain output: %q", out.String())
+	}
+}
+
+func TestRunRequestWithResource_HumanShowsMessage(t *testing.T) {
+	setColorEnabledForTest(t, false)
+	setupAuthedAPI(t, func(w http.ResponseWriter, r *http.Request) {
+		writeSuccessJSON(t, w, map[string]any{"product": map[string]any{"id": "prod_123"}})
+	})
+
+	opts := DefaultOptions()
+	opts.Quiet = false
+	opts.Version = "test"
+	var out bytes.Buffer
+	opts.Stdout = &out
+
+	if err := RunRequestWithResource(opts, "Unpublishing...", "PUT", "/products/prod_123/disable", nil, "", "Product unpublished."); err != nil {
+		t.Fatalf("RunRequestWithResource failed: %v", err)
+	}
+	if !strings.Contains(out.String(), "Product unpublished.") {
+		t.Fatalf("expected success message, got %q", out.String())
+	}
+}
+
+func TestRunRequestWithResource_DryRunSkipsAuth(t *testing.T) {
+	opts := DefaultOptions()
+	opts.DryRun = true
+	var out bytes.Buffer
+	opts.Stdout = &out
+
+	if err := RunRequestWithResource(opts, "Deleting...", "DELETE", "/products/prod_123", nil, "prod_123", "Product deleted."); err != nil {
+		t.Fatalf("RunRequestWithResource failed: %v", err)
+	}
+
+	if !strings.Contains(out.String(), "Dry run") || !strings.Contains(out.String(), "DELETE /products/prod_123") {
+		t.Fatalf("unexpected dry-run output: %q", out.String())
+	}
+}
+
+func TestPrintResourceSuccess_JSONPassesThroughMergedData(t *testing.T) {
+	opts := DefaultOptions()
+	opts.JSONOutput = true
+	var out bytes.Buffer
+	opts.Stdout = &out
+
+	data := json.RawMessage(`{"success":true,"product":{"id":"prod_123"},"media":[{"kind":"cover"}]}`)
+	if err := PrintResourceSuccess(opts, data, "", "Product updated."); err != nil {
+		t.Fatalf("PrintResourceSuccess failed: %v", err)
+	}
+
+	var resp map[string]any
+	if err := json.Unmarshal(out.Bytes(), &resp); err != nil {
+		t.Fatalf("resource JSON output is invalid: %v\n%s", err, out.String())
+	}
+	if _, ok := resp["result"]; ok {
+		t.Fatalf("resource mutation must not nest under a result envelope: %s", out.String())
+	}
+	if resp["media"] == nil {
+		t.Fatalf("expected merged media to survive passthrough: %s", out.String())
+	}
+}
+
+func TestPrintResourceSuccess_JSONMergesIDIntoEmptyOrNullBody(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		data json.RawMessage
+	}{
+		{name: "nil body", data: nil},
+		{name: "empty body", data: json.RawMessage("")},
+		{name: "null body", data: json.RawMessage("null")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			opts := DefaultOptions()
+			opts.JSONOutput = true
+			var out bytes.Buffer
+			opts.Stdout = &out
+
+			if err := PrintResourceSuccess(opts, tc.data, "prod1", "Product deleted."); err != nil {
+				t.Fatalf("PrintResourceSuccess failed: %v", err)
+			}
+
+			var resp map[string]any
+			if err := json.Unmarshal(out.Bytes(), &resp); err != nil {
+				t.Fatalf("resource JSON output is invalid: %v\n%s", err, out.String())
+			}
+			if resp["id"] != "prod1" {
+				t.Fatalf("expected merged top-level id for empty body, got: %s", out.String())
+			}
+		})
+	}
+}
+
+func TestPrintResourceSuccess_JSONKeepsExistingTopLevelID(t *testing.T) {
+	opts := DefaultOptions()
+	opts.JSONOutput = true
+	var out bytes.Buffer
+	opts.Stdout = &out
+
+	data := json.RawMessage(`{"success":true,"id":"from_api"}`)
+	if err := PrintResourceSuccess(opts, data, "override", "Done."); err != nil {
+		t.Fatalf("PrintResourceSuccess failed: %v", err)
+	}
+
+	var resp map[string]any
+	if err := json.Unmarshal(out.Bytes(), &resp); err != nil {
+		t.Fatalf("resource JSON output is invalid: %v\n%s", err, out.String())
+	}
+	if resp["id"] != "from_api" {
+		t.Fatalf("must not overwrite an existing top-level id: %s", out.String())
+	}
+}

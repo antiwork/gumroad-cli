@@ -443,6 +443,29 @@ func TestDelete_WithYes(t *testing.T) {
 	}
 }
 
+func TestDelete_JSONPassesThroughAPIResponse(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{"message": "The product was deleted successfully."})
+	})
+
+	cmd := testutil.Command(newDeleteCmd(), testutil.Yes(true), testutil.JSONOutput())
+	out := testutil.CaptureStdout(func() { _ = cmd.RunE(cmd, []string{"prod1"}) })
+
+	var resp map[string]any
+	if err := json.Unmarshal([]byte(out), &resp); err != nil {
+		t.Fatalf("parse JSON output: %v\n%s", err, out)
+	}
+	if _, ok := resp["result"]; ok {
+		t.Fatalf("delete --json must not nest under a result envelope: %s", out)
+	}
+	if resp["success"] != true {
+		t.Fatalf("expected success true at top level, got: %s", out)
+	}
+	if resp["id"] != "prod1" {
+		t.Fatalf("delete --json must expose the deleted product id at top level, got: %s", out)
+	}
+}
+
 func TestPublish_CorrectEndpoint(t *testing.T) {
 	var gotMethod, gotPath string
 	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
@@ -1082,14 +1105,25 @@ func TestUpdate_JPYRejectsDecimals(t *testing.T) {
 
 func TestUpdate_JSON(t *testing.T) {
 	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
-		testutil.JSON(t, w, map[string]any{})
+		testutil.JSON(t, w, map[string]any{
+			"product": map[string]any{"id": "prod1", "name": "X"},
+		})
 	})
 
 	cmd := testutil.Command(newUpdateCmd(), testutil.JSONOutput())
 	cmd.SetArgs([]string{"prod1", "--name", "X"})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
-	if !strings.Contains(out, "true") {
-		t.Errorf("expected JSON with success, got: %q", out)
+
+	var resp map[string]any
+	if err := json.Unmarshal([]byte(out), &resp); err != nil {
+		t.Fatalf("parse JSON output: %v\n%s", err, out)
+	}
+	if _, ok := resp["result"]; ok {
+		t.Fatalf("update --json must not nest under a result envelope: %s", out)
+	}
+	product, ok := resp["product"].(map[string]any)
+	if !ok || product["id"] != "prod1" {
+		t.Fatalf("expected product.id at top level, got: %s", out)
 	}
 }
 
@@ -1310,6 +1344,29 @@ func TestUnpublish_Output(t *testing.T) {
 	out := testutil.CaptureStdout(func() { _ = cmd.RunE(cmd, []string{"p1"}) })
 	if !strings.Contains(out, "unpublished") {
 		t.Errorf("expected unpublished message, got: %q", out)
+	}
+}
+
+func TestUnpublish_JSONExposesFlatProduct(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{
+			"product": map[string]any{"id": "p1", "published": false},
+		})
+	})
+
+	cmd := testutil.Command(newUnpublishCmd(), testutil.JSONOutput())
+	out := testutil.CaptureStdout(func() { _ = cmd.RunE(cmd, []string{"p1"}) })
+
+	var resp map[string]any
+	if err := json.Unmarshal([]byte(out), &resp); err != nil {
+		t.Fatalf("parse JSON output: %v\n%s", err, out)
+	}
+	if _, ok := resp["result"]; ok {
+		t.Fatalf("unpublish --json must not nest under a result envelope: %s", out)
+	}
+	product, ok := resp["product"].(map[string]any)
+	if !ok || product["id"] != "p1" {
+		t.Fatalf("expected product.id at top level, got: %s", out)
 	}
 }
 

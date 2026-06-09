@@ -67,14 +67,14 @@ Most responses are wrapped in `{"success": true, ...}` with resource-specific ke
 - `variants list` → `.variants[]`
 - `files upload` / `files complete` → `.file_url`
 - `products create` with media flags → `.product` plus `.media[]`
-- `products update` with media flags → mutation envelope with `.result.media[]`
+- `products update` with media flags → `.product` plus `.media[]`
 - `products covers add --image` → `.result.covers[]`, `.result.main_cover_id`, plus `.result.media[]`
 - `products covers add --url` → `.result.covers[]`, `.result.main_cover_id`
 - `products thumbnail set --image` → `.result.thumbnail`, plus `.result.media[]`
 - `products thumbnail set --url` → `.result.thumbnail`
 - `products page preview` → `.custom_html`, `.sanitization_report`
 - `products page publish` / `products page clear` → `.product.custom_html`, `.product.landing_url`, `.previous_custom_html`, `.sanitization_report`
-- `products update --custom-html` → mutation envelope with `.result.product.custom_html`, `.result.product.landing_url`, `.result.previous_custom_html`, `.result.sanitization_report`
+- `products update --custom-html` → `.product.custom_html`, `.product.landing_url`, `.previous_custom_html`, `.sanitization_report`
 - `webhooks list` → `.resource_subscriptions[]`
 - `admin users info` → `.user`
 - `admin users affiliates` → `.affiliates[]`

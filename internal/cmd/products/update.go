@@ -189,14 +189,14 @@ func newUpdateCmd() *cobra.Command {
 					if err != nil {
 						return err
 					}
-					return cmdutil.PrintMutationSuccess(opts, data, args[0], "Product "+args[0]+" updated.")
+					return cmdutil.PrintResourceSuccess(opts, data, "", "Product "+args[0]+" updated.")
 				}
 				if opts.DryRun && opts.UsesJSONOutput() {
 					return renderProductUpdateDryRun(opts, path, productFileUpdatePlan{}, nil, buildProductJSONBody(params, nil))
 				}
-				return cmdutil.RunRequestWithSuccess(opts,
+				return cmdutil.RunRequestWithResource(opts,
 					"Updating product...", "PUT", path, params,
-					args[0], "Product "+args[0]+" updated.")
+					"", "Product "+args[0]+" updated.")
 			}
 
 			selections, err := validateProductFileSelections(c, keepFileIDs, removeFileIDs, replaceFiles)
@@ -270,7 +270,7 @@ func newUpdateCmd() *cobra.Command {
 					return err
 				}
 			}
-			return cmdutil.PrintMutationSuccess(opts, data, args[0], "Product "+args[0]+" updated.")
+			return cmdutil.PrintResourceSuccess(opts, data, "", "Product "+args[0]+" updated.")
 		},
 	}
 
