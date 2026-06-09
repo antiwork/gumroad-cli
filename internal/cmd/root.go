@@ -28,6 +28,7 @@ import (
 	"github.com/antiwork/gumroad-cli/internal/cmdutil"
 	"github.com/antiwork/gumroad-cli/internal/output"
 	"github.com/antiwork/gumroad-cli/internal/updatecheck"
+	"github.com/antiwork/gumroad-cli/internal/version"
 	"github.com/spf13/cobra"
 )
 
@@ -85,10 +86,10 @@ func NewRootCmd() *cobra.Command {
 			notifyUpdate(opts, cmd.CommandPath())
 			return nil
 		},
-		Version: Version,
+		Version: version.Display(Version),
 	}
 
-	cmd.SetVersionTemplate(fmt.Sprintf("gumroad version %s\n", Version))
+	cmd.SetVersionTemplate(fmt.Sprintf("gumroad version %s\n", version.Display(Version)))
 	cmd.SetFlagErrorFunc(func(c *cobra.Command, err error) error {
 		if err == nil {
 			return nil

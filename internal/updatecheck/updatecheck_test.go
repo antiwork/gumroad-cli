@@ -196,6 +196,56 @@ func TestNotifyUsesFreshCachedLatestWithoutNetwork(t *testing.T) {
 	}
 }
 
+func TestNotifyDisplaysDateBasedVersions(t *testing.T) {
+	dir := t.TempDir()
+	replaceConfigDir(t, dir)
+	t0 := time.Date(2026, 6, 9, 12, 0, 0, 0, time.UTC)
+	replaceNow(t, t0)
+	writeCache(t, dir, cacheState{
+		LatestVersion: "v0.20260609.0",
+		CheckedAt:     t0,
+	})
+	replaceStartRefresh(t, func() {
+		t.Fatal("fresh cache should not refresh")
+	})
+
+	opts := testOptions(&bytes.Buffer{})
+	opts.Version = "0.20260608.0"
+
+	var stderr bytes.Buffer
+	opts.Stderr = &stderr
+	Notify(opts, "gumroad products list")
+
+	if !strings.Contains(stderr.String(), "warning: gumroad 2026.06.09 is available; you have 2026.06.08.") {
+		t.Fatalf("expected date-based warning, got %q", stderr.String())
+	}
+}
+
+func TestNotifyTreatsDateBasedVersionAsNewerThanLegacySemver(t *testing.T) {
+	dir := t.TempDir()
+	replaceConfigDir(t, dir)
+	t0 := time.Date(2026, 6, 9, 12, 0, 0, 0, time.UTC)
+	replaceNow(t, t0)
+	writeCache(t, dir, cacheState{
+		LatestVersion: "v0.20260609.0",
+		CheckedAt:     t0,
+	})
+	replaceStartRefresh(t, func() {
+		t.Fatal("fresh cache should not refresh")
+	})
+
+	opts := testOptions(&bytes.Buffer{})
+	opts.Version = "0.21.0"
+
+	var stderr bytes.Buffer
+	opts.Stderr = &stderr
+	Notify(opts, "gumroad products list")
+
+	if !strings.Contains(stderr.String(), "warning: gumroad 2026.06.09 is available; you have 0.21.0.") {
+		t.Fatalf("expected date release to supersede legacy semver, got %q", stderr.String())
+	}
+}
+
 func TestNotifyStartsRefreshWithoutBlockingForStaleCache(t *testing.T) {
 	dir := t.TempDir()
 	replaceConfigDir(t, dir)

@@ -1,5 +1,7 @@
 BINARY := gumroad
 VERSION ?= dev
+RELEASE_DATE ?= $(shell date -u +%Y%m%d)
+RELEASE_SEQ ?= 0
 LDFLAGS := -ldflags "-s -w -X github.com/antiwork/gumroad-cli/internal/cmd.Version=$(VERSION)"
 PREFIX ?= /usr/local
 DESTDIR ?=
@@ -12,7 +14,7 @@ FISH_COMPLETION_DIR := $(SHARE_DIR)/fish/vendor_completions.d
 POWERSHELL_COMPLETION_DIR := $(SHARE_DIR)/powershell/Modules/gumroad
 INSTALL ?= install
 
-.PHONY: build install test test-cover test-race test-smoke lint clean snapshot man
+.PHONY: build install test test-cover test-race test-smoke lint clean snapshot man release-tag
 
 build:
 	go build $(LDFLAGS) -o $(BINARY) ./cmd/gumroad
@@ -78,3 +80,6 @@ clean:
 
 snapshot:
 	goreleaser release --snapshot --clean
+
+release-tag:
+	@echo v0.$(RELEASE_DATE).$(RELEASE_SEQ)

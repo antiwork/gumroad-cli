@@ -149,6 +149,15 @@ The CLI is used mostly by AI agents, so the canonical command reference lives wh
 - When you add or change a command, update its `--help` and `skills/gumroad/SKILL.md`. Do **not** add a per-command section to the README.
 - If you're about to explain a command's flags, behavior, or examples in the README, that content belongs in `--help` or the skill instead.
 
+## Releases
+
+Releases are tag-driven and use Go-compatible date versioning: `v0.YYYYMMDD.N`.
+
+- `YYYYMMDD` is the UTC release date.
+- `N` starts at `0` and increments only when multiple releases ship on the same UTC date.
+- `make release-tag` prints today's default tag, for example `v0.20260609.0`; use `make release-tag RELEASE_SEQ=1` for a second release on the same day.
+- The binary and Homebrew formula display date versions as `YYYY.MM.DD` or `YYYY.MM.DD.N`.
+
 ## Gumroad API quirks
 
 Non-obvious behaviors that directly affect how you write code:

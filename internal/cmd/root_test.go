@@ -231,6 +231,25 @@ func TestRootCmd_VersionFlag(t *testing.T) {
 	}
 }
 
+func TestRootCmd_VersionFlagDisplaysDateVersion(t *testing.T) {
+	previous := Version
+	Version = "0.20260609.0"
+	t.Cleanup(func() { Version = previous })
+
+	cmd := NewRootCmd()
+	cmd.SetArgs([]string{"--version"})
+
+	var out strings.Builder
+	cmd.SetOut(&out)
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if out.String() != "gumroad version 2026.06.09\n" {
+		t.Fatalf("expected date version output, got %q", out.String())
+	}
+}
+
 func TestRootCmd_UpdateNoticeUsesStderrWithJSONOutput(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 

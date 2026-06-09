@@ -9,12 +9,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/antiwork/gumroad-cli/internal/cmdutil"
 	"github.com/antiwork/gumroad-cli/internal/config"
+	"github.com/antiwork/gumroad-cli/internal/version"
 )
 
 const (
@@ -49,12 +49,6 @@ type releaseResponse struct {
 	TagName string `json:"tag_name"`
 }
 
-type semver struct {
-	Major int
-	Minor int
-	Patch int
-}
-
 // Notify prints a low-noise update notice to stderr when a newer release exists.
 // It never returns an error; update checks should not affect the requested command.
 func Notify(opts cmdutil.Options, commandPath string) {
@@ -62,7 +56,7 @@ func Notify(opts cmdutil.Options, commandPath string) {
 		return
 	}
 
-	current, ok := parseVersion(opts.Version)
+	current, ok := version.Parse(opts.Version)
 	if !ok {
 		return
 	}
@@ -81,8 +75,8 @@ func Notify(opts cmdutil.Options, commandPath string) {
 		defer startRefresh()
 	}
 
-	latest, ok := parseVersion(state.LatestVersion)
-	if !ok || compareVersions(latest, current) <= 0 || !shouldShowNotice(state, t) {
+	latest, ok := version.Parse(state.LatestVersion)
+	if !ok || version.Compare(latest, current) <= 0 || !shouldShowNotice(state, t) {
 		return
 	}
 
@@ -91,7 +85,7 @@ func Notify(opts cmdutil.Options, commandPath string) {
 	if err := saveCache(path, state); err != nil {
 		return
 	}
-	fmt.Fprintf(opts.Err(), "warning: gumroad %s is available; you have %s. Update: %s\n", state.LatestVersion, opts.Version, updateCommand())
+	fmt.Fprintf(opts.Err(), "warning: gumroad %s is available; you have %s. Update: %s\n", version.Display(state.LatestVersion), version.Display(opts.Version), updateCommand())
 }
 
 // Refresh updates the cache for the hidden background refresh command. It is
@@ -251,42 +245,6 @@ func fetchLatestVersion(ctx context.Context) (string, error) {
 		return "", err
 	}
 	return strings.TrimSpace(release.TagName), nil
-}
-
-func parseVersion(version string) (semver, bool) {
-	version = strings.TrimSpace(version)
-	version = strings.TrimPrefix(version, "v")
-	if i := strings.IndexAny(version, "-+"); i >= 0 {
-		version = version[:i]
-	}
-	parts := strings.Split(version, ".")
-	if len(parts) != 3 {
-		return semver{}, false
-	}
-	major, err := strconv.Atoi(parts[0])
-	if err != nil {
-		return semver{}, false
-	}
-	minor, err := strconv.Atoi(parts[1])
-	if err != nil {
-		return semver{}, false
-	}
-	patch, err := strconv.Atoi(parts[2])
-	if err != nil {
-		return semver{}, false
-	}
-	return semver{Major: major, Minor: minor, Patch: patch}, true
-}
-
-func compareVersions(a, b semver) int {
-	switch {
-	case a.Major != b.Major:
-		return a.Major - b.Major
-	case a.Minor != b.Minor:
-		return a.Minor - b.Minor
-	default:
-		return a.Patch - b.Patch
-	}
 }
 
 func updateCommand() string {

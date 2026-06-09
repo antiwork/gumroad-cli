@@ -12,7 +12,23 @@ OUTPUT_FILE=$3
 
 PROJECT_NAME="gumroad-cli"
 REPOSITORY="antiwork/gumroad-cli"
-VERSION="${TAG#v}"
+
+display_version() {
+    local version=${1#v}
+
+    if [[ $version =~ ^0\.([0-9]{4})([0-9]{2})([0-9]{2})\.([0-9]+)$ ]]; then
+        local display="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.${BASH_REMATCH[3]}"
+        if [[ "${BASH_REMATCH[4]}" != "0" ]]; then
+            display="${display}.${BASH_REMATCH[4]}"
+        fi
+        printf '%s\n' "$display"
+        return
+    fi
+
+    printf '%s\n' "$version"
+}
+
+VERSION="$(display_version "$TAG")"
 
 checksum_for() {
     local archive=$1

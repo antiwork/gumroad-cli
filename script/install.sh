@@ -42,7 +42,7 @@ main() {
     install_binary
     setup_path
 
-    echo "gumroad ${VERSION} installed to ${BIN_DIR}/$(binary_name)"
+    echo "gumroad $(display_version "$VERSION") installed to ${BIN_DIR}/$(binary_name)"
 }
 
 check_requirements() {
@@ -110,12 +110,27 @@ resolve_version() {
 
     version="${url##*/}"
 
-    if [[ ! $version =~ ^v[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+    if [[ ! $version =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
         echo "Error: no published release found. Check https://github.com/${REPO}/releases" >&2
         exit 1
     fi
 
     VERSION="$version"
+}
+
+display_version() {
+    local version=${1#v}
+
+    if [[ $version =~ ^0\.([0-9]{4})([0-9]{2})([0-9]{2})\.([0-9]+)$ ]]; then
+        local display="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.${BASH_REMATCH[3]}"
+        if [[ "${BASH_REMATCH[4]}" != "0" ]]; then
+            display="${display}.${BASH_REMATCH[4]}"
+        fi
+        printf '%s\n' "$display"
+        return
+    fi
+
+    printf '%s\n' "$version"
 }
 
 download_and_verify() {
