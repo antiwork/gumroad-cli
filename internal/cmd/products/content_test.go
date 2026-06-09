@@ -553,6 +553,31 @@ func TestContentSet_PageDefaultsToPageJSON(t *testing.T) {
 	}
 }
 
+func TestReadProductContentPageInput_EmptyPathDefaultsToPageJSON(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := os.WriteFile("content.json", []byte(`[{"id":"page_1","title":"Wrong default","position":0,"description":{"type":"doc","content":[]}}]`), 0600); err != nil {
+		t.Fatalf("write content.json: %v", err)
+	}
+	if err := os.WriteFile("page.json", []byte(`{"id":"page_2","title":"Page default","position":1,"description":{"type":"doc","content":[]}}`), 0600); err != nil {
+		t.Fatalf("write page.json: %v", err)
+	}
+
+	input, err := readProductContentPageInput(bytes.NewBuffer(nil), "")
+	if err != nil {
+		t.Fatalf("readProductContentPageInput failed: %v", err)
+	}
+	if input.Source != defaultProductContentPagePath {
+		t.Fatalf("page input source = %q, want %q", input.Source, defaultProductContentPagePath)
+	}
+	var page map[string]any
+	if err := json.Unmarshal(input.Page, &page); err != nil {
+		t.Fatalf("page input is not JSON object: %v", err)
+	}
+	if page["id"] != "page_2" {
+		t.Fatalf("page input read wrong default file: %#v", page)
+	}
+}
+
 func TestContentSet_PageIDMismatchDoesNotPUT(t *testing.T) {
 	path := writeContentFixture(t, `{"id":"page_3","title":"Wrong page","position":1,"description":{"type":"doc","content":[]}}`)
 	var putCalls int

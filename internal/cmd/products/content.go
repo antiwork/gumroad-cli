@@ -273,7 +273,7 @@ func ensureSharedProductContent(productID string, state productContentState) err
 }
 
 func readProductContentInput(r io.Reader, path string) (productContentInput, error) {
-	source, data, err := readProductContentSource(r, path)
+	source, data, err := readProductContentSource(r, path, defaultProductContentPath)
 	if err != nil {
 		return productContentInput{}, err
 	}
@@ -286,7 +286,7 @@ func readProductContentInput(r io.Reader, path string) (productContentInput, err
 }
 
 func readProductContentPageInput(r io.Reader, path string) (productContentInput, error) {
-	source, data, err := readProductContentSource(r, path)
+	source, data, err := readProductContentSource(r, path, defaultProductContentPagePath)
 	if err != nil {
 		return productContentInput{}, err
 	}
@@ -298,9 +298,9 @@ func readProductContentPageInput(r io.Reader, path string) (productContentInput,
 	return productContentInput{Source: source, Page: page}, nil
 }
 
-func readProductContentSource(r io.Reader, path string) (string, []byte, error) {
+func readProductContentSource(r io.Reader, path, defaultPath string) (string, []byte, error) {
 	if path == "" {
-		path = defaultProductContentPath
+		path = defaultPath
 	}
 
 	var (
