@@ -767,12 +767,56 @@ func TestContentSet_DryRunHumanReportsDeletedPages(t *testing.T) {
 	}
 }
 
+func TestContentSet_CancelledVariantJSONUsesVariantID(t *testing.T) {
+	var out bytes.Buffer
+	opts := testutil.TestOptions(testutil.JSONOutput(), testutil.Stdout(&out))
+	target := productContentTarget{
+		ProductID: "prod_123",
+		VariantID: "var_123",
+	}
+
+	if err := printProductContentSetCancelled(opts, target); err != nil {
+		t.Fatalf("printProductContentSetCancelled failed: %v", err)
+	}
+
+	var resp struct {
+		Success   bool   `json:"success"`
+		Cancelled bool   `json:"cancelled"`
+		ID        string `json:"id"`
+		Action    string `json:"action"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &resp); err != nil {
+		t.Fatalf("cancelled variant content output is invalid JSON: %v\n%s", err, out.String())
+	}
+	if resp.Success {
+		t.Fatal("cancelled variant content should report success=false")
+	}
+	if !resp.Cancelled {
+		t.Fatal("cancelled variant content should report cancelled=true")
+	}
+	if resp.ID != "var_123" {
+		t.Fatalf("cancelled variant content id = %q, want var_123", resp.ID)
+	}
+	if resp.Action != "set content for variant var_123 for product prod_123" {
+		t.Fatalf("cancelled variant content action = %q", resp.Action)
+	}
+}
+
 func TestProductContentHelpers(t *testing.T) {
 	if got := productContentPath([]string{"prod_123"}); got != defaultProductContentPath {
 		t.Fatalf("got default content path %q, want %q", got, defaultProductContentPath)
 	}
 	if got := productContentPath([]string{"prod_123", "custom.json"}); got != "custom.json" {
 		t.Fatalf("got explicit content path %q, want custom.json", got)
+	}
+
+	productTarget := productContentTarget{ProductID: "prod_123"}
+	if got := productTarget.mutationID(); got != "prod_123" {
+		t.Fatalf("product mutation ID = %q, want prod_123", got)
+	}
+	variantTarget := productContentTarget{ProductID: "prod_123", VariantID: "var_123"}
+	if got := variantTarget.mutationID(); got != "var_123" {
+		t.Fatalf("variant mutation ID = %q, want var_123", got)
 	}
 
 	resp := productContentResponse{

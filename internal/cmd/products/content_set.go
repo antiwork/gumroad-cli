@@ -81,7 +81,7 @@ func newContentSetCmd() *cobra.Command {
 				return err
 			}
 			if !ok {
-				return cmdutil.PrintCancelledAction(opts, "set content for "+target.confirmationSubject(), productID)
+				return printProductContentSetCancelled(opts, target)
 			}
 
 			body := map[string]any{"rich_content": input.RichContent}
@@ -94,9 +94,9 @@ func newContentSetCmd() *cobra.Command {
 				return err
 			}
 			if target.usesVariant() {
-				return cmdutil.PrintMutationSuccess(opts, data, target.VariantID, "Variant content updated.")
+				return cmdutil.PrintMutationSuccess(opts, data, target.mutationID(), "Variant content updated.")
 			}
-			return cmdutil.PrintMutationSuccess(opts, data, productID, "Product content updated.")
+			return cmdutil.PrintMutationSuccess(opts, data, target.mutationID(), "Product content updated.")
 		},
 	}
 
@@ -104,6 +104,10 @@ func newContentSetCmd() *cobra.Command {
 	cmd.Flags().StringVar(&categoryID, "category", "", "Variant category ID for per-variant content")
 
 	return cmd
+}
+
+func printProductContentSetCancelled(opts cmdutil.Options, target productContentTarget) error {
+	return cmdutil.PrintCancelledAction(opts, "set content for "+target.confirmationSubject(), target.mutationID())
 }
 
 func confirmProductContentDeletion(opts cmdutil.Options, target productContentTarget, deletedIDs []string) (bool, error) {

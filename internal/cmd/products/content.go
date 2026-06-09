@@ -192,6 +192,13 @@ func (t productContentTarget) usesVariant() bool {
 	return t.VariantID != ""
 }
 
+func (t productContentTarget) mutationID() string {
+	if t.usesVariant() {
+		return t.VariantID
+	}
+	return t.ProductID
+}
+
 func (t productContentTarget) confirmationSubject() string {
 	if t.usesVariant() {
 		return fmt.Sprintf("variant %s for product %s", t.VariantID, t.ProductID)
