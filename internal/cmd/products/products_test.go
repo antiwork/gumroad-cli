@@ -1220,6 +1220,87 @@ func TestPublish_Output(t *testing.T) {
 	}
 }
 
+func TestPublish_PrintsShortURL(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{
+			"success": true,
+			"product": map[string]any{
+				"id":        "p1",
+				"short_url": "https://seller.gumroad.com/l/p1",
+			},
+		})
+	})
+
+	cmd := testutil.Command(newPublishCmd(), testutil.Quiet(false))
+	out := testutil.CaptureStdout(func() { _ = cmd.RunE(cmd, []string{"p1"}) })
+	if !strings.Contains(out, " published.") {
+		t.Errorf("expected published message, got: %q", out)
+	}
+	if !strings.Contains(out, "URL: https://seller.gumroad.com/l/p1") {
+		t.Errorf("expected short_url in publish output, got: %q", out)
+	}
+}
+
+func TestPublish_PlainIncludesShortURL(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{
+			"success": true,
+			"product": map[string]any{"id": "p1", "short_url": "https://seller.gumroad.com/l/p1"},
+		})
+	})
+
+	cmd := testutil.Command(newPublishCmd(), testutil.PlainOutput())
+	out := testutil.CaptureStdout(func() { _ = cmd.RunE(cmd, []string{"p1"}) })
+	if strings.TrimSpace(out) != "true\tProduct p1 published.\thttps://seller.gumroad.com/l/p1" {
+		t.Errorf("expected short_url as third plain column, got: %q", out)
+	}
+}
+
+func TestPublish_JSONExposesShortURLAtProductPath(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{
+			"success": true,
+			"product": map[string]any{
+				"id":        "p1",
+				"short_url": "https://seller.gumroad.com/l/p1",
+			},
+		})
+	})
+
+	cmd := testutil.Command(newPublishCmd(), testutil.JSONOutput())
+	out := testutil.CaptureStdout(func() { _ = cmd.RunE(cmd, []string{"p1"}) })
+	var resp struct {
+		Success bool `json:"success"`
+		Product struct {
+			ShortURL string `json:"short_url"`
+		} `json:"product"`
+	}
+	if err := json.Unmarshal([]byte(out), &resp); err != nil {
+		t.Fatalf("output is not valid JSON: %v\n%s", err, out)
+	}
+	if !resp.Success {
+		t.Errorf("expected raw API response with success, got: %q", out)
+	}
+	if resp.Product.ShortURL != "https://seller.gumroad.com/l/p1" {
+		t.Errorf("expected short_url at .product.short_url (parity with products view), got: %q", out)
+	}
+}
+
+func TestPublish_QuietSuppressesURL(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{
+			"success": true,
+			"product": map[string]any{"id": "p1", "short_url": "https://seller.gumroad.com/l/p1"},
+		})
+	})
+
+	cmd := testutil.Command(newPublishCmd(), testutil.Quiet(true))
+	out := testutil.CaptureStdout(func() { _ = cmd.RunE(cmd, []string{"p1"}) })
+	if strings.TrimSpace(out) != "" {
+		t.Errorf("expected no output in quiet mode, got: %q", out)
+	}
+}
+
 func TestUnpublish_Output(t *testing.T) {
 	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
 		testutil.JSON(t, w, map[string]any{})
@@ -1379,7 +1460,7 @@ func TestNewProductsCmd(t *testing.T) {
 	for _, c := range cmd.Commands() {
 		subs[c.Use] = true
 	}
-	for _, name := range []string{"create", "update <product_id>", "list", "view <id>", "delete <id>", "publish <id>", "unpublish <id>", "page", "content", "covers", "thumbnail", "skus <id>"} {
+	for _, name := range []string{"create", "update <product_id>", "list", "view <id>", "url <id>", "delete <id>", "publish <id>", "unpublish <id>", "page", "content", "covers", "thumbnail", "skus <id>"} {
 		if !subs[name] {
 			t.Errorf("missing subcommand %q", name)
 		}

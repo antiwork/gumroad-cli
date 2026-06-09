@@ -65,6 +65,18 @@ func LandingURL(product PageProduct) string {
 	return product.PermalinkURL
 }
 
+// ShareURL returns the product's public share link, preferring the canonical
+// short_url and falling back to landing_url then permalink_url.
+func ShareURL(product PageProduct) string {
+	if product.ShortURL != "" {
+		return product.ShortURL
+	}
+	if product.LandingURL != "" {
+		return product.LandingURL
+	}
+	return product.PermalinkURL
+}
+
 func HTMLParams(html string) url.Values {
 	return url.Values{"custom_html": []string{html}}
 }
