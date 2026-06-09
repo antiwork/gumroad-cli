@@ -17,15 +17,41 @@ display_version() {
     local version=${1#v}
 
     if [[ $version =~ ^0\.([0-9]{4})([0-9]{2})([0-9]{2})\.([0-9]+)$ ]]; then
-        local display="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.${BASH_REMATCH[3]}"
-        if [[ "${BASH_REMATCH[4]}" != "0" ]]; then
-            display="${display}.${BASH_REMATCH[4]}"
+        local year="${BASH_REMATCH[1]}"
+        local month="${BASH_REMATCH[2]}"
+        local day="${BASH_REMATCH[3]}"
+        local sequence="${BASH_REMATCH[4]}"
+        if valid_date "$year" "$month" "$day"; then
+            local display="${year}.${month}.${day}"
+            if [[ "$sequence" != "0" ]]; then
+                display="${display}.${sequence}"
+            fi
+            printf '%s\n' "$display"
+            return
         fi
-        printf '%s\n' "$display"
-        return
     fi
 
     printf '%s\n' "$version"
+}
+
+valid_date() {
+    local year=$1
+    local month=$2
+    local day=$3
+    local year_num=$((10#$year))
+    local month_num=$((10#$month))
+    local day_num=$((10#$day))
+
+    if (( month_num < 1 || month_num > 12 )); then
+        return 1
+    fi
+
+    local days_in_month=(0 31 28 31 30 31 30 31 31 30 31 30 31)
+    if (( month_num == 2 && (year_num % 400 == 0 || (year_num % 4 == 0 && year_num % 100 != 0)) )); then
+        days_in_month[2]=29
+    fi
+
+    (( day_num >= 1 && day_num <= days_in_month[month_num] ))
 }
 
 VERSION="$(display_version "$TAG")"
