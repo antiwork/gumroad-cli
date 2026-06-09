@@ -17,6 +17,7 @@ import (
 	"github.com/antiwork/gumroad-cli/internal/api"
 	"github.com/antiwork/gumroad-cli/internal/cmdutil"
 	"github.com/antiwork/gumroad-cli/internal/config"
+	"github.com/antiwork/gumroad-cli/internal/output"
 	"github.com/antiwork/gumroad-cli/internal/testutil"
 )
 
@@ -522,7 +523,7 @@ func TestCoversAdd_WithImageDryRunStandaloneShowsUploadAndAttachRequests(t *test
 				t.Helper()
 
 				for _, want := range []string{
-					"direct_upload\tcover\t" + path + "\tcover.jpg",
+					"direct_upload\tcover\t" + output.EscapePlainField(path) + "\tcover.jpg",
 					"\timage/jpeg",
 					"POST\t/direct_uploads\t",
 					"POST\t/products/prod1/covers\t",
