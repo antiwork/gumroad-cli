@@ -114,11 +114,11 @@ gumroad files upload ./pack.zip
 # Create a product with an attached file
 gumroad products create --name "Art Pack" --price 10.00 --file ./pack.zip --file-name "Art Pack.zip"
 
-# Add a new file to a product while keeping its current attachments
+# Roll the file embeds in a shared product content document
 gumroad products update <product_id> --file ./pack.zip
 ```
 
-`gumroad files upload` prints the canonical `file_url`; product create/update commands accept repeatable `--file` flags. Run command help for metadata, removal, replacement, and per-variant content options.
+`gumroad files upload` prints the canonical `file_url`; product create/update commands accept repeatable `--file` flags. On update, `--file` replaces existing rich content file embeds in place when they exist, or creates file embeds when the document has none. Pass one `--file` per existing file embed; use `products content get/set` for structural content edits. For per-variant content, use `variants update ... --file` on the target variant.
 
 ## Product content
 

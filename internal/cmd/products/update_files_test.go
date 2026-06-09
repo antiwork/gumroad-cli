@@ -515,7 +515,7 @@ func TestUpdate_FileUploadUsesExternalIDForNewFiles(t *testing.T) {
 	}
 }
 
-func TestUpdate_FileSwapsRemovedRichContentEmbed(t *testing.T) {
+func TestUpdate_FileRollsExistingRichContentEmbed(t *testing.T) {
 	srv := newProductUpdateFileServers(t)
 	srv.existingFiles = []existingProductFile{
 		{ID: "file_old", Name: "Old Pack.zip"},
@@ -550,20 +550,22 @@ func TestUpdate_FileSwapsRemovedRichContentEmbed(t *testing.T) {
 	cmd := testutil.Command(newUpdateCmd(), testutil.Yes(true))
 	cmd.SetArgs([]string{
 		"prod1",
-		"--remove-file", "file_old",
 		"--file", path,
 		"--file-name", "New Pack.zip",
 	})
 	testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
 	files := productUpdateJSONFiles(t, srv.putJSON)
-	if len(files) != 2 {
-		t.Fatalf("files payload len = %d, want 2", len(files))
+	if len(files) != 3 {
+		t.Fatalf("files payload len = %d, want 3", len(files))
 	}
-	if got := files[0]["id"]; got != "file_keep" {
-		t.Fatalf("files[0].id = %#v, want file_keep", got)
+	if got := files[0]["id"]; got != "file_old" {
+		t.Fatalf("files[0].id = %#v, want file_old", got)
 	}
-	newFileID := productUpdateNewUploadExternalID(t, files[1], "files[1]")
+	if got := files[1]["id"]; got != "file_keep" {
+		t.Fatalf("files[1].id = %#v, want file_keep", got)
+	}
+	newFileID := productUpdateNewUploadExternalID(t, files[2], "files[2]")
 
 	richContent := productUpdateJSONRichContent(t, srv.putJSON)
 	if len(richContent) != 1 {
@@ -577,145 +579,7 @@ func TestUpdate_FileSwapsRemovedRichContentEmbed(t *testing.T) {
 	}
 }
 
-func TestUpdate_RemoveEmbeddedFileStripsRichContentEmbed(t *testing.T) {
-	srv := newProductUpdateFileServers(t)
-	srv.existingFiles = []existingProductFile{
-		{ID: "file_old", Name: "Old Pack.zip"},
-		{ID: "file_keep", Name: "Keep.pdf"},
-	}
-	srv.existingRichContent = []map[string]any{{
-		"id":    "page_1",
-		"title": "Existing page",
-		"description": map[string]any{
-			"type": "doc",
-			"content": []any{
-				map[string]any{
-					"type": "paragraph",
-					"content": []any{
-						map[string]any{"type": "text", "text": "Download below"},
-					},
-				},
-				map[string]any{
-					"type": "fileEmbed",
-					"attrs": map[string]any{
-						"id":        "file_old",
-						"uid":       "old-uid",
-						"collapsed": false,
-					},
-				},
-			},
-		},
-	}}
-	testutil.Setup(t, srv.dispatch(t))
-
-	cmd := testutil.Command(newUpdateCmd(), testutil.Yes(true))
-	cmd.SetArgs([]string{
-		"prod1",
-		"--remove-file", "file_old",
-	})
-	testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
-
-	files := productUpdateJSONFiles(t, srv.putJSON)
-	if len(files) != 1 || files[0]["id"] != "file_keep" {
-		t.Fatalf("files payload = %#v, want only file_keep", files)
-	}
-	if ids := richContentFileEmbedIDsFromBody(t, srv.putJSON); len(ids) != 0 {
-		t.Fatalf("rich_content fileEmbed ids = %#v, want none", ids)
-	}
-	if srv.s3Calls.Load() != 0 {
-		t.Fatalf("unexpected S3 calls: %d", srv.s3Calls.Load())
-	}
-}
-
-func TestUpdate_ReplaceFilesClearAllStripsEmbeddedRichContent(t *testing.T) {
-	srv := newProductUpdateFileServers(t)
-	srv.existingFiles = []existingProductFile{
-		{ID: "file_a", Name: "Old A.zip"},
-		{ID: "file_b", Name: "Old B.zip"},
-	}
-	srv.existingRichContent = []map[string]any{{
-		"id":    "page_1",
-		"title": "Existing page",
-		"description": map[string]any{
-			"type": "doc",
-			"content": []any{
-				map[string]any{"type": "fileEmbed", "attrs": map[string]any{"id": "file_a"}},
-				map[string]any{
-					"type": "fileEmbedGroup",
-					"content": []any{
-						map[string]any{"type": "fileEmbed", "attrs": map[string]any{"id": "file_b"}},
-					},
-				},
-				map[string]any{"type": "paragraph"},
-			},
-		},
-	}}
-	testutil.Setup(t, srv.dispatch(t))
-
-	cmd := testutil.Command(newUpdateCmd(), testutil.Yes(true))
-	cmd.SetArgs([]string{
-		"prod1",
-		"--replace-files",
-	})
-	testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
-
-	files := productUpdateJSONFiles(t, srv.putJSON)
-	if len(files) != 0 {
-		t.Fatalf("files payload = %#v, want empty array", files)
-	}
-	if ids := richContentFileEmbedIDsFromBody(t, srv.putJSON); len(ids) != 0 {
-		t.Fatalf("rich_content fileEmbed ids = %#v, want none", ids)
-	}
-	if types := firstRichContentNodeTypesFromBody(t, srv.putJSON); !reflect.DeepEqual(types, []string{"paragraph"}) {
-		t.Fatalf("rich_content node types = %#v, want only trailing paragraph", types)
-	}
-	if srv.s3Calls.Load() != 0 {
-		t.Fatalf("unexpected S3 calls: %d", srv.s3Calls.Load())
-	}
-}
-
-func TestUpdate_RemoveEmbeddedFileLeavesParagraphWhenPageWouldBeEmpty(t *testing.T) {
-	srv := newProductUpdateFileServers(t)
-	srv.existingFiles = []existingProductFile{
-		{ID: "file_old", Name: "Old Pack.zip"},
-	}
-	srv.existingRichContent = []map[string]any{{
-		"id":    "page_1",
-		"title": "Existing page",
-		"description": map[string]any{
-			"type": "doc",
-			"content": []any{
-				map[string]any{
-					"type": "fileEmbedGroup",
-					"content": []any{
-						map[string]any{"type": "fileEmbed", "attrs": map[string]any{"id": "file_old"}},
-					},
-				},
-			},
-		},
-	}}
-	testutil.Setup(t, srv.dispatch(t))
-
-	cmd := testutil.Command(newUpdateCmd(), testutil.Yes(true))
-	cmd.SetArgs([]string{
-		"prod1",
-		"--remove-file", "file_old",
-	})
-	testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
-
-	files := productUpdateJSONFiles(t, srv.putJSON)
-	if len(files) != 0 {
-		t.Fatalf("files payload = %#v, want empty array", files)
-	}
-	if ids := richContentFileEmbedIDsFromBody(t, srv.putJSON); len(ids) != 0 {
-		t.Fatalf("rich_content fileEmbed ids = %#v, want none", ids)
-	}
-	if types := firstRichContentNodeTypesFromBody(t, srv.putJSON); !reflect.DeepEqual(types, []string{"paragraph"}) {
-		t.Fatalf("rich_content node types = %#v, want fallback paragraph", types)
-	}
-}
-
-func TestUpdate_FileAppendsBeforeTrailingParagraph(t *testing.T) {
+func TestUpdate_FileRollsBeforeTrailingParagraph(t *testing.T) {
 	srv := newProductUpdateFileServers(t)
 	srv.existingFiles = []existingProductFile{
 		{ID: "file_old", Name: "Old Pack.zip"},
@@ -747,15 +611,15 @@ func TestUpdate_FileAppendsBeforeTrailingParagraph(t *testing.T) {
 		t.Fatalf("files payload len = %d, want 2", len(files))
 	}
 	newFileID := productUpdateNewUploadExternalID(t, files[1], "files[1]")
-	if ids := richContentFileEmbedIDsFromBody(t, srv.putJSON); !reflect.DeepEqual(ids, []string{"file_old", newFileID}) {
-		t.Fatalf("rich_content fileEmbed ids = %#v, want existing file then new upload", ids)
+	if ids := richContentFileEmbedIDsFromBody(t, srv.putJSON); !reflect.DeepEqual(ids, []string{newFileID}) {
+		t.Fatalf("rich_content fileEmbed ids = %#v, want new upload only", ids)
 	}
-	if types := firstRichContentNodeTypesFromBody(t, srv.putJSON); !reflect.DeepEqual(types, []string{"fileEmbed", "fileEmbed", "paragraph"}) {
-		t.Fatalf("rich_content node types = %#v, want adjacent file embeds then one trailing paragraph", types)
+	if types := firstRichContentNodeTypesFromBody(t, srv.putJSON); !reflect.DeepEqual(types, []string{"fileEmbed", "paragraph"}) {
+		t.Fatalf("rich_content node types = %#v, want file embed then one trailing paragraph", types)
 	}
 }
 
-func TestUpdate_FileAppendsToPageWithExistingEmbed(t *testing.T) {
+func TestUpdate_FileRollsOnPageWithExistingEmbed(t *testing.T) {
 	srv := newProductUpdateFileServers(t)
 	srv.existingFiles = []existingProductFile{
 		{ID: "file_old", Name: "Old Pack.zip"},
@@ -808,18 +672,18 @@ func TestUpdate_FileAppendsToPageWithExistingEmbed(t *testing.T) {
 	if ids := fileEmbedIDs([]map[string]any{richContent[0]}); len(ids) != 0 {
 		t.Fatalf("page 1 fileEmbed ids = %#v, want none", ids)
 	}
-	if ids := fileEmbedIDs([]map[string]any{richContent[1]}); !reflect.DeepEqual(ids, []string{"file_old", newFileID}) {
-		t.Fatalf("page 2 fileEmbed ids = %#v, want existing file then new upload", ids)
+	if ids := fileEmbedIDs([]map[string]any{richContent[1]}); !reflect.DeepEqual(ids, []string{newFileID}) {
+		t.Fatalf("page 2 fileEmbed ids = %#v, want new upload only", ids)
 	}
 	if types := richContentNodeTypes(t, richContent[0]); !reflect.DeepEqual(types, []string{"paragraph", "paragraph"}) {
 		t.Fatalf("page 1 node types = %#v, want unchanged paragraphs", types)
 	}
-	if types := richContentNodeTypes(t, richContent[1]); !reflect.DeepEqual(types, []string{"fileEmbed", "fileEmbed", "paragraph"}) {
-		t.Fatalf("page 2 node types = %#v, want adjacent file embeds then one trailing paragraph", types)
+	if types := richContentNodeTypes(t, richContent[1]); !reflect.DeepEqual(types, []string{"fileEmbed", "paragraph"}) {
+		t.Fatalf("page 2 node types = %#v, want file embed then one trailing paragraph", types)
 	}
 }
 
-func TestUpdate_FileAppendsInsideExistingFileEmbedGroup(t *testing.T) {
+func TestUpdate_FileRollsMultipleEmbedsInsideExistingFileEmbedGroup(t *testing.T) {
 	srv := newProductUpdateFileServers(t)
 	srv.existingFiles = []existingProductFile{
 		{ID: "file_a", Name: "Old A.zip"},
@@ -844,20 +708,24 @@ func TestUpdate_FileAppendsInsideExistingFileEmbedGroup(t *testing.T) {
 	}}
 	testutil.Setup(t, srv.dispatch(t))
 
-	path := writeProductUploadFixture(t, "fresh bytes")
+	firstPath := writeProductUploadFixture(t, "first bytes")
+	secondPath := writeProductUploadFixture(t, "second bytes")
 	cmd := testutil.Command(newUpdateCmd(), testutil.Yes(true))
 	cmd.SetArgs([]string{
 		"prod1",
-		"--file", path,
-		"--file-name", "New Pack.zip",
+		"--file", firstPath,
+		"--file", secondPath,
+		"--file-name", "New A.zip",
+		"--file-name", "New B.zip",
 	})
 	testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
 	files := productUpdateJSONFiles(t, srv.putJSON)
-	if len(files) != 3 {
-		t.Fatalf("files payload len = %d, want 3", len(files))
+	if len(files) != 4 {
+		t.Fatalf("files payload len = %d, want 4", len(files))
 	}
-	newFileID := productUpdateNewUploadExternalID(t, files[2], "files[2]")
+	firstNewFileID := productUpdateNewUploadExternalID(t, files[2], "files[2]")
+	secondNewFileID := productUpdateNewUploadExternalID(t, files[3], "files[3]")
 
 	richContent := productUpdateJSONRichContent(t, srv.putJSON)
 	if types := richContentNodeTypes(t, richContent[0]); !reflect.DeepEqual(types, []string{"fileEmbedGroup", "paragraph"}) {
@@ -869,8 +737,8 @@ func TestUpdate_FileAppendsInsideExistingFileEmbedGroup(t *testing.T) {
 		t.Fatalf("first rich_content node = %#v, want fileEmbedGroup", content[0])
 	}
 	groupIDs := fileEmbedIDs([]map[string]any{{"description": group}})
-	if !reflect.DeepEqual(groupIDs, []string{"file_a", "file_b", newFileID}) {
-		t.Fatalf("fileEmbedGroup ids = %#v, want existing files then new upload", groupIDs)
+	if !reflect.DeepEqual(groupIDs, []string{firstNewFileID, secondNewFileID}) {
+		t.Fatalf("fileEmbedGroup ids = %#v, want new upload ids", groupIDs)
 	}
 }
 
@@ -911,16 +779,16 @@ func TestUpdate_FilePreservesAuthoredTrailingParagraph(t *testing.T) {
 		t.Fatalf("files payload len = %d, want 2", len(files))
 	}
 	newFileID := productUpdateNewUploadExternalID(t, files[1], "files[1]")
-	if ids := richContentFileEmbedIDsFromBody(t, srv.putJSON); !reflect.DeepEqual(ids, []string{"file_old", newFileID}) {
-		t.Fatalf("rich_content fileEmbed ids = %#v, want existing file then new upload", ids)
+	if ids := richContentFileEmbedIDsFromBody(t, srv.putJSON); !reflect.DeepEqual(ids, []string{newFileID}) {
+		t.Fatalf("rich_content fileEmbed ids = %#v, want new upload only", ids)
 	}
 
 	richContent := productUpdateJSONRichContent(t, srv.putJSON)
-	if types := richContentNodeTypes(t, richContent[0]); !reflect.DeepEqual(types, []string{"fileEmbed", "fileEmbed", "paragraph"}) {
-		t.Fatalf("rich_content node types = %#v, want file embeds then authored paragraph", types)
+	if types := richContentNodeTypes(t, richContent[0]); !reflect.DeepEqual(types, []string{"fileEmbed", "paragraph"}) {
+		t.Fatalf("rich_content node types = %#v, want file embed then authored paragraph", types)
 	}
 	content := richContentPageContent(t, richContent[0])
-	paragraph := content[2].(map[string]any)
+	paragraph := content[1].(map[string]any)
 	textNodes, ok := paragraph["content"].([]any)
 	if !ok || len(textNodes) != 1 {
 		t.Fatalf("trailing paragraph content = %#v, want one text node", paragraph["content"])
@@ -954,15 +822,14 @@ func TestUpdate_FileAmbiguousEmbeddedReplacementErrorsBeforeUpload(t *testing.T)
 	cmd := testutil.Command(newUpdateCmd(), testutil.Yes(true))
 	cmd.SetArgs([]string{
 		"prod1",
-		"--replace-files",
 		"--file", path,
 	})
 	err := cmd.Execute()
 	if err == nil {
 		t.Fatal("expected ambiguous rich_content replacement error")
 	}
-	if !strings.Contains(err.Error(), "replace one embedded file at a time") {
-		t.Fatalf("expected rich_content disambiguation error, got %v", err)
+	if !strings.Contains(err.Error(), "rich_content has 2 file embeds") || !strings.Contains(err.Error(), "pass one --file per existing file embed") {
+		t.Fatalf("expected rich_content count error, got %v", err)
 	}
 	if srv.s3Calls.Load() != 0 {
 		t.Fatalf("unexpected S3 calls: %d", srv.s3Calls.Load())
@@ -972,127 +839,24 @@ func TestUpdate_FileAmbiguousEmbeddedReplacementErrorsBeforeUpload(t *testing.T)
 	}
 }
 
-func TestUpdate_RemoveFilePreservesOthers(t *testing.T) {
-	srv := newProductUpdateFileServers(t)
-	srv.existingFiles = []existingProductFile{
-		{ID: "file_a"},
-		{ID: "file_b"},
-	}
-	testutil.Setup(t, srv.dispatch(t))
-
-	cmd := testutil.Command(newUpdateCmd(), testutil.Yes(true))
-	cmd.SetArgs([]string{"prod1", "--remove-file", "file_a"})
-	testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
-
-	files := productUpdateJSONFiles(t, srv.putJSON)
-	if len(files) != 1 || files[0]["id"] != "file_b" {
-		t.Fatalf("files payload = %#v, want only file_b", files)
-	}
-}
-
-func TestUpdate_ReplaceFilesKeepsOnlyRequestedIDs(t *testing.T) {
-	srv := newProductUpdateFileServers(t)
-	srv.existingFiles = []existingProductFile{
-		{ID: "file_a"},
-		{ID: "file_b"},
-		{ID: "file_c"},
-	}
-	testutil.Setup(t, srv.dispatch(t))
-
-	cmd := testutil.Command(newUpdateCmd(), testutil.Yes(true))
-	cmd.SetArgs([]string{"prod1", "--replace-files", "--keep-file", "file_b"})
-	testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
-
-	files := productUpdateJSONFiles(t, srv.putJSON)
-	if len(files) != 1 || files[0]["id"] != "file_b" {
-		t.Fatalf("files payload = %#v, want only file_b", files)
-	}
-}
-
-func TestUpdate_KeepAndRemoveSameIDErrors(t *testing.T) {
+func TestUpdate_FileSurgeryFlagsAreRemoved(t *testing.T) {
 	srv := newProductUpdateFileServers(t)
 	srv.existingFiles = []existingProductFile{{ID: "file_a"}}
 	testutil.Setup(t, srv.dispatch(t))
 
-	cmd := newUpdateCmd()
-	cmd.SetArgs([]string{"prod1", "--replace-files", "--keep-file", "file_a", "--remove-file", "file_a"})
-	err := cmd.Execute()
-	if err == nil {
-		t.Fatal("expected usage error")
+	for _, flag := range []string{"--replace-files", "--remove-file", "--keep-file"} {
+		cmd := newUpdateCmd()
+		cmd.SetArgs([]string{"prod1", flag, "file_a"})
+		err := cmd.Execute()
+		if err == nil {
+			t.Fatalf("expected %s to be removed", flag)
+		}
+		if !strings.Contains(err.Error(), "unknown flag") {
+			t.Fatalf("expected unknown flag error for %s, got %v", flag, err)
+		}
 	}
-	if !strings.Contains(err.Error(), "--keep-file") || !strings.Contains(err.Error(), "--remove-file") {
-		t.Fatalf("expected conflict error, got %v", err)
-	}
-	if srv.getCalls.Load() != 0 {
-		t.Fatalf("unexpected GET calls: %d", srv.getCalls.Load())
-	}
-	if srv.putCalls.Load() != 0 {
-		t.Fatalf("unexpected PUT calls: %d", srv.putCalls.Load())
-	}
-}
-
-func TestUpdate_UnknownRemoveFileErrorsAfterPrefetch(t *testing.T) {
-	srv := newProductUpdateFileServers(t)
-	srv.existingFiles = []existingProductFile{{ID: "file_a"}}
-	testutil.Setup(t, srv.dispatch(t))
-
-	cmd := newUpdateCmd()
-	cmd.SetArgs([]string{"prod1", "--remove-file", "missing"})
-	err := cmd.Execute()
-	if err == nil {
-		t.Fatal("expected usage error")
-	}
-	if !strings.Contains(err.Error(), "unknown --remove-file") {
-		t.Fatalf("expected unknown remove-file error, got %v", err)
-	}
-	if srv.getCalls.Load() != 1 {
-		t.Fatalf("GET calls = %d, want 1", srv.getCalls.Load())
-	}
-	if srv.putCalls.Load() != 0 {
-		t.Fatalf("unexpected PUT calls: %d", srv.putCalls.Load())
-	}
-}
-
-func TestUpdate_ReplaceFilesClearAllUsesJSONBody(t *testing.T) {
-	srv := newProductUpdateFileServers(t)
-	srv.existingFiles = []existingProductFile{
-		{ID: "file_a", Name: "Old A.pdf"},
-		{ID: "file_b", Name: "Old B.pdf"},
-	}
-	testutil.Setup(t, srv.dispatch(t))
-
-	cmd := testutil.Command(newUpdateCmd(), testutil.Yes(true))
-	cmd.SetArgs([]string{"prod1", "--replace-files"})
-	testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
-
-	if srv.jsonPutCalls.Load() != 1 {
-		t.Fatalf("JSON PUT calls = %d, want 1", srv.jsonPutCalls.Load())
-	}
-	files, ok := srv.putJSON["files"].([]any)
-	if !ok {
-		t.Fatalf("files payload has wrong type: %T", srv.putJSON["files"])
-	}
-	if len(files) != 0 {
-		t.Fatalf("files payload = %#v, want empty array", files)
-	}
-}
-
-func TestUpdate_ReplaceFilesNoInputRequiresYes(t *testing.T) {
-	srv := newProductUpdateFileServers(t)
-	srv.existingFiles = []existingProductFile{{ID: "file_a"}}
-	testutil.Setup(t, srv.dispatch(t))
-
-	cmd := testutil.Command(newUpdateCmd(), testutil.NoInput(true))
-	cmd.SetArgs([]string{"prod1", "--replace-files"})
-	err := cmd.Execute()
-	if err == nil {
-		t.Fatal("expected confirmation error")
-	}
-	if !strings.Contains(err.Error(), "--yes") {
-		t.Fatalf("expected --yes hint, got %v", err)
-	}
-	if srv.putCalls.Load() != 0 {
-		t.Fatalf("unexpected PUT calls: %d", srv.putCalls.Load())
+	if srv.getCalls.Load() != 0 || srv.putCalls.Load() != 0 {
+		t.Fatalf("unexpected API calls: get=%d put=%d", srv.getCalls.Load(), srv.putCalls.Load())
 	}
 }
 
@@ -1102,11 +866,22 @@ func TestUpdate_FileDryRunPrefetchesButDoesNotUploadOrPut(t *testing.T) {
 		{ID: "file_a", Name: "Old A.pdf"},
 		{ID: "file_b", Name: "Old B.pdf"},
 	}
+	srv.existingRichContent = []map[string]any{{
+		"id":    "page_1",
+		"title": "Existing page",
+		"description": map[string]any{
+			"type": "doc",
+			"content": []any{
+				map[string]any{"type": "fileEmbed", "attrs": map[string]any{"id": "file_a"}},
+				map[string]any{"type": "paragraph"},
+			},
+		},
+	}}
 	testutil.Setup(t, srv.dispatch(t))
 
 	path := writeProductUploadFixture(t, "fresh bytes")
 	cmd := testutil.Command(newUpdateCmd(), testutil.DryRun(true), testutil.JSONOutput())
-	cmd.SetArgs([]string{"prod1", "--file", path, "--remove-file", "file_a"})
+	cmd.SetArgs([]string{"prod1", "--file", path})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
 	if srv.getCalls.Load() != 1 {
@@ -1137,23 +912,23 @@ func TestUpdate_FileDryRunPrefetchesButDoesNotUploadOrPut(t *testing.T) {
 	if payload.Uploads[0].PartCount != 1 {
 		t.Fatalf("upload part count = %d, want 1", payload.Uploads[0].PartCount)
 	}
-	if len(payload.Preserved) != 1 || payload.Preserved[0].ID != "file_b" || payload.Preserved[0].Name != "Old B.pdf" {
+	if len(payload.Preserved) != 2 || payload.Preserved[0].ID != "file_a" || payload.Preserved[1].ID != "file_b" {
 		t.Fatalf("preserved = %+v", payload.Preserved)
 	}
-	if len(payload.Removed) != 1 || payload.Removed[0].ID != "file_a" || payload.Removed[0].Name != "Old A.pdf" {
+	if len(payload.Removed) != 0 {
 		t.Fatalf("removed = %+v", payload.Removed)
 	}
 	files := productUpdateJSONFiles(t, payload.Request.Body)
-	if len(files) != 2 || files[0]["id"] != "file_b" {
+	if len(files) != 3 || files[0]["id"] != "file_a" || files[1]["id"] != "file_b" {
 		t.Fatalf("dry-run files payload = %#v", files)
 	}
-	if files[1]["url"] != "<uploaded:file:0>" {
-		t.Fatalf("dry-run upload placeholder = %#v", files[1]["url"])
+	if files[2]["url"] != "<uploaded:file:0>" {
+		t.Fatalf("dry-run upload placeholder = %#v", files[2]["url"])
 	}
-	newFileID := productUpdateNewUploadExternalID(t, files[1], "files[1]")
+	newFileID := productUpdateNewUploadExternalID(t, files[2], "files[2]")
 	richContent := productUpdateJSONRichContent(t, payload.Request.Body)
-	if ids := fileEmbedIDs(richContent); !reflect.DeepEqual(ids, []string{"file_b", newFileID}) {
-		t.Fatalf("dry-run fileEmbed ids = %#v, want preserved file then new upload", ids)
+	if ids := fileEmbedIDs(richContent); !reflect.DeepEqual(ids, []string{newFileID}) {
+		t.Fatalf("dry-run fileEmbed ids = %#v, want new upload only", ids)
 	}
 }
 
@@ -1205,7 +980,7 @@ func TestUpdate_FileDryRunHumanIncludesUploadPlan(t *testing.T) {
 	}
 }
 
-func TestUpdate_DryRunHumanIncludesExistingFileNames(t *testing.T) {
+func TestUpdate_FileDryRunHumanIncludesExistingFileNames(t *testing.T) {
 	srv := newProductUpdateFileServers(t)
 	srv.existingFiles = []existingProductFile{
 		{ID: "file_a", Name: "Old A.pdf"},
@@ -1213,34 +988,18 @@ func TestUpdate_DryRunHumanIncludesExistingFileNames(t *testing.T) {
 	}
 	testutil.Setup(t, srv.dispatch(t))
 
+	path := writeProductUploadFixture(t, "fresh bytes")
 	cmd := testutil.Command(newUpdateCmd(), testutil.DryRun(true))
-	cmd.SetArgs([]string{"prod1", "--remove-file", "file_a"})
+	cmd.SetArgs([]string{"prod1", "--file", path})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
-	if !strings.Contains(out, "Preserve existing file: Old B.pdf (file_b)") {
-		t.Fatalf("human dry-run missing preserved file: %q", out)
-	}
-	if !strings.Contains(out, "Remove existing file: Old A.pdf (file_a)") {
-		t.Fatalf("human dry-run missing removed file: %q", out)
-	}
-}
-
-func TestUpdate_KeepFileRequiresReplaceFiles(t *testing.T) {
-	srv := newProductUpdateFileServers(t)
-	srv.existingFiles = []existingProductFile{{ID: "file_a"}}
-	testutil.Setup(t, srv.dispatch(t))
-
-	cmd := newUpdateCmd()
-	cmd.SetArgs([]string{"prod1", "--keep-file", "file_a"})
-	err := cmd.Execute()
-	if err == nil {
-		t.Fatal("expected usage error")
-	}
-	if !strings.Contains(err.Error(), "--replace-files") {
-		t.Fatalf("expected keep-file usage error, got %v", err)
-	}
-	if srv.getCalls.Load() != 0 {
-		t.Fatalf("unexpected GET calls: %d", srv.getCalls.Load())
+	for _, expected := range []string{
+		"Preserve existing file: Old A.pdf (file_a)",
+		"Preserve existing file: Old B.pdf (file_b)",
+	} {
+		if !strings.Contains(out, expected) {
+			t.Fatalf("human dry-run missing %q: %q", expected, out)
+		}
 	}
 }
 
@@ -1270,14 +1029,14 @@ func TestCollectRequestedProductUploads_TrimsDisplayName(t *testing.T) {
 	}
 }
 
-func TestUpdate_InvalidUploadFailsBeforeRemovalConfirmation(t *testing.T) {
+func TestUpdate_InvalidUploadFailsBeforePrefetch(t *testing.T) {
 	srv := newProductUpdateFileServers(t)
 	srv.existingFiles = []existingProductFile{{ID: "file_a"}}
 	testutil.Setup(t, srv.dispatch(t))
 
 	missingPath := filepath.Join(t.TempDir(), "missing.bin")
 	cmd := testutil.Command(newUpdateCmd(), testutil.NoInput(true))
-	cmd.SetArgs([]string{"prod1", "--replace-files", "--file", missingPath})
+	cmd.SetArgs([]string{"prod1", "--file", missingPath})
 
 	err := cmd.Execute()
 	if err == nil {
@@ -1285,9 +1044,6 @@ func TestUpdate_InvalidUploadFailsBeforeRemovalConfirmation(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "could not stat file") {
 		t.Fatalf("expected stat error, got %v", err)
-	}
-	if strings.Contains(err.Error(), "--yes") {
-		t.Fatalf("expected validation to happen before confirmation, got %v", err)
 	}
 	if srv.getCalls.Load() != 0 {
 		t.Fatalf("unexpected GET calls: %d", srv.getCalls.Load())
@@ -1373,74 +1129,6 @@ func TestUpdate_RenderFailureDoesNotIncludeUploadedURLs(t *testing.T) {
 	}
 	if srv.putCalls.Load() != 1 {
 		t.Fatalf("PUT calls = %d, want 1", srv.putCalls.Load())
-	}
-}
-
-func TestUpdate_ReplaceFilesClearAllDryRunJSON(t *testing.T) {
-	srv := newProductUpdateFileServers(t)
-	srv.existingFiles = []existingProductFile{{ID: "file_a"}}
-	testutil.Setup(t, srv.dispatch(t))
-
-	cmd := testutil.Command(newUpdateCmd(), testutil.DryRun(true), testutil.JSONOutput())
-	cmd.SetArgs([]string{"prod1", "--replace-files"})
-	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
-
-	var payload dryRunUpdateBody
-	if err := json.Unmarshal([]byte(out), &payload); err != nil {
-		t.Fatalf("parse JSON: %v\n%s", err, out)
-	}
-	if payload.Request.Method != http.MethodPut || payload.Request.Path != "/products/prod1" {
-		t.Fatalf("unexpected dry-run envelope: %+v", payload)
-	}
-	if len(payload.Uploads) != 0 {
-		t.Fatalf("expected no uploads, got %+v", payload.Uploads)
-	}
-	if len(payload.Preserved) != 0 {
-		t.Fatalf("expected no preserved files, got %+v", payload.Preserved)
-	}
-	if len(payload.Removed) != 1 || payload.Removed[0].ID != "file_a" {
-		t.Fatalf("removed = %+v", payload.Removed)
-	}
-	files, ok := payload.Request.Body["files"].([]any)
-	if !ok {
-		t.Fatalf("files payload has wrong type: %T", payload.Request.Body["files"])
-	}
-	if len(files) != 0 {
-		t.Fatalf("expected empty files array, got %#v", files)
-	}
-}
-
-func TestUpdate_ReplaceFilesClearAllDryRunPlain(t *testing.T) {
-	srv := newProductUpdateFileServers(t)
-	srv.existingFiles = []existingProductFile{{ID: "file_a"}}
-	testutil.Setup(t, srv.dispatch(t))
-
-	cmd := testutil.Command(newUpdateCmd(), testutil.DryRun(true), testutil.PlainOutput())
-	cmd.SetArgs([]string{"prod1", "--replace-files"})
-	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
-
-	if !strings.Contains(out, "PUT\t/products/prod1\t") {
-		t.Fatalf("plain dry-run missing request line: %q", out)
-	}
-	if !strings.Contains(out, "\"files\":[]") {
-		t.Fatalf("plain dry-run missing empty files array: %q", out)
-	}
-}
-
-func TestUpdate_ReplaceFilesClearAllDryRunHuman(t *testing.T) {
-	srv := newProductUpdateFileServers(t)
-	srv.existingFiles = []existingProductFile{{ID: "file_a"}}
-	testutil.Setup(t, srv.dispatch(t))
-
-	cmd := testutil.Command(newUpdateCmd(), testutil.DryRun(true))
-	cmd.SetArgs([]string{"prod1", "--replace-files"})
-	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
-
-	if !strings.Contains(out, "Dry run: PUT /products/prod1") {
-		t.Fatalf("human dry-run missing request line: %q", out)
-	}
-	if !strings.Contains(out, "\"files\": []") {
-		t.Fatalf("human dry-run missing empty files array: %q", out)
 	}
 }
 

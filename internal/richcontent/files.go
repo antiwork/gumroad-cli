@@ -90,6 +90,33 @@ func AppendFileEmbeds(richContent []map[string]any, preservedFileIDs []string, f
 	return cloned, nil
 }
 
+func RollFileEmbeds(richContent []map[string]any, preservedFileIDs []string, fileRefs []FileRef) ([]map[string]any, error) {
+	if len(fileRefs) == 0 {
+		return Clone(richContent)
+	}
+
+	existingIDs := FileEmbedIDs(richContent)
+	if len(existingIDs) == 0 {
+		return AppendFileEmbeds(richContent, preservedFileIDs, fileRefs)
+	}
+	if len(existingIDs) != len(fileRefs) {
+		return nil, fmt.Errorf("rich_content has %d file embeds; got %d replacement files", len(existingIDs), len(fileRefs))
+	}
+
+	cloned, err := Clone(richContent)
+	if err != nil {
+		return nil, err
+	}
+	nextRef := 0
+	for _, page := range cloned {
+		replaceFileEmbedRefsInNode(page["description"], fileRefs, &nextRef)
+	}
+	if nextRef != len(fileRefs) {
+		return nil, fmt.Errorf("could not replace all file embeds in rich_content")
+	}
+	return cloned, nil
+}
+
 func Clone(richContent []map[string]any) ([]map[string]any, error) {
 	data, err := json.Marshal(richContent)
 	if err != nil {
@@ -108,28 +135,6 @@ func FileEmbedIDs(richContent []map[string]any) []string {
 		collectFileEmbedIDs(page["description"], &ids)
 	}
 	return ids
-}
-
-func ReplaceFileEmbedID(richContent []map[string]any, oldID, newID string) {
-	for _, page := range richContent {
-		replaceFileEmbedIDInNode(page["description"], oldID, newID)
-	}
-}
-
-func StripFileEmbedIDs(richContent []map[string]any, ids []string) {
-	if len(ids) == 0 {
-		return
-	}
-	idSet := make(map[string]struct{}, len(ids))
-	for _, id := range ids {
-		idSet[id] = struct{}{}
-	}
-	for _, page := range richContent {
-		if description, ok := page["description"].(map[string]any); ok {
-			stripFileEmbedIDsInNode(description, idSet)
-			ensureDescriptionContent(description)
-		}
-	}
 }
 
 func refsForExistingFiles(fileIDs []string) ([]FileRef, error) {
@@ -203,16 +208,20 @@ func appendFileEmbedsToContent(content []any, fileRefs []FileRef) []any {
 func fileEmbedNodes(fileRefs []FileRef) []any {
 	nodes := make([]any, len(fileRefs))
 	for i, ref := range fileRefs {
-		nodes[i] = map[string]any{
-			"type": "fileEmbed",
-			"attrs": map[string]any{
-				"id":        ref.FileID,
-				"uid":       ref.EmbedUID,
-				"collapsed": false,
-			},
-		}
+		nodes[i] = fileEmbedNode(ref)
 	}
 	return nodes
+}
+
+func fileEmbedNode(ref FileRef) map[string]any {
+	return map[string]any{
+		"type": "fileEmbed",
+		"attrs": map[string]any{
+			"id":        ref.FileID,
+			"uid":       ref.EmbedUID,
+			"collapsed": false,
+		},
+	}
 }
 
 func collectFileEmbedIDs(node any, ids *[]string) {
@@ -220,12 +229,8 @@ func collectFileEmbedIDs(node any, ids *[]string) {
 	if !ok {
 		return
 	}
-	if current["type"] == "fileEmbed" {
-		if attrs, ok := current["attrs"].(map[string]any); ok {
-			if id, ok := attrs["id"].(string); ok && id != "" {
-				*ids = append(*ids, id)
-			}
-		}
+	if id, ok := fileEmbedID(current); ok {
+		*ids = append(*ids, id)
 	}
 	if children, ok := current["content"].([]any); ok {
 		for _, child := range children {
@@ -234,24 +239,7 @@ func collectFileEmbedIDs(node any, ids *[]string) {
 	}
 }
 
-func replaceFileEmbedIDInNode(node any, oldID, newID string) {
-	current, ok := node.(map[string]any)
-	if !ok {
-		return
-	}
-	if current["type"] == "fileEmbed" {
-		if attrs, ok := current["attrs"].(map[string]any); ok && attrs["id"] == oldID {
-			attrs["id"] = newID
-		}
-	}
-	if children, ok := current["content"].([]any); ok {
-		for _, child := range children {
-			replaceFileEmbedIDInNode(child, oldID, newID)
-		}
-	}
-}
-
-func stripFileEmbedIDsInNode(node any, ids map[string]struct{}) {
+func replaceFileEmbedRefsInNode(node any, fileRefs []FileRef, nextRef *int) {
 	current, ok := node.(map[string]any)
 	if !ok {
 		return
@@ -261,42 +249,37 @@ func stripFileEmbedIDsInNode(node any, ids map[string]struct{}) {
 		return
 	}
 
-	kept := make([]any, 0, len(children))
 	for _, child := range children {
-		if childMap, ok := child.(map[string]any); ok {
-			if childMap["type"] == "fileEmbed" {
-				if attrs, ok := childMap["attrs"].(map[string]any); ok {
-					if id, ok := attrs["id"].(string); ok {
-						if _, remove := ids[id]; remove {
-							continue
-						}
-					}
-				}
-			}
-			stripFileEmbedIDsInNode(childMap, ids)
-			if isEmptyFileEmbedGroup(childMap) {
-				continue
-			}
+		childMap, ok := child.(map[string]any)
+		if !ok {
+			continue
 		}
-		kept = append(kept, child)
+		if _, ok := fileEmbedID(childMap); ok {
+			rollFileEmbedNode(childMap, fileRefs[*nextRef])
+			*nextRef += 1
+			continue
+		}
+		replaceFileEmbedRefsInNode(childMap, fileRefs, nextRef)
 	}
-	current["content"] = kept
+	current["content"] = children
 }
 
-func isEmptyFileEmbedGroup(node map[string]any) bool {
-	if node["type"] != "fileEmbedGroup" {
-		return false
-	}
-	children, ok := node["content"].([]any)
-	return !ok || len(children) == 0
+func rollFileEmbedNode(node map[string]any, ref FileRef) {
+	attrs, _ := node["attrs"].(map[string]any)
+	attrs["id"] = ref.FileID
+	attrs["uid"] = ref.EmbedUID
 }
 
-func ensureDescriptionContent(description map[string]any) {
-	content, ok := description["content"].([]any)
-	if ok && len(content) > 0 {
-		return
+func fileEmbedID(node map[string]any) (string, bool) {
+	if node["type"] != "fileEmbed" {
+		return "", false
 	}
-	description["content"] = []any{map[string]any{"type": "paragraph"}}
+	attrs, ok := node["attrs"].(map[string]any)
+	if !ok {
+		return "", false
+	}
+	id, ok := attrs["id"].(string)
+	return id, ok && id != ""
 }
 
 func nodeHasType(node any, typ string) bool {

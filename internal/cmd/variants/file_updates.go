@@ -158,9 +158,9 @@ func runVariantUpdateWithFiles(
 	if err != nil {
 		return err
 	}
-	richContent, err := richcontent.AppendFileEmbeds(variantState.RichContent, nil, fileRefs)
+	richContent, err := richcontent.RollFileEmbeds(variantState.RichContent, nil, fileRefs)
 	if err != nil {
-		return err
+		return cmdutil.InvalidInputErrorf("%s; pass one --file per existing file embed, or use products content get/set for structural content changes", err.Error())
 	}
 
 	productPath := cmdutil.JoinPath("products", productID)

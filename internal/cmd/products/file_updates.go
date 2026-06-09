@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"sort"
 	"strconv"
 	"strings"
 
@@ -43,11 +42,6 @@ type productFileUpdateState struct {
 	RichContent                      []map[string]any             `json:"rich_content"`
 	HasSameRichContentForAllVariants bool                         `json:"has_same_rich_content_for_all_variants"`
 	Variants                         *[]productVariantCategoryRef `json:"variants"`
-}
-
-type productFileSelections struct {
-	Keep   map[string]struct{}
-	Remove map[string]struct{}
 }
 
 type productVariantCategoryRef struct {
@@ -141,71 +135,12 @@ func productHasVariants(variants []productVariantCategoryRef) bool {
 	return false
 }
 
-func planProductFileUpdate(
-	cmd *cobra.Command,
-	existing []existingProductFile,
-	uploads []requestedProductUpload,
-	selections productFileSelections,
-	replaceFiles bool,
-) (productFileUpdatePlan, error) {
-	existingByID := make(map[string]existingProductFile, len(existing))
-	for _, file := range existing {
-		existingByID[file.ID] = file
-	}
-
-	if err := ensureKnownFileIDs(cmd, "--keep-file", selections.Keep, existingByID); err != nil {
-		return productFileUpdatePlan{}, err
-	}
-	if err := ensureKnownFileIDs(cmd, "--remove-file", selections.Remove, existingByID); err != nil {
-		return productFileUpdatePlan{}, err
-	}
-
+func planProductFileRoll(existing []existingProductFile, uploads []requestedProductUpload) productFileUpdatePlan {
 	plan := productFileUpdatePlan{
-		Uploads: uploads,
+		Preserved: append([]existingProductFile(nil), existing...),
+		Uploads:   uploads,
 	}
-
-	for _, file := range existing {
-		_, explicitlyRemoved := selections.Remove[file.ID]
-		preserve := !replaceFiles
-		if replaceFiles {
-			_, preserve = selections.Keep[file.ID]
-		}
-		if explicitlyRemoved {
-			preserve = false
-		}
-
-		if preserve {
-			plan.Preserved = append(plan.Preserved, file)
-		} else {
-			plan.Removed = append(plan.Removed, file)
-		}
-	}
-
-	return plan, nil
-}
-
-func ensureKnownFileIDs(
-	cmd *cobra.Command,
-	flagName string,
-	requested map[string]struct{},
-	existing map[string]existingProductFile,
-) error {
-	if len(requested) == 0 {
-		return nil
-	}
-
-	var unknown []string
-	for id := range requested {
-		if _, ok := existing[id]; !ok {
-			unknown = append(unknown, id)
-		}
-	}
-	if len(unknown) == 0 {
-		return nil
-	}
-
-	sort.Strings(unknown)
-	return cmdutil.UsageErrorf(cmd, "unknown %s id(s): %s", flagName, joinComma(unknown))
+	return plan
 }
 
 func describeProductUploads(uploads []requestedProductUpload) ([]plannedProductUpload, error) {
@@ -222,44 +157,6 @@ func describeProductUploads(uploads []requestedProductUpload) ([]plannedProductU
 		}
 	}
 	return planned, nil
-}
-
-func validateProductFileSelections(
-	cmd *cobra.Command,
-	keepIDs, removeIDs []string,
-	replaceFiles bool,
-) (productFileSelections, error) {
-	if len(keepIDs) > 0 && !replaceFiles {
-		return productFileSelections{}, cmdutil.UsageErrorf(cmd,
-			"--keep-file can only be used together with --replace-files")
-	}
-
-	keepSet := make(map[string]struct{}, len(keepIDs))
-	for _, id := range keepIDs {
-		keepSet[id] = struct{}{}
-	}
-	removeSet := make(map[string]struct{}, len(removeIDs))
-	for _, id := range removeIDs {
-		removeSet[id] = struct{}{}
-	}
-
-	var conflicts []string
-	for id := range keepSet {
-		if _, ok := removeSet[id]; ok {
-			conflicts = append(conflicts, id)
-		}
-	}
-	if len(conflicts) > 0 {
-		sort.Strings(conflicts)
-		return productFileSelections{}, cmdutil.UsageErrorf(cmd,
-			"cannot use --keep-file and --remove-file for the same id(s): %s",
-			joinComma(conflicts))
-	}
-
-	return productFileSelections{
-		Keep:   keepSet,
-		Remove: removeSet,
-	}, nil
 }
 
 func buildProductUpdateJSONBody(
@@ -585,10 +482,6 @@ func productFileRemovalMessage(productID string, removed []existingProductFile) 
 		message = fmt.Sprintf("Update product %s and remove %s: %s?", productID, label, summary)
 	}
 	return message
-}
-
-func joinComma(values []string) string {
-	return strings.Join(values, ", ")
 }
 
 func productBatchUploadInputs(uploads []plannedProductUpload) []batchUploadInput {

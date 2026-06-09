@@ -21,9 +21,6 @@ func newUpdateCmd() *cobra.Command {
 	var files []string
 	var fileNames []string
 	var fileDescriptions []string
-	var keepFileIDs []string
-	var removeFileIDs []string
-	var replaceFiles bool
 	var coverImage, thumbnail string
 	var previewImages []string
 	var customHTML string
@@ -39,8 +36,7 @@ func newUpdateCmd() *cobra.Command {
   gumroad products update <id> --preview-image ./gallery-1.jpg --preview-image ./gallery-2.jpg
   gumroad products update <id> --file ./pack.zip
   gumroad products update <id> --custom-html ./landing.html
-  gumroad products update <id> --custom-html ''
-  gumroad products update <id> --replace-files --keep-file file_123 --file ./new-pack.zip`,
+  gumroad products update <id> --custom-html ''`,
 		Args: cmdutil.ExactArgs(1),
 		RunE: func(c *cobra.Command, args []string) error {
 			opts := cmdutil.OptionsFrom(c)
@@ -52,7 +48,6 @@ func newUpdateCmd() *cobra.Command {
 				"pay-what-you-want", "suggested-price", "max-purchase-count",
 				"category", "taxonomy-id", "tag",
 				"file", "file-name", "file-description",
-				"keep-file", "remove-file", "replace-files",
 				"cover-image", "preview-image", "thumbnail",
 				"custom-html",
 			); err != nil {
@@ -145,10 +140,7 @@ func newUpdateCmd() *cobra.Command {
 			productFieldsChanged := productUpdateFieldFlagsChanged(c)
 			fileFlagsChanged := flags.Changed("file") ||
 				flags.Changed("file-name") ||
-				flags.Changed("file-description") ||
-				flags.Changed("keep-file") ||
-				flags.Changed("remove-file") ||
-				flags.Changed("replace-files")
+				flags.Changed("file-description")
 			if !fileFlagsChanged {
 				if len(media) > 0 {
 					if opts.DryRun {
@@ -199,10 +191,6 @@ func newUpdateCmd() *cobra.Command {
 					args[0], "Product "+args[0]+" updated.")
 			}
 
-			selections, err := validateProductFileSelections(c, keepFileIDs, removeFileIDs, replaceFiles)
-			if err != nil {
-				return err
-			}
 			plannedUploads, err := describeProductUploads(requestedUploads)
 			if err != nil {
 				return err
@@ -218,10 +206,7 @@ func newUpdateCmd() *cobra.Command {
 				return err
 			}
 
-			filePlan, err := planProductFileUpdate(c, existingState.Files, requestedUploads, selections, replaceFiles)
-			if err != nil {
-				return err
-			}
+			filePlan := planProductFileRoll(existingState.Files, requestedUploads)
 
 			fileRefs, err := newRichContentFileRefs(len(plannedUploads))
 			if err != nil {
@@ -233,7 +218,7 @@ func newUpdateCmd() *cobra.Command {
 					args[0], args[0])
 			}
 
-			richContent, includeRichContent, err := buildProductUpdateRichContent(c, existingState.RichContent, filePlan, fileRefs)
+			richContent, includeRichContent, err := buildProductUpdateRichContent(c, existingState.RichContent, existingState.Files, fileRefs)
 			if err != nil {
 				return err
 			}
@@ -287,12 +272,9 @@ func newUpdateCmd() *cobra.Command {
 	cmd.Flags().StringVar(&category, "category", "", "New product category path (for example: design/ui-and-web/figma)")
 	cmd.Flags().StringVar(&taxonomyID, "taxonomy-id", "", "New numeric taxonomy/category ID")
 	cmd.Flags().StringArrayVar(&tags, "tag", nil, "Tag (repeatable, replaces all existing tags)")
-	cmd.Flags().StringArrayVar(&files, "file", nil, "Attach a new local file (repeatable)")
+	cmd.Flags().StringArrayVar(&files, "file", nil, "Roll a local file into rich content file embeds (repeatable)")
 	cmd.Flags().StringArrayVar(&fileNames, "file-name", nil, "Display name for the matching --file (repeatable)")
 	cmd.Flags().StringArrayVar(&fileDescriptions, "file-description", nil, "Description for the matching --file (repeatable)")
-	cmd.Flags().StringArrayVar(&keepFileIDs, "keep-file", nil, "Existing file ID to preserve when using --replace-files (repeatable)")
-	cmd.Flags().StringArrayVar(&removeFileIDs, "remove-file", nil, "Existing file ID to remove (repeatable)")
-	cmd.Flags().BoolVar(&replaceFiles, "replace-files", false, "Replace the current file set instead of preserving existing files by default")
 	cmd.Flags().StringVar(&coverImage, "cover-image", "", "Local JPEG, PNG, or GIF cover image to upload")
 	cmd.Flags().StringArrayVar(&previewImages, "preview-image", nil, "Additional local JPEG, PNG, or GIF preview image to upload as a product cover (repeatable)")
 	cmd.Flags().StringVar(&thumbnail, "thumbnail", "", "Local JPEG, PNG, or GIF thumbnail image to upload")

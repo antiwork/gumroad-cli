@@ -85,7 +85,7 @@ func newUpdateCmd() *cobra.Command {
 	cmd.Flags().StringVar(&description, "description", "", "New description")
 	cmd.Flags().StringVar(&priceDifference, "price-difference", "", "New price difference (e.g. 5.00, -1.50)")
 	cmd.Flags().IntVar(&maxPurchaseCount, "max-purchase-count", 0, "New max purchase count")
-	cmd.Flags().StringArrayVar(&files, "file", nil, "Attach a new local file to this variant's content (repeatable)")
+	cmd.Flags().StringArrayVar(&files, "file", nil, "Roll a local file into this variant's content file embeds (repeatable)")
 	cmd.Flags().StringArrayVar(&fileNames, "file-name", nil, "Display name for the matching --file (repeatable)")
 	cmd.Flags().StringArrayVar(&fileDescriptions, "file-description", nil, "Description for the matching --file (repeatable)")
 

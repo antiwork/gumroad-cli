@@ -965,7 +965,7 @@ func TestUpdate_MaxPurchaseCountZero(t *testing.T) {
 	}
 }
 
-func TestUpdate_FileAttachesToVariantRichContent(t *testing.T) {
+func TestUpdate_FileRollsVariantRichContent(t *testing.T) {
 	srv := newVariantFileAttachServers(t)
 	testutil.Setup(t, srv.dispatch(t))
 
@@ -1009,8 +1009,8 @@ func TestUpdate_FileAttachesToVariantRichContent(t *testing.T) {
 	}
 
 	richContentPages := variantUpdateJSONRichContent(t, srv.variantJSON)
-	if ids := richcontent.FileEmbedIDs(richContentPages); !reflect.DeepEqual(ids, []string{"file_existing", newFileID}) {
-		t.Fatalf("variant rich_content fileEmbed ids = %#v, want existing file then new upload", ids)
+	if ids := richcontent.FileEmbedIDs(richContentPages); !reflect.DeepEqual(ids, []string{newFileID}) {
+		t.Fatalf("variant rich_content fileEmbed ids = %#v, want new upload only", ids)
 	}
 }
 
@@ -1130,6 +1130,10 @@ func TestUpdate_FileDryRunJSONShowsProductAndVariantRequests(t *testing.T) {
 	}
 	if payload.VariantRequest.Body["description"] != "Updated variant" {
 		t.Fatalf("variant description = %#v, want Updated variant", payload.VariantRequest.Body["description"])
+	}
+	richContentPages := variantUpdateJSONRichContent(t, payload.VariantRequest.Body)
+	if ids := richcontent.FileEmbedIDs(richContentPages); len(ids) != 1 || !strings.HasPrefix(ids[0], "cli-upload-") {
+		t.Fatalf("dry-run variant rich_content fileEmbed ids = %#v, want one generated upload id", ids)
 	}
 	if srv.s3Calls.Load() != 0 {
 		t.Fatalf("S3 calls = %d, want 0", srv.s3Calls.Load())
