@@ -1,6 +1,7 @@
 package skills
 
 import (
+	"os"
 	"strings"
 	"testing"
 )
@@ -20,6 +21,19 @@ func TestSkillMarkdown_ReturnsContent(t *testing.T) {
 	}
 	if !strings.Contains(content, "gumroad products list") {
 		t.Error("expected command examples")
+	}
+}
+
+func TestEmbeddedSkillsDirectoryContainsOnlyGumroad(t *testing.T) {
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		t.Fatalf("read embedded skills directory: %v", err)
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() && entry.Name() != "gumroad" {
+			t.Errorf("unexpected embedded skill directory %q", entry.Name())
+		}
 	}
 }
 
