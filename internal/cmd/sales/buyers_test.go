@@ -18,14 +18,32 @@ func TestBuyers_AggregatesAndDedupesAcrossPages(t *testing.T) {
 		case "":
 			testutil.JSON(t, w, map[string]any{
 				"sales": []map[string]any{
-					{"email": "a@example.com", "full_name": "Alice", "created_at": "2024-01-10"},
+					{
+						"email":        "a@example.com",
+						"full_name":    "Alice",
+						"created_at":   "2024-01-10",
+						"utm_source":   "newsletter",
+						"utm_medium":   "email",
+						"utm_campaign": "winter",
+						"utm_term":     "buyers",
+						"utm_content":  "hero",
+					},
 				},
 				"next_page_key": "cursor1",
 			})
 		case "cursor1":
 			testutil.JSON(t, w, map[string]any{
 				"sales": []map[string]any{
-					{"email": "a@example.com", "full_name": "Alice Anderson", "created_at": "2024-03-01"},
+					{
+						"email":        "a@example.com",
+						"full_name":    "Alice Anderson",
+						"created_at":   "2024-03-01",
+						"utm_source":   "adwords",
+						"utm_medium":   "cpc",
+						"utm_campaign": "spring",
+						"utm_term":     "template",
+						"utm_content":  "footer",
+					},
 					{"email": "b@example.com", "full_name": "Bob", "created_at": "2024-02-01"},
 				},
 			})
@@ -46,7 +64,17 @@ func TestBuyers_AggregatesAndDedupesAcrossPages(t *testing.T) {
 		t.Fatalf("expected success, got %+v", resp)
 	}
 	want := []buyer{
-		{Email: "a@example.com", Name: "Alice Anderson", PurchaseCount: 2, LastPurchaseDate: "2024-03-01"},
+		{
+			Email:            "a@example.com",
+			Name:             "Alice Anderson",
+			PurchaseCount:    2,
+			LastPurchaseDate: "2024-03-01",
+			UTMSource:        "adwords",
+			UTMMedium:        "cpc",
+			UTMCampaign:      "spring",
+			UTMTerm:          "template",
+			UTMContent:       "footer",
+		},
 		{Email: "b@example.com", Name: "Bob", PurchaseCount: 1, LastPurchaseDate: "2024-02-01"},
 	}
 	if len(resp.Buyers) != len(want) {
@@ -55,6 +83,19 @@ func TestBuyers_AggregatesAndDedupesAcrossPages(t *testing.T) {
 	for i, b := range want {
 		if resp.Buyers[i] != b {
 			t.Fatalf("buyer %d = %+v, want %+v", i, resp.Buyers[i], b)
+		}
+	}
+
+	var raw struct {
+		Buyers []map[string]any `json:"buyers"`
+	}
+	if err := json.Unmarshal([]byte(out), &raw); err != nil {
+		t.Fatalf("not valid raw JSON: %v\n%s", err, out)
+	}
+	for _, key := range []string{"utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content"} {
+		value, ok := raw.Buyers[1][key]
+		if !ok || value != "" {
+			t.Fatalf("raw buyer JSON %s = %v, present %t; want present empty string", key, value, ok)
 		}
 	}
 }
@@ -265,6 +306,52 @@ func TestBuyers_KeepsLatestNonEmptyName(t *testing.T) {
 	}
 }
 
+func TestBuyers_UsesLatestAttributedPurchaseForUTMAtomically(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{
+			"sales": []map[string]any{
+				{
+					"email":        "d@example.com",
+					"full_name":    "Dave",
+					"created_at":   "2024-01-01",
+					"utm_source":   "newsletter",
+					"utm_medium":   "email",
+					"utm_campaign": "winter",
+					"utm_term":     "discount",
+					"utm_content":  "hero",
+				},
+				{
+					"email":        "d@example.com",
+					"full_name":    "Dave",
+					"created_at":   "2024-03-01",
+					"utm_source":   "linkedin",
+					"utm_campaign": "launch",
+				},
+				{"email": "d@example.com", "full_name": "Dave", "created_at": "2024-05-01"},
+			},
+		})
+	})
+
+	cmd := testutil.Command(newBuyersCmd(), testutil.JSONOutput())
+	cmd.SetArgs([]string{"--product", "p1"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	var resp buyersResponse
+	if err := json.Unmarshal([]byte(out), &resp); err != nil {
+		t.Fatalf("not valid JSON: %v\n%s", err, out)
+	}
+	if len(resp.Buyers) != 1 {
+		t.Fatalf("expected 1 buyer, got %+v", resp.Buyers)
+	}
+	got := resp.Buyers[0]
+	if got.LastPurchaseDate != "2024-05-01" {
+		t.Fatalf("got last purchase %q, want latest sale 2024-05-01", got.LastPurchaseDate)
+	}
+	if got.UTMSource != "linkedin" || got.UTMMedium != "" || got.UTMCampaign != "launch" || got.UTMTerm != "" || got.UTMContent != "" {
+		t.Fatalf("UTM fields = %+v, want latest attributed purchase fields without mixing older values", got)
+	}
+}
+
 func TestBuyers_SkipsRowsWithoutEmail(t *testing.T) {
 	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
 		testutil.JSON(t, w, map[string]any{
@@ -335,7 +422,16 @@ func TestBuyers_CSVOutput(t *testing.T) {
 	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
 		testutil.JSON(t, w, map[string]any{
 			"sales": []map[string]any{
-				{"email": "a@example.com", "full_name": "Alice, Jr", "created_at": "2024-03-01"},
+				{
+					"email":        "a@example.com",
+					"full_name":    "Alice, Jr",
+					"created_at":   "2024-03-01",
+					"utm_source":   "newsletter",
+					"utm_medium":   "email",
+					"utm_campaign": "launch",
+					"utm_term":     "buyers",
+					"utm_content":  "header",
+				},
 				{"email": "a@example.com", "full_name": "Alice, Jr", "created_at": "2024-01-01"},
 				{"email": "b@example.com", "full_name": "Bob", "created_at": "2024-02-01"},
 			},
@@ -348,9 +444,9 @@ func TestBuyers_CSVOutput(t *testing.T) {
 
 	records := readCSVRecords(t, out)
 	want := [][]string{
-		{"email", "name", "purchase_count", "last_purchase_date"},
-		{"a@example.com", "Alice, Jr", "2", "2024-03-01"},
-		{"b@example.com", "Bob", "1", "2024-02-01"},
+		{"email", "name", "purchase_count", "last_purchase_date", "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content"},
+		{"a@example.com", "Alice, Jr", "2", "2024-03-01", "newsletter", "email", "launch", "buyers", "header"},
+		{"b@example.com", "Bob", "1", "2024-02-01", "", "", "", "", ""},
 	}
 	assertCSVRecords(t, records, want)
 }
@@ -365,7 +461,7 @@ func TestBuyers_EmptyCSVWritesHeader(t *testing.T) {
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
 	records := readCSVRecords(t, out)
-	want := [][]string{{"email", "name", "purchase_count", "last_purchase_date"}}
+	want := [][]string{{"email", "name", "purchase_count", "last_purchase_date", "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content"}}
 	assertCSVRecords(t, records, want)
 }
 
@@ -373,7 +469,16 @@ func TestBuyers_Plain(t *testing.T) {
 	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
 		testutil.JSON(t, w, map[string]any{
 			"sales": []map[string]any{
-				{"email": "a@example.com", "full_name": "Alice", "created_at": "2024-03-01"},
+				{
+					"email":        "a@example.com",
+					"full_name":    "Alice",
+					"created_at":   "2024-03-01",
+					"utm_source":   "newsletter",
+					"utm_medium":   "email",
+					"utm_campaign": "launch",
+					"utm_term":     "buyers",
+					"utm_content":  "header",
+				},
 			},
 		})
 	})
@@ -382,7 +487,7 @@ func TestBuyers_Plain(t *testing.T) {
 	cmd.SetArgs([]string{"--product", "p1"})
 	out := strings.TrimSpace(testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) }))
 
-	want := "a@example.com\tAlice\t1\t2024-03-01"
+	want := "a@example.com\tAlice\t1\t2024-03-01\tnewsletter\temail\tlaunch\tbuyers\theader"
 	if out != want {
 		t.Fatalf("got plain output %q, want %q", out, want)
 	}
@@ -392,7 +497,16 @@ func TestBuyers_Table(t *testing.T) {
 	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
 		testutil.JSON(t, w, map[string]any{
 			"sales": []map[string]any{
-				{"email": "a@example.com", "full_name": "Alice", "created_at": "2024-03-01"},
+				{
+					"email":        "a@example.com",
+					"full_name":    "Alice",
+					"created_at":   "2024-03-01",
+					"utm_source":   "newsletter",
+					"utm_medium":   "email",
+					"utm_campaign": "launch",
+					"utm_term":     "buyers",
+					"utm_content":  "header",
+				},
 			},
 		})
 	})
@@ -404,6 +518,11 @@ func TestBuyers_Table(t *testing.T) {
 	for _, want := range []string{"EMAIL", "NAME", "PURCHASES", "LAST PURCHASE", "a@example.com", "Alice", "2024-03-01"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("missing %q in table output %q", want, out)
+		}
+	}
+	for _, notWant := range []string{"UTM", "newsletter", "launch"} {
+		if strings.Contains(out, notWant) {
+			t.Fatalf("table output should stay four columns, but found %q in %q", notWant, out)
 		}
 	}
 }

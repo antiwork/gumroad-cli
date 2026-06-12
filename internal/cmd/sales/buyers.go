@@ -18,9 +18,14 @@ import (
 )
 
 type buyersSaleItem struct {
-	Email     string `json:"email"`
-	FullName  string `json:"full_name"`
-	CreatedAt string `json:"created_at"`
+	Email       string `json:"email"`
+	FullName    string `json:"full_name"`
+	CreatedAt   string `json:"created_at"`
+	UTMSource   string `json:"utm_source"`
+	UTMMedium   string `json:"utm_medium"`
+	UTMCampaign string `json:"utm_campaign"`
+	UTMTerm     string `json:"utm_term"`
+	UTMContent  string `json:"utm_content"`
 }
 
 type buyersSalesPage struct {
@@ -34,6 +39,11 @@ type buyer struct {
 	Name             string `json:"name"`
 	PurchaseCount    int    `json:"purchase_count"`
 	LastPurchaseDate string `json:"last_purchase_date"`
+	UTMSource        string `json:"utm_source"`
+	UTMMedium        string `json:"utm_medium"`
+	UTMCampaign      string `json:"utm_campaign"`
+	UTMTerm          string `json:"utm_term"`
+	UTMContent       string `json:"utm_content"`
 }
 
 type buyersResponse struct {
@@ -42,6 +52,20 @@ type buyersResponse struct {
 }
 
 func (b buyer) fields() []string {
+	return []string{
+		b.Email,
+		b.Name,
+		strconv.Itoa(b.PurchaseCount),
+		b.LastPurchaseDate,
+		b.UTMSource,
+		b.UTMMedium,
+		b.UTMCampaign,
+		b.UTMTerm,
+		b.UTMContent,
+	}
+}
+
+func (b buyer) tableFields() []string {
 	return []string{b.Email, b.Name, strconv.Itoa(b.PurchaseCount), b.LastPurchaseDate}
 }
 
@@ -58,8 +82,13 @@ func newBuyersCmd() *cobra.Command {
 
 Buyers are deduplicated by email and aggregated across every page, so a buyer
 who purchased more than once appears a single time with a purchase count and
-their most recent purchase date. Pass --product more than once to union buyers
-across a relaunched listing's old and new IDs and dedupe them in one shot.`,
+their most recent purchase date. UTM fields in JSON, CSV, and plain output come
+from the buyer's most recent attributed purchase, and stay empty when no
+purchase came through a UTM link. Use gumroad sales export for the full per-sale
+web CSV by email.
+
+Pass --product more than once to union buyers across a relaunched listing's old
+and new IDs and dedupe them in one shot.`,
 		Example: `  gumroad sales buyers --product <id>
   gumroad sales buyers --product <old-id> --product <new-id>
   gumroad sales buyers --product <id> --after 2024-01-01 --csv
@@ -173,6 +202,13 @@ type buyerAggregate struct {
 	nameDate         string
 	count            int
 	lastPurchaseDate string
+	utmSource        string
+	utmMedium        string
+	utmCampaign      string
+	utmTerm          string
+	utmContent       string
+	utmDate          string
+	utmCaptured      bool
 }
 
 func newBuyerIndex() *buyerIndex {
@@ -202,6 +238,27 @@ func (i *buyerIndex) add(sale buyersSaleItem) {
 		aggregate.name = name
 		aggregate.nameDate = sale.CreatedAt
 	}
+
+	utmSource, utmMedium, utmCampaign, utmTerm, utmContent, hasUTM := sale.utmFields()
+	if hasUTM && (!aggregate.utmCaptured || sale.CreatedAt > aggregate.utmDate) {
+		aggregate.utmSource = utmSource
+		aggregate.utmMedium = utmMedium
+		aggregate.utmCampaign = utmCampaign
+		aggregate.utmTerm = utmTerm
+		aggregate.utmContent = utmContent
+		aggregate.utmDate = sale.CreatedAt
+		aggregate.utmCaptured = true
+	}
+}
+
+func (s buyersSaleItem) utmFields() (source, medium, campaign, term, content string, ok bool) {
+	source = strings.TrimSpace(s.UTMSource)
+	medium = strings.TrimSpace(s.UTMMedium)
+	campaign = strings.TrimSpace(s.UTMCampaign)
+	term = strings.TrimSpace(s.UTMTerm)
+	content = strings.TrimSpace(s.UTMContent)
+	ok = source != "" || medium != "" || campaign != "" || term != "" || content != ""
+	return source, medium, campaign, term, content, ok
 }
 
 func (i *buyerIndex) sorted() []buyer {
@@ -212,6 +269,11 @@ func (i *buyerIndex) sorted() []buyer {
 			Name:             aggregate.name,
 			PurchaseCount:    aggregate.count,
 			LastPurchaseDate: aggregate.lastPurchaseDate,
+			UTMSource:        aggregate.utmSource,
+			UTMMedium:        aggregate.utmMedium,
+			UTMCampaign:      aggregate.utmCampaign,
+			UTMTerm:          aggregate.utmTerm,
+			UTMContent:       aggregate.utmContent,
 		})
 	}
 
@@ -252,7 +314,17 @@ func printBuyersJSON(opts cmdutil.Options, buyers []buyer) error {
 	return output.PrintJSON(opts.Out(), data, opts.JQExpr)
 }
 
-var buyersCSVHeader = []string{"email", "name", "purchase_count", "last_purchase_date"}
+var buyersCSVHeader = []string{
+	"email",
+	"name",
+	"purchase_count",
+	"last_purchase_date",
+	"utm_source",
+	"utm_medium",
+	"utm_campaign",
+	"utm_term",
+	"utm_content",
+}
 
 func writeBuyersCSV(w io.Writer, buyers []buyer) error {
 	cw := csv.NewWriter(w)
@@ -279,7 +351,7 @@ func writeBuyersPlain(w io.Writer, buyers []buyer) error {
 func writeBuyersTable(w io.Writer, style output.Styler, buyers []buyer) error {
 	tbl := output.NewStyledTable(style, "EMAIL", "NAME", "PURCHASES", "LAST PURCHASE")
 	for _, b := range buyers {
-		tbl.AddRow(b.fields()...)
+		tbl.AddRow(b.tableFields()...)
 	}
 	return tbl.Render(w)
 }
