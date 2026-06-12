@@ -92,12 +92,25 @@ func TestBuyers_AggregatesAndDedupesAcrossPages(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &raw); err != nil {
 		t.Fatalf("not valid raw JSON: %v\n%s", err, out)
 	}
+	bob, ok := rawBuyerByEmail(raw.Buyers, "b@example.com")
+	if !ok {
+		t.Fatalf("raw buyer JSON missing b@example.com: %+v", raw.Buyers)
+	}
 	for _, key := range []string{"utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content"} {
-		value, ok := raw.Buyers[1][key]
+		value, ok := bob[key]
 		if !ok || value != "" {
 			t.Fatalf("raw buyer JSON %s = %v, present %t; want present empty string", key, value, ok)
 		}
 	}
+}
+
+func rawBuyerByEmail(buyers []map[string]any, email string) (map[string]any, bool) {
+	for _, buyer := range buyers {
+		if buyer["email"] == email {
+			return buyer, true
+		}
+	}
+	return nil, false
 }
 
 func TestBuyers_SortsByLastPurchaseDateDescendingThenEmail(t *testing.T) {
@@ -349,6 +362,45 @@ func TestBuyers_UsesLatestAttributedPurchaseForUTMAtomically(t *testing.T) {
 	}
 	if got.UTMSource != "linkedin" || got.UTMMedium != "" || got.UTMCampaign != "launch" || got.UTMTerm != "" || got.UTMContent != "" {
 		t.Fatalf("UTM fields = %+v, want latest attributed purchase fields without mixing older values", got)
+	}
+}
+
+func TestBuyers_SameDateUTMTieKeepsFirstSeen(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{
+			"sales": []map[string]any{
+				{
+					"email":        "tie@example.com",
+					"full_name":    "Tie",
+					"created_at":   "2024-03-01",
+					"utm_source":   "first",
+					"utm_campaign": "kept",
+				},
+				{
+					"email":        "tie@example.com",
+					"full_name":    "Tie",
+					"created_at":   "2024-03-01",
+					"utm_source":   "second",
+					"utm_campaign": "ignored",
+				},
+			},
+		})
+	})
+
+	cmd := testutil.Command(newBuyersCmd(), testutil.JSONOutput())
+	cmd.SetArgs([]string{"--product", "p1"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	var resp buyersResponse
+	if err := json.Unmarshal([]byte(out), &resp); err != nil {
+		t.Fatalf("not valid JSON: %v\n%s", err, out)
+	}
+	if len(resp.Buyers) != 1 {
+		t.Fatalf("expected 1 buyer, got %+v", resp.Buyers)
+	}
+	got := resp.Buyers[0]
+	if got.UTMSource != "first" || got.UTMCampaign != "kept" {
+		t.Fatalf("UTM fields = %+v, want first same-date attributed sale", got)
 	}
 }
 

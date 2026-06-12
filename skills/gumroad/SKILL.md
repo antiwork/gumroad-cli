@@ -342,7 +342,8 @@ gumroad sales list --after 2024-01-01 --before 2024-01-31 --csv --no-input
 gumroad sales list --json --jq '.sales[] | select(.email == "user@example.com")' --no-input
 
 # Deduplicated buyer list for one or more products.
-# JSON/CSV/plain include buyer-level last-touch UTM fields; use sales export for the full per-sale web CSV.
+# JSON/CSV/plain include buyer-level last-touch UTM fields; same-timestamp ties keep the first API result.
+# Use sales export for the full per-sale web CSV.
 gumroad sales buyers --product <id> --json --no-input
 gumroad sales buyers --product <old-id> --product <new-id> --json --no-input
 gumroad sales buyers --product <id> --after 2024-01-01 --csv --no-input

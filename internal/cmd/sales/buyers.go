@@ -84,8 +84,9 @@ Buyers are deduplicated by email and aggregated across every page, so a buyer
 who purchased more than once appears a single time with a purchase count and
 their most recent purchase date. UTM fields in JSON, CSV, and plain output come
 from the buyer's most recent attributed purchase, and stay empty when no
-purchase came through a UTM link. Use gumroad sales export for the full per-sale
-web CSV by email.
+purchase came through a UTM link. If attributed purchases have the same
+timestamp, the first sale returned by the API wins. Use gumroad sales export for
+the full per-sale web CSV by email.
 
 Pass --product more than once to union buyers across a relaunched listing's old
 and new IDs and dedupe them in one shot.`,
