@@ -439,13 +439,16 @@ gumroad offer-codes list --product <id> --json --no-input
 gumroad offer-codes create --product <id> --name SAVE10 --percent-off 10 --json --no-input
 gumroad offer-codes create --product <id> --name FLAT5 --amount 5.00 --json --no-input
 
+# Conditional discount: require a minimum order total (e.g. spend $100 -> 10% off)
+gumroad offer-codes create --product <id> --name SUMMER --percent-off 10 --minimum-amount 100.00 --json --no-input
+
 # View / update / delete
 gumroad offer-codes view <code_id> --product <id> --json --no-input
 gumroad offer-codes update <code_id> --product <id> --max-purchase-count 100 --json --no-input
 gumroad offer-codes delete <code_id> --product <id> --yes --json --no-input
 ```
 
-**Create flags:** `--product` (required), `--name` (required), `--percent-off` OR `--amount`, `--max-purchase-count`, `--universal`.
+**Create flags:** `--product` (required), `--name` (required), `--percent-off` OR `--amount`, `--minimum-amount` (minimum order total before the discount applies, e.g. `100.00`), `--max-purchase-count`, `--universal`.
 
 ### variant-categories — Manage variant categories
 

@@ -592,6 +592,114 @@ func TestCreate_MaxPurchaseCountZero(t *testing.T) {
 	}
 }
 
+func TestCreate_MinimumAmountWithPercentOff(t *testing.T) {
+	var gotMinimum, gotAmountOff, gotOfferType string
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			t.Fatalf("ParseForm failed: %v", err)
+		}
+		gotMinimum = r.PostForm.Get("minimum_amount_cents")
+		gotAmountOff = r.PostForm.Get("amount_off")
+		gotOfferType = r.PostForm.Get("offer_type")
+		testutil.JSON(t, w, map[string]any{"offer_code": map[string]any{"id": "oc1", "name": "SUMMER"}})
+	})
+
+	cmd := newCreateCmd()
+	cmd.SetArgs([]string{"--product", "p1", "--name", "SUMMER", "--percent-off", "10", "--minimum-amount", "100.00"})
+	testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	if gotMinimum != "10000" {
+		t.Errorf("got minimum_amount_cents=%q, want 10000", gotMinimum)
+	}
+	if gotAmountOff != "10" {
+		t.Errorf("got amount_off=%q, want 10", gotAmountOff)
+	}
+	if gotOfferType != "percent" {
+		t.Errorf("got offer_type=%q, want percent", gotOfferType)
+	}
+}
+
+func TestCreate_MinimumAmountWithFlatAmount(t *testing.T) {
+	var gotMinimum string
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			t.Fatalf("ParseForm failed: %v", err)
+		}
+		gotMinimum = r.PostForm.Get("minimum_amount_cents")
+		testutil.JSON(t, w, map[string]any{"offer_code": map[string]any{"id": "oc1", "name": "FLAT5"}})
+	})
+
+	cmd := newCreateCmd()
+	cmd.SetArgs([]string{"--product", "p1", "--name", "FLAT5", "--amount", "5", "--minimum-amount", "50"})
+	testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	if gotMinimum != "5000" {
+		t.Errorf("got minimum_amount_cents=%q, want 5000", gotMinimum)
+	}
+}
+
+func TestCreate_NoMinimumAmountOmitsParam(t *testing.T) {
+	var minimumSent bool
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			t.Fatalf("ParseForm failed: %v", err)
+		}
+		_, minimumSent = r.PostForm["minimum_amount_cents"]
+		testutil.JSON(t, w, map[string]any{"offer_code": map[string]any{"id": "oc1", "name": "X"}})
+	})
+
+	cmd := newCreateCmd()
+	cmd.SetArgs([]string{"--product", "p1", "--name", "X", "--percent-off", "10"})
+	testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	if minimumSent {
+		t.Error("minimum_amount_cents should not be sent when --minimum-amount is omitted")
+	}
+}
+
+func TestCreate_MinimumAmountZeroRejected(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Error("should not reach API")
+	})
+
+	cmd := newCreateCmd()
+	cmd.SetArgs([]string{"--product", "p1", "--name", "X", "--percent-off", "10", "--minimum-amount", "0"})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "--minimum-amount must be greater than 0") {
+		t.Fatalf("expected minimum amount validation error, got: %v", err)
+	}
+}
+
+func TestCreate_MinimumAmountNegativeRejected(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Error("should not reach API")
+	})
+
+	cmd := newCreateCmd()
+	cmd.SetArgs([]string{"--product", "p1", "--name", "X", "--percent-off", "10", "--minimum-amount", "-5"})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "--minimum-amount cannot be negative") {
+		t.Fatalf("expected minimum amount negative error, got: %v", err)
+	}
+	var usageErr *cmdutil.UsageError
+	if !errors.As(err, &usageErr) {
+		t.Fatalf("expected *cmdutil.UsageError, got %T", err)
+	}
+}
+
+func TestCreate_MinimumAmountInvalidInput(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Error("should not reach API")
+	})
+
+	cmd := newCreateCmd()
+	cmd.SetArgs([]string{"--product", "p1", "--name", "X", "--percent-off", "10", "--minimum-amount", "abc"})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "not a valid minimum amount") {
+		t.Fatalf("expected minimum amount validation error, got: %v", err)
+	}
+}
+
 func TestCreate_JSON(t *testing.T) {
 	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
 		testutil.JSON(t, w, map[string]any{"offer_code": map[string]any{"id": "oc1"}})
