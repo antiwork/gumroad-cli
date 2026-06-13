@@ -17,7 +17,7 @@ type createOfferCodeResponse struct {
 }
 
 func newCreateCmd() *cobra.Command {
-	var product, name, amount string
+	var product, name, amount, minimumAmount string
 	var percentOff, maxPurchaseCount int
 	var universal bool
 
@@ -27,7 +27,10 @@ func newCreateCmd() *cobra.Command {
 		Args:  cmdutil.ExactArgs(0),
 		Long: `Create an offer code for a product.
 
-Use either --amount (flat discount) or --percent-off (percentage discount), not both.`,
+Use either --amount (flat discount) or --percent-off (percentage discount), not both.
+
+Use --minimum-amount to require a minimum order total before the discount applies
+(e.g. "spend over $100 to get 10% off").`,
 		RunE: func(c *cobra.Command, args []string) error {
 			if err := cmdutil.RequirePercentFlag(c, "percent-off", percentOff); err != nil {
 				return err
@@ -46,6 +49,7 @@ Use either --amount (flat discount) or --percent-off (percentage discount), not 
 			hasAmount := flags.Changed("amount")
 			hasPercentOff := flags.Changed("percent-off")
 			hasMaxPurchaseCount := flags.Changed("max-purchase-count")
+			hasMinimumAmount := flags.Changed("minimum-amount")
 
 			if hasAmount && hasPercentOff {
 				return cmdutil.UsageErrorf(c, "flags --amount and --percent-off cannot be used together")
@@ -73,6 +77,16 @@ Use either --amount (flat discount) or --percent-off (percentage discount), not 
 			if hasMaxPurchaseCount {
 				params.Set("max_purchase_count", strconv.Itoa(maxPurchaseCount))
 			}
+			if hasMinimumAmount {
+				cents, err := cmdutil.ParseMoney("minimum-amount", minimumAmount, "minimum amount", "")
+				if err != nil {
+					return cmdutil.UsageErrorf(c, "%s", err.Error())
+				}
+				if cents <= 0 {
+					return cmdutil.UsageErrorf(c, "--minimum-amount must be greater than 0")
+				}
+				params.Set("minimum_amount_cents", strconv.Itoa(cents))
+			}
 			if universal {
 				params.Set("universal", "true")
 			}
@@ -98,6 +112,7 @@ Use either --amount (flat discount) or --percent-off (percentage discount), not 
 	cmd.Flags().StringVar(&product, "product", "", "Product ID (required)")
 	cmd.Flags().StringVar(&name, "name", "", "Offer code name (required)")
 	cmd.Flags().StringVar(&amount, "amount", "", "Flat discount amount (e.g. 5, 5.00)")
+	cmd.Flags().StringVar(&minimumAmount, "minimum-amount", "", "Minimum order total required for the discount to apply (e.g. 100, 100.00)")
 	cmd.Flags().IntVar(&percentOff, "percent-off", 0, "Percentage discount")
 	cmd.Flags().IntVar(&maxPurchaseCount, "max-purchase-count", 0, "Maximum number of uses")
 	cmd.Flags().BoolVar(&universal, "universal", false, "Universal offer code")
