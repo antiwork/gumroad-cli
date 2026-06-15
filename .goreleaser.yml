@@ -30,20 +30,3 @@ archives:
 
 checksum:
   name_template: "checksums.txt"
-
-brews:
-  - name: gumroad
-    repository:
-      owner: antiwork
-      name: homebrew-cli
-      branch: main
-      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
-    directory: Formula
-    homepage: "https://github.com/antiwork/gumroad-cli"
-    description: "Official CLI for the Gumroad API — built for humans and AI agents"
-    license: "MIT"
-    install: |
-      bin.install "gumroad"
-      man1.install Dir["man/*.1"]
-    test: |
-      assert_match version.to_s, shell_output("#{bin}/gumroad --version")
