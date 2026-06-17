@@ -178,7 +178,7 @@ func bankAccountFields(ba *bankAccount) (bankNumber, accountHolder, accountType,
 	if ba == nil {
 		return "", "", "", ""
 	}
-	return ba.BankNumber, ba.AccountHolderFullName, ba.AccountType, ba.Currency
+	return ba.BankNumber, ba.AccountHolderFullName, ba.AccountType, strings.ToUpper(ba.Currency)
 }
 
 func writePayoutsTable(w io.Writer, style output.Styler, payouts []payout) error {

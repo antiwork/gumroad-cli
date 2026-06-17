@@ -33,7 +33,7 @@ type userInfo struct {
 	Social                         socialInfo        `json:"social"`
 	Payouts                        payoutsInfo       `json:"payouts"`
 	Stats                          statsInfo         `json:"stats"`
-	Stripe                         stripeInfo        `json:"stripe"`
+	Stripe                         *stripeInfo       `json:"stripe"`
 	AdminLinks                     map[string]string `json:"admin_links"`
 }
 
@@ -151,6 +151,11 @@ server resolves by --user-id.`,
 
 func renderInfo(opts cmdutil.Options, identifier, userID string, info userInfo) error {
 	if opts.PlainOutput {
+		stripeConnected, stripeAccountID := "", ""
+		if info.Stripe != nil {
+			stripeConnected = strconv.FormatBool(info.Stripe.Connected)
+			stripeAccountID = info.Stripe.StripeConnectAccountID
+		}
 		return output.PrintPlain(opts.Out(), [][]string{{
 			fallback(info.Email, identifier),
 			info.Name,
@@ -163,8 +168,8 @@ func renderInfo(opts cmdutil.Options, identifier, userID string, info userInfo) 
 			strconv.Itoa(info.Stats.SalesCount),
 			info.Stats.TotalEarningsFormatted,
 			info.CreatedAt,
-			strconv.FormatBool(info.Stripe.Connected),
-			info.Stripe.StripeConnectAccountID,
+			stripeConnected,
+			stripeAccountID,
 		}})
 	}
 
@@ -223,8 +228,10 @@ func renderInfo(opts cmdutil.Options, identifier, userID string, info userInfo) 
 	fmt.Fprintln(&b)
 	writePayouts(&b, info.Payouts)
 
-	fmt.Fprintln(&b)
-	writeStripe(&b, info.Stripe)
+	if info.Stripe != nil {
+		fmt.Fprintln(&b)
+		writeStripe(&b, *info.Stripe)
+	}
 
 	fmt.Fprintln(&b)
 	writeStats(&b, info.Stats)

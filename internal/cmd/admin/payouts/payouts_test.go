@@ -296,7 +296,7 @@ func TestListPlainOutputCarriesStripeTransferAndBankFields(t *testing.T) {
 	cmd.SetArgs([]string{"--email", "seller@example.com"})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
-	want := "seller@example.com\tpay_123\t5000 USD cents\tcompleted\t2026-04-24T12:00:00Z\tstripe\t******6789\t2026-04-30\t$25.00\tManual review\tpo_1Test\t110000000\tStripe Test Account\tchecking\tusd"
+	want := "seller@example.com\tpay_123\t5000 USD cents\tcompleted\t2026-04-24T12:00:00Z\tstripe\t******6789\t2026-04-30\t$25.00\tManual review\tpo_1Test\t110000000\tStripe Test Account\tchecking\tUSD"
 	if strings.TrimSpace(out) != want {
 		t.Fatalf("unexpected plain output: %q", out)
 	}

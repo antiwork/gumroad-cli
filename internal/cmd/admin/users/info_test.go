@@ -468,7 +468,7 @@ func TestInfoPlainOutput(t *testing.T) {
 	cmd.SetArgs([]string{"--email", "seller@example.com"})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
-	want := "seller@example.com\tSeller One\tsellerone\tCompliant\ttrue\tfalse\tfalse\t2026-05-15\t42\t$1,234.56\t2024-01-01T00:00:00Z\tfalse"
+	want := "seller@example.com\tSeller One\tsellerone\tCompliant\ttrue\tfalse\tfalse\t2026-05-15\t42\t$1,234.56\t2024-01-01T00:00:00Z"
 	if strings.TrimSpace(out) != want {
 		t.Fatalf("unexpected plain output: %q", out)
 	}
@@ -622,6 +622,28 @@ func TestInfoDegradesToVerificationErrorWhenStripeCallFailed(t *testing.T) {
 	}
 	if strings.Contains(out, "charges enabled:") {
 		t.Errorf("degraded verification must not print Stripe flags: %q", out)
+	}
+}
+
+func TestInfoOmitsStripeSectionWhenServerOmitsField(t *testing.T) {
+	payload := sampleInfoPayload()
+	if _, ok := payload["user"].(map[string]any)["stripe"]; ok {
+		t.Fatal("sample payload must not include a stripe key for this test")
+	}
+
+	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, payload)
+	})
+
+	cmd := testutil.Command(newInfoCmd(), testutil.Quiet(false))
+	cmd.SetArgs([]string{"--email", "seller@example.com"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	if strings.Contains(out, "Stripe:") {
+		t.Errorf("Stripe section must be omitted when the server omits the stripe field (e.g. CLI ahead of server): %q", out)
+	}
+	if !strings.Contains(out, "Sales: 42") {
+		t.Errorf("downstream sections must still render: %q", out)
 	}
 }
 
