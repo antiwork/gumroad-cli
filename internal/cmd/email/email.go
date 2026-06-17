@@ -13,7 +13,7 @@ const (
 	emailStateDraft     = "draft"
 )
 
-type emailInstallment struct {
+type emailRecord struct {
 	ID              string `json:"id"`
 	Subject         string `json:"subject"`
 	Message         string `json:"message"`
@@ -81,7 +81,7 @@ func emailBool(value bool) string {
 	return "no"
 }
 
-func emailDisplayDate(item emailInstallment) string {
+func emailDisplayDate(item emailRecord) string {
 	if item.State == emailStateScheduled && item.ScheduledAt != "" {
 		return item.ScheduledAt
 	}

@@ -11,7 +11,7 @@ import (
 )
 
 type createEmailResponse struct {
-	Installment emailInstallment `json:"installment"`
+	Email emailRecord `json:"email"`
 }
 
 func newCreateCmd() *cobra.Command {
@@ -78,9 +78,9 @@ to publish and send the email to its audience immediately.`,
 			}
 
 			return cmdutil.RunRequestDecoded[createEmailResponse](opts,
-				"Creating email...", "POST", cmdutil.JoinPath("installments"), params,
+				"Creating email...", "POST", cmdutil.JoinPath("emails"), params,
 				func(resp createEmailResponse) error {
-					item := resp.Installment
+					item := resp.Email
 					if opts.PlainOutput {
 						return output.PrintPlain(opts.Out(), [][]string{{item.ID, item.Subject, item.State}})
 					}

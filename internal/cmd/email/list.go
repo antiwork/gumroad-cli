@@ -13,10 +13,10 @@ import (
 )
 
 type emailListResponse struct {
-	Success      bool               `json:"success"`
-	Installments []emailInstallment `json:"installments"`
-	NextPageKey  string             `json:"next_page_key,omitempty"`
-	NextPageURL  string             `json:"next_page_url,omitempty"`
+	Success     bool          `json:"success"`
+	Emails      []emailRecord `json:"emails"`
+	NextPageKey string        `json:"next_page_key,omitempty"`
+	NextPageURL string        `json:"next_page_url,omitempty"`
 }
 
 func newListCmd() *cobra.Command {
@@ -31,7 +31,7 @@ func newListCmd() *cobra.Command {
 		Example: `  gumroad email list
   gumroad email list --state draft
   gumroad email list --state published --all
-  gumroad email list --json --jq '.installments[0].id'`,
+  gumroad email list --json --jq '.emails[0].id'`,
 		RunE: func(c *cobra.Command, args []string) error {
 			if state != "" && !emailValidValue(state, emailValidStateValues()) {
 				return cmdutil.UsageErrorf(c, "--state must be one of: %s", strings.Join(emailValidStateValues(), ", "))
@@ -50,7 +50,7 @@ func newListCmd() *cobra.Command {
 				return streamEmailListAll(opts, params)
 			}
 
-			return cmdutil.RunRequestDecoded[emailListResponse](opts, "Fetching emails...", "GET", cmdutil.JoinPath("installments"), params, func(resp emailListResponse) error {
+			return cmdutil.RunRequestDecoded[emailListResponse](opts, "Fetching emails...", "GET", cmdutil.JoinPath("emails"), params, func(resp emailListResponse) error {
 				return renderEmailList(opts, resp, state)
 			})
 		},
@@ -65,18 +65,18 @@ func newListCmd() *cobra.Command {
 }
 
 func renderEmailList(opts cmdutil.Options, resp emailListResponse, state string) error {
-	if len(resp.Installments) == 0 {
+	if len(resp.Emails) == 0 {
 		return renderEmptyEmailList(opts, state, resp.NextPageKey)
 	}
 
 	if opts.PlainOutput {
-		return writeEmailPlain(opts.Out(), resp.Installments)
+		return writeEmailPlain(opts.Out(), resp.Emails)
 	}
 
 	style := opts.Style()
 	hint := emailPaginationHint(state, resp.NextPageKey)
 	return output.WithPager(opts.Out(), opts.Err(), func(w io.Writer) error {
-		if err := writeEmailTable(w, style, resp.Installments); err != nil {
+		if err := writeEmailTable(w, style, resp.Emails); err != nil {
 			return err
 		}
 		if resp.NextPageKey != "" && !opts.Quiet {
@@ -105,32 +105,32 @@ func streamEmailListAll(opts cmdutil.Options, params url.Values) error {
 	}
 
 	return cmdutil.StreamPaginatedPages(opts, cmdutil.PaginatedPageOutputConfig[emailListResponse]{
-		JSONKey:      "installments",
+		JSONKey:      "emails",
 		EmptyMessage: "No emails found.",
 		Walk:         walkPages,
 		HasItems:     hasEmails,
 		WriteItems:   writeEmailItems,
 		WritePlainPage: func(w io.Writer, page emailListResponse) error {
-			return writeEmailPlain(w, page.Installments)
+			return writeEmailPlain(w, page.Emails)
 		},
 		WriteTablePage: func(w io.Writer, page emailListResponse) error {
-			return writeEmailTable(w, style, page.Installments)
+			return writeEmailTable(w, style, page.Emails)
 		},
 	})
 }
 
 func walkEmailPages(opts cmdutil.Options, client *api.Client, params url.Values, visit cmdutil.PageVisitor[emailListResponse]) error {
-	return cmdutil.WalkPagesWithDelay[emailListResponse](opts.Context, opts.PageDelay, client, cmdutil.JoinPath("installments"), params, func(page emailListResponse) string {
+	return cmdutil.WalkPagesWithDelay[emailListResponse](opts.Context, opts.PageDelay, client, cmdutil.JoinPath("emails"), params, func(page emailListResponse) string {
 		return page.NextPageKey
 	}, visit)
 }
 
 func hasEmails(page emailListResponse) bool {
-	return len(page.Installments) > 0
+	return len(page.Emails) > 0
 }
 
 func writeEmailItems(page emailListResponse, writeItem func(any) error) error {
-	for _, item := range page.Installments {
+	for _, item := range page.Emails {
 		if err := writeItem(item); err != nil {
 			return err
 		}
@@ -138,7 +138,7 @@ func writeEmailItems(page emailListResponse, writeItem func(any) error) error {
 	return nil
 }
 
-func writeEmailPlain(w io.Writer, items []emailInstallment) error {
+func writeEmailPlain(w io.Writer, items []emailRecord) error {
 	var rows [][]string
 	for _, item := range items {
 		rows = append(rows, []string{item.ID, item.Subject, item.State, item.AudienceType, emailDisplayDate(item)})
@@ -146,7 +146,7 @@ func writeEmailPlain(w io.Writer, items []emailInstallment) error {
 	return output.PrintPlain(w, rows)
 }
 
-func writeEmailTable(w io.Writer, style output.Styler, items []emailInstallment) error {
+func writeEmailTable(w io.Writer, style output.Styler, items []emailRecord) error {
 	tbl := output.NewStyledTable(style, "ID", "SUBJECT", "STATE", "AUDIENCE", "PUBLISHED/SCHEDULED AT")
 	for _, item := range items {
 		tbl.AddRow(item.ID, item.Subject, item.State, item.AudienceType, emailDisplayDate(item))

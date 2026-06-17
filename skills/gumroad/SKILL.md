@@ -62,7 +62,7 @@ Most responses are wrapped in `{"success": true, ...}` with resource-specific ke
 - `sales view` → `.sale`
 - `sales export` → `.status`, `.recipient_email`
 - `sales summary` → `.gross_cents`, `.net_cents`, `.breakdown[]`
-- `email list` → `.installments[]`, `email view/create/send` → `.installment`, `email preview` → `.preview_url`, `email delete` → `.message`
+- `email list` → `.emails[]`, `email view/create/send` → `.email`, `email preview` → `.preview_url`, `email delete` → `.message`
 - `payouts list` → `.payouts[]`, `payouts view/upcoming` → `.payout`
 - `subscribers list` → `.subscribers[]`, `subscribers view` → `.subscriber`
 - `licenses verify` → `.purchase`

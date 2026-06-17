@@ -9,7 +9,7 @@ import (
 )
 
 type viewEmailResponse struct {
-	Installment emailInstallment `json:"installment"`
+	Email emailRecord `json:"email"`
 }
 
 func newViewCmd() *cobra.Command {
@@ -23,14 +23,14 @@ func newViewCmd() *cobra.Command {
 		Args: cmdutil.ExactArgs(1),
 		RunE: func(c *cobra.Command, args []string) error {
 			opts := cmdutil.OptionsFrom(c)
-			return cmdutil.RunRequestDecoded[viewEmailResponse](opts, "Fetching email...", "GET", cmdutil.JoinPath("installments", args[0]), url.Values{}, func(resp viewEmailResponse) error {
-				return renderEmailView(opts, resp.Installment)
+			return cmdutil.RunRequestDecoded[viewEmailResponse](opts, "Fetching email...", "GET", cmdutil.JoinPath("emails", args[0]), url.Values{}, func(resp viewEmailResponse) error {
+				return renderEmailView(opts, resp.Email)
 			})
 		},
 	}
 }
 
-func renderEmailView(opts cmdutil.Options, item emailInstallment) error {
+func renderEmailView(opts cmdutil.Options, item emailRecord) error {
 	if opts.PlainOutput {
 		return output.PrintPlain(opts.Out(), [][]string{{
 			item.ID,

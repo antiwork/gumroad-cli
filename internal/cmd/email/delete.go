@@ -25,7 +25,7 @@ func newDeleteCmd() *cobra.Command {
 				return cmdutil.PrintCancelledAction(opts, "delete email "+args[0], args[0])
 			}
 
-			return cmdutil.RunRequestWithResource(opts, "Deleting email...", "DELETE", cmdutil.JoinPath("installments", args[0]), url.Values{}, args[0], "Email "+args[0]+" deleted.")
+			return cmdutil.RunRequestWithResource(opts, "Deleting email...", "DELETE", cmdutil.JoinPath("emails", args[0]), url.Values{}, args[0], "Email "+args[0]+" deleted.")
 		},
 	}
 }

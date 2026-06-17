@@ -34,7 +34,7 @@ func writeEmailBody(t *testing.T, body string) string {
 	return path
 }
 
-func emailInstallmentPayload(id, subject, state string) map[string]any {
+func emailPayload(id, subject, state string) map[string]any {
 	return map[string]any{
 		"id":               id,
 		"subject":          subject,
@@ -52,8 +52,8 @@ func emailInstallmentPayload(id, subject, state string) map[string]any {
 	}
 }
 
-func completeEmailInstallmentPayload(id, subject, state string) map[string]any {
-	item := emailInstallmentPayload(id, subject, state)
+func completeEmailPayload(id, subject, state string) map[string]any {
+	item := emailPayload(id, subject, state)
 	item["product_id"] = ""
 	item["shown_on_profile"] = false
 	return item
@@ -119,15 +119,15 @@ func TestCreate_DefaultDraftPostsBodyFile(t *testing.T) {
 			t.Fatalf("ParseForm failed: %v", err)
 		}
 		gotForm = r.PostForm
-		testutil.JSON(t, w, map[string]any{"installment": emailInstallmentPayload("email_123", r.PostForm.Get("subject"), "draft")})
+		testutil.JSON(t, w, map[string]any{"email": emailPayload("email_123", r.PostForm.Get("subject"), "draft")})
 	})
 
 	cmd := testutil.Command(newCreateCmd(), testutil.Quiet(false))
 	cmd.SetArgs([]string{"--subject", "Launch", "--body", bodyPath})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
-	if gotMethod != http.MethodPost || gotPath != "/installments" {
-		t.Fatalf("got %s %s, want POST /installments", gotMethod, gotPath)
+	if gotMethod != http.MethodPost || gotPath != "/emails" {
+		t.Fatalf("got %s %s, want POST /emails", gotMethod, gotPath)
 	}
 	if gotForm.Get("subject") != "Launch" {
 		t.Fatalf("subject = %q, want Launch", gotForm.Get("subject"))
@@ -155,7 +155,7 @@ func TestCreate_DraftFalsePublishes(t *testing.T) {
 			t.Fatalf("ParseForm failed: %v", err)
 		}
 		gotPublish = r.PostForm.Get("publish")
-		testutil.JSON(t, w, map[string]any{"installment": emailInstallmentPayload("email_123", "Now", "published")})
+		testutil.JSON(t, w, map[string]any{"email": emailPayload("email_123", "Now", "published")})
 	})
 
 	cmd := testutil.Command(newCreateCmd(), testutil.Yes(true))
@@ -202,7 +202,7 @@ func TestCreate_ProductAudienceSendsLinkID(t *testing.T) {
 			t.Fatalf("ParseForm failed: %v", err)
 		}
 		gotLinkID = r.PostForm.Get("link_id")
-		testutil.JSON(t, w, map[string]any{"installment": emailInstallmentPayload("email_123", "Product update", "draft")})
+		testutil.JSON(t, w, map[string]any{"email": emailPayload("email_123", "Product update", "draft")})
 	})
 
 	cmd := testutil.Command(newCreateCmd())
@@ -242,7 +242,7 @@ func TestCreate_DryRunPrintsRequestWithoutCallingAPI(t *testing.T) {
 	if called {
 		t.Fatal("API was called during dry-run")
 	}
-	for _, want := range []string{"POST", "/installments", "subject: Preview params", "audience: followers", "body: <p>Preview params</p>"} {
+	for _, want := range []string{"POST", "/emails", "subject: Preview params", "audience: followers", "body: <p>Preview params</p>"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("dry-run output missing %q in %q", want, out)
 		}
@@ -264,8 +264,8 @@ func TestPreview_PostsEndpointAndPrintsURL(t *testing.T) {
 	cmd.SetArgs([]string{"email_123"})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
-	if gotMethod != http.MethodPost || gotPath != "/installments/email_123/preview" {
-		t.Fatalf("got %s %s, want POST /installments/email_123/preview", gotMethod, gotPath)
+	if gotMethod != http.MethodPost || gotPath != "/emails/email_123/preview" {
+		t.Fatalf("got %s %s, want POST /emails/email_123/preview", gotMethod, gotPath)
 	}
 	if !strings.Contains(out, "https://example.com/preview/email_123") {
 		t.Fatalf("output missing preview URL: %q", out)
@@ -313,8 +313,8 @@ func TestList_RendersRowsAndSendsStateType(t *testing.T) {
 	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
 		gotQuery = r.URL.Query()
 		testutil.JSON(t, w, map[string]any{
-			"installments": []map[string]any{
-				emailInstallmentPayload("email_123", "Draft note", "draft"),
+			"emails": []map[string]any{
+				emailPayload("email_123", "Draft note", "draft"),
 			},
 		})
 	})
@@ -332,18 +332,18 @@ func TestList_RendersRowsAndSendsStateType(t *testing.T) {
 }
 
 func TestList_PlainOutputRendersRowsWithDisplayDates(t *testing.T) {
-	scheduled := completeEmailInstallmentPayload("email_scheduled", "Scheduled note", "scheduled")
+	scheduled := completeEmailPayload("email_scheduled", "Scheduled note", "scheduled")
 	scheduled["published_at"] = ""
 	scheduled["scheduled_at"] = "2026-06-18T14:00:00Z"
 
-	draft := completeEmailInstallmentPayload("email_draft", "Draft note", "draft")
+	draft := completeEmailPayload("email_draft", "Draft note", "draft")
 	draft["published_at"] = ""
 	draft["scheduled_at"] = ""
 
 	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
 		testutil.JSON(t, w, map[string]any{
-			"installments": []map[string]any{
-				completeEmailInstallmentPayload("email_published", "Published note", "published"),
+			"emails": []map[string]any{
+				completeEmailPayload("email_published", "Published note", "published"),
 				scheduled,
 				draft,
 			},
@@ -368,7 +368,7 @@ func TestList_PlainOutputRendersRowsWithDisplayDates(t *testing.T) {
 func TestList_EmptyRendersEmptyState(t *testing.T) {
 	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
 		testutil.JSON(t, w, map[string]any{
-			"installments": []map[string]any{},
+			"emails": []map[string]any{},
 		})
 	})
 
@@ -384,7 +384,7 @@ func TestList_EmptyRendersEmptyState(t *testing.T) {
 func TestList_EmptyPageRendersPaginationHint(t *testing.T) {
 	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
 		testutil.JSON(t, w, map[string]any{
-			"installments":  []map[string]any{},
+			"emails":        []map[string]any{},
 			"next_page_key": "cursor_2",
 		})
 	})
@@ -422,15 +422,15 @@ func TestList_AllFollowsPageKey(t *testing.T) {
 		switch r.URL.Query().Get("page_key") {
 		case "":
 			testutil.JSON(t, w, map[string]any{
-				"installments": []map[string]any{
-					emailInstallmentPayload("email_1", "First", "draft"),
+				"emails": []map[string]any{
+					emailPayload("email_1", "First", "draft"),
 				},
 				"next_page_key": "cursor_2",
 			})
 		case "cursor_2":
 			testutil.JSON(t, w, map[string]any{
-				"installments": []map[string]any{
-					emailInstallmentPayload("email_2", "Second", "published"),
+				"emails": []map[string]any{
+					emailPayload("email_2", "Second", "published"),
 				},
 			})
 		default:
@@ -460,16 +460,16 @@ func TestList_AllJSONFetchesAllPages(t *testing.T) {
 		switch r.URL.Query().Get("page_key") {
 		case "":
 			testutil.JSON(t, w, map[string]any{
-				"installments": []map[string]any{
-					completeEmailInstallmentPayload("email_1", "First", "draft"),
+				"emails": []map[string]any{
+					completeEmailPayload("email_1", "First", "draft"),
 				},
 				"next_page_key": "cursor_2",
-				"next_page_url": "https://example.com/installments?page_key=cursor_2",
+				"next_page_url": "https://example.com/emails?page_key=cursor_2",
 			})
 		case "cursor_2":
 			testutil.JSON(t, w, map[string]any{
-				"installments": []map[string]any{
-					completeEmailInstallmentPayload("email_2", "Second", "published"),
+				"emails": []map[string]any{
+					completeEmailPayload("email_2", "Second", "published"),
 				},
 			})
 		default:
@@ -482,13 +482,13 @@ func TestList_AllJSONFetchesAllPages(t *testing.T) {
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
 	var resp struct {
-		Installments []map[string]any `json:"installments"`
+		Emails []map[string]any `json:"emails"`
 	}
 	if err := json.Unmarshal([]byte(out), &resp); err != nil {
 		t.Fatalf("not valid JSON: %v\n%s", err, out)
 	}
-	if len(resp.Installments) != 2 {
-		t.Fatalf("got %d installments, want 2", len(resp.Installments))
+	if len(resp.Emails) != 2 {
+		t.Fatalf("got %d emails, want 2", len(resp.Emails))
 	}
 	if requests != 2 {
 		t.Fatalf("got %d requests, want 2", requests)
@@ -498,8 +498,8 @@ func TestList_AllJSONFetchesAllPages(t *testing.T) {
 func TestList_JSONPassesRawResponse(t *testing.T) {
 	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
 		testutil.JSON(t, w, map[string]any{
-			"installments": []map[string]any{
-				emailInstallmentPayload("email_123", "Draft note", "draft"),
+			"emails": []map[string]any{
+				emailPayload("email_123", "Draft note", "draft"),
 			},
 		})
 	})
@@ -512,14 +512,14 @@ func TestList_JSONPassesRawResponse(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &resp); err != nil {
 		t.Fatalf("not valid JSON: %v", err)
 	}
-	if _, ok := resp["installments"]; !ok {
-		t.Fatalf("JSON response missing installments: %q", out)
+	if _, ok := resp["emails"]; !ok {
+		t.Fatalf("JSON response missing emails: %q", out)
 	}
 }
 
 func TestView_RendersFields(t *testing.T) {
 	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
-		testutil.JSON(t, w, map[string]any{"installment": emailInstallmentPayload("email_123", "Launch", "published")})
+		testutil.JSON(t, w, map[string]any{"email": emailPayload("email_123", "Launch", "published")})
 	})
 
 	cmd := testutil.Command(newViewCmd(), testutil.Quiet(false))
@@ -535,7 +535,7 @@ func TestView_RendersFields(t *testing.T) {
 
 func TestView_PlainOutputRendersPublishedFields(t *testing.T) {
 	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
-		testutil.JSON(t, w, map[string]any{"installment": completeEmailInstallmentPayload("email_123", "Launch", "published")})
+		testutil.JSON(t, w, map[string]any{"email": completeEmailPayload("email_123", "Launch", "published")})
 	})
 
 	cmd := testutil.Command(newViewCmd(), testutil.PlainOutput())
@@ -549,7 +549,7 @@ func TestView_PlainOutputRendersPublishedFields(t *testing.T) {
 }
 
 func TestView_DraftOutputRendersNoSendEmailsAndOmitsNullFields(t *testing.T) {
-	draft := completeEmailInstallmentPayload("email_draft", "Draft update", "draft")
+	draft := completeEmailPayload("email_draft", "Draft update", "draft")
 	draft["audience_type"] = "followers"
 	draft["published_at"] = nil
 	draft["scheduled_at"] = nil
@@ -558,7 +558,7 @@ func TestView_DraftOutputRendersNoSendEmailsAndOmitsNullFields(t *testing.T) {
 	draft["recipients_count"] = nil
 
 	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
-		testutil.JSON(t, w, map[string]any{"installment": draft})
+		testutil.JSON(t, w, map[string]any{"email": draft})
 	})
 
 	cmd := testutil.Command(newViewCmd(), testutil.Quiet(false))
@@ -579,7 +579,7 @@ func TestView_DraftOutputRendersNoSendEmailsAndOmitsNullFields(t *testing.T) {
 
 func TestView_JSONPassesRawResponse(t *testing.T) {
 	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
-		testutil.JSON(t, w, map[string]any{"installment": emailInstallmentPayload("email_123", "Launch", "published")})
+		testutil.JSON(t, w, map[string]any{"email": emailPayload("email_123", "Launch", "published")})
 	})
 
 	cmd := testutil.Command(newViewCmd(), testutil.JSONOutput())
@@ -590,8 +590,8 @@ func TestView_JSONPassesRawResponse(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &resp); err != nil {
 		t.Fatalf("not valid JSON: %v", err)
 	}
-	if _, ok := resp["installment"]; !ok {
-		t.Fatalf("JSON response missing installment: %q", out)
+	if _, ok := resp["email"]; !ok {
+		t.Fatalf("JSON response missing email: %q", out)
 	}
 }
 
@@ -600,15 +600,15 @@ func TestSend_YesPostsSendEndpoint(t *testing.T) {
 	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
 		gotMethod = r.Method
 		gotPath = r.URL.Path
-		testutil.JSON(t, w, map[string]any{"installment": emailInstallmentPayload("email_123", "Launch", "published")})
+		testutil.JSON(t, w, map[string]any{"email": emailPayload("email_123", "Launch", "published")})
 	})
 
 	cmd := testutil.Command(newSendCmd(), testutil.Yes(true), testutil.Quiet(false))
 	cmd.SetArgs([]string{"email_123"})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
-	if gotMethod != http.MethodPost || gotPath != "/installments/email_123/send" {
-		t.Fatalf("got %s %s, want POST /installments/email_123/send", gotMethod, gotPath)
+	if gotMethod != http.MethodPost || gotPath != "/emails/email_123/send" {
+		t.Fatalf("got %s %s, want POST /emails/email_123/send", gotMethod, gotPath)
 	}
 	if !strings.Contains(out, "Sent email:") || !strings.Contains(out, "published") {
 		t.Fatalf("unexpected send output: %q", out)
@@ -617,7 +617,7 @@ func TestSend_YesPostsSendEndpoint(t *testing.T) {
 
 func TestSend_YesPlainOutputPrintsEmailFields(t *testing.T) {
 	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
-		testutil.JSON(t, w, map[string]any{"installment": completeEmailInstallmentPayload("email_123", "Launch", "published")})
+		testutil.JSON(t, w, map[string]any{"email": completeEmailPayload("email_123", "Launch", "published")})
 	})
 
 	cmd := testutil.Command(newSendCmd(), testutil.Yes(true), testutil.PlainOutput())
@@ -683,8 +683,8 @@ func TestDelete_YesDeletesEndpoint(t *testing.T) {
 	cmd.SetArgs([]string{"email_123"})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
-	if gotMethod != http.MethodDelete || gotPath != "/installments/email_123" {
-		t.Fatalf("got %s %s, want DELETE /installments/email_123", gotMethod, gotPath)
+	if gotMethod != http.MethodDelete || gotPath != "/emails/email_123" {
+		t.Fatalf("got %s %s, want DELETE /emails/email_123", gotMethod, gotPath)
 	}
 	if !strings.Contains(out, "Email email_123 deleted.") {
 		t.Fatalf("unexpected delete output: %q", out)

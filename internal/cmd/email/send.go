@@ -9,7 +9,7 @@ import (
 )
 
 type sendEmailResponse struct {
-	Installment emailInstallment `json:"installment"`
+	Email emailRecord `json:"email"`
 }
 
 func newSendCmd() *cobra.Command {
@@ -30,8 +30,8 @@ func newSendCmd() *cobra.Command {
 				return cmdutil.PrintCancelledAction(opts, "send email "+args[0], args[0])
 			}
 
-			return cmdutil.RunRequestDecoded[sendEmailResponse](opts, "Sending email...", "POST", cmdutil.JoinPath("installments", args[0], "send"), url.Values{}, func(resp sendEmailResponse) error {
-				item := resp.Installment
+			return cmdutil.RunRequestDecoded[sendEmailResponse](opts, "Sending email...", "POST", cmdutil.JoinPath("emails", args[0], "send"), url.Values{}, func(resp sendEmailResponse) error {
+				item := resp.Email
 				if opts.PlainOutput {
 					return output.PrintPlain(opts.Out(), [][]string{{item.ID, item.Subject, item.State}})
 				}

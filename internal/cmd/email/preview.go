@@ -25,7 +25,7 @@ func newPreviewCmd() *cobra.Command {
 		Args: cmdutil.ExactArgs(1),
 		RunE: func(c *cobra.Command, args []string) error {
 			opts := cmdutil.OptionsFrom(c)
-			return cmdutil.RunRequestDecoded[previewEmailResponse](opts, "Sending preview...", "POST", cmdutil.JoinPath("installments", args[0], "preview"), url.Values{}, func(resp previewEmailResponse) error {
+			return cmdutil.RunRequestDecoded[previewEmailResponse](opts, "Sending preview...", "POST", cmdutil.JoinPath("emails", args[0], "preview"), url.Values{}, func(resp previewEmailResponse) error {
 				if opts.PlainOutput {
 					return output.PrintPlain(opts.Out(), [][]string{{resp.PreviewURL}})
 				}
