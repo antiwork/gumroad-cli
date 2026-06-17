@@ -199,6 +199,109 @@ func TestListPlainOutputWithNoPayouts(t *testing.T) {
 	}
 }
 
+func TestListRendersStripeTransferAndBankAccountDetails(t *testing.T) {
+	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{
+			"user_id": "2245593582708",
+			"recent_payouts": []map[string]any{
+				{
+					"external_id": "pay_123", "amount_cents": 5000, "currency": "usd",
+					"state": "completed", "created_at": "2026-04-24T12:00:00Z",
+					"processor": "stripe", "bank_account_visual": "******6789",
+					"trace_id": nil, "stripe_transfer_id": "po_1Test",
+					"bank_account": map[string]any{
+						"bank_number":              "110000000",
+						"account_holder_full_name": "Stripe Test Account",
+						"account_type":             "checking",
+						"currency":                 "usd",
+					},
+				},
+			},
+			"pagination": map[string]any{"next": nil, "limit": 20},
+		})
+	})
+
+	cmd := testutil.Command(newListCmd())
+	cmd.SetArgs([]string{"--email", "seller@example.com"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	for _, want := range []string{
+		"pay_123",
+		"Details:",
+		"stripe transfer: po_1Test",
+		"routing/BIC: 110000000",
+		"account holder: Stripe Test Account",
+		"account type: checking",
+		"currency: USD",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("output missing %q: %q", want, out)
+		}
+	}
+	if strings.Contains(out, "trace:") {
+		t.Fatalf("null trace_id must not render: %q", out)
+	}
+}
+
+func TestListOmitsDetailsForPayoutsWithoutBankOrTransfer(t *testing.T) {
+	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{
+			"recent_payouts": []map[string]any{
+				{
+					"external_id": "pay_pp", "amount_cents": 5000,
+					"state": "completed", "created_at": "2026-04-24T12:00:00Z",
+					"processor": "paypal", "paypal_email": "payme@example.com",
+					"trace_id": nil, "stripe_transfer_id": nil, "bank_account": nil,
+				},
+			},
+		})
+	})
+
+	cmd := testutil.Command(newListCmd())
+	cmd.SetArgs([]string{"--email", "seller@example.com"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	if !strings.Contains(out, "pay_pp") {
+		t.Fatalf("expected payout row in output: %q", out)
+	}
+	if strings.Contains(out, "Details:") {
+		t.Fatalf("payouts without bank account or transfer id must not render a Details section: %q", out)
+	}
+}
+
+func TestListPlainOutputCarriesStripeTransferAndBankFields(t *testing.T) {
+	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{
+			"recent_payouts": []map[string]any{
+				{
+					"external_id": "pay_123", "amount_cents": 5000, "currency": "usd",
+					"state": "completed", "created_at": "2026-04-24T12:00:00Z",
+					"processor": "stripe", "bank_account_visual": "******6789",
+					"trace_id": nil, "stripe_transfer_id": "po_1Test",
+					"bank_account": map[string]any{
+						"bank_number":              "110000000",
+						"account_holder_full_name": "Stripe Test Account",
+						"account_type":             "checking",
+						"currency":                 "usd",
+					},
+				},
+			},
+			"next_payout_date":        "2026-04-30",
+			"balance_for_next_payout": "$25.00",
+			"payout_note":             "Manual review",
+		})
+	})
+
+	cmd := testutil.Command(newListCmd(), testutil.PlainOutput())
+	cmd.SetArgs([]string{"--email", "seller@example.com"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	want := "seller@example.com\tpay_123\t5000 USD cents\tcompleted\t2026-04-24T12:00:00Z\tstripe\t******6789\t2026-04-30\t$25.00\tManual review\tpo_1Test\t110000000\tStripe Test Account\tchecking\tusd"
+	if strings.TrimSpace(out) != want {
+		t.Fatalf("unexpected plain output: %q", out)
+	}
+}
+
 func TestFormatAmountTrimsCurrency(t *testing.T) {
 	p := payout{AmountCents: 5000, Currency: " usd "}
 	if got := formatAmount(p); got != "5000 USD cents" {

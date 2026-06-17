@@ -17,22 +17,24 @@ type infoResponse struct {
 }
 
 type userInfo struct {
-	Email                          string           `json:"email"`
-	Name                           string           `json:"name"`
-	Username                       string           `json:"username"`
-	ProfileURL                     string           `json:"profile_url"`
-	Country                        string           `json:"country"`
-	Locale                         string           `json:"locale"`
-	Timezone                       string           `json:"timezone"`
-	CreatedAt                      string           `json:"created_at"`
-	DeletedAt                      string           `json:"deleted_at"`
-	RiskState                      riskState        `json:"risk_state"`
-	ActiveWatchedUser              *watchedUserInfo `json:"active_watched_user"`
-	TwoFactorAuthenticationEnabled bool             `json:"two_factor_authentication_enabled"`
-	SignIn                         signInInfo       `json:"sign_in"`
-	Social                         socialInfo       `json:"social"`
-	Payouts                        payoutsInfo      `json:"payouts"`
-	Stats                          statsInfo        `json:"stats"`
+	Email                          string            `json:"email"`
+	Name                           string            `json:"name"`
+	Username                       string            `json:"username"`
+	ProfileURL                     string            `json:"profile_url"`
+	Country                        string            `json:"country"`
+	Locale                         string            `json:"locale"`
+	Timezone                       string            `json:"timezone"`
+	CreatedAt                      string            `json:"created_at"`
+	DeletedAt                      string            `json:"deleted_at"`
+	RiskState                      riskState         `json:"risk_state"`
+	ActiveWatchedUser              *watchedUserInfo  `json:"active_watched_user"`
+	TwoFactorAuthenticationEnabled bool              `json:"two_factor_authentication_enabled"`
+	SignIn                         signInInfo        `json:"sign_in"`
+	Social                         socialInfo        `json:"social"`
+	Payouts                        payoutsInfo       `json:"payouts"`
+	Stats                          statsInfo         `json:"stats"`
+	Stripe                         stripeInfo        `json:"stripe"`
+	AdminLinks                     map[string]string `json:"admin_links"`
 }
 
 type signInInfo struct {
@@ -85,6 +87,24 @@ type statsInfo struct {
 	CommentsCount          int    `json:"comments_count"`
 }
 
+type stripeInfo struct {
+	Connected              bool                `json:"connected"`
+	StripeConnectAccountID string              `json:"stripe_connect_account_id"`
+	StripeDashboardURL     string              `json:"stripe_dashboard_url"`
+	Verification           *stripeVerification `json:"verification"`
+}
+
+type stripeVerification struct {
+	Error                    string `json:"error"`
+	ChargesEnabled           bool   `json:"charges_enabled"`
+	PayoutsEnabled           bool   `json:"payouts_enabled"`
+	DetailsSubmitted         bool   `json:"details_submitted"`
+	DisabledReason           string `json:"disabled_reason"`
+	CurrentlyDueCount        int    `json:"currently_due_count"`
+	PastDueCount             int    `json:"past_due_count"`
+	PendingVerificationCount int    `json:"pending_verification_count"`
+}
+
 func newInfoCmd() *cobra.Command {
 	var lookup userLookupFlags
 
@@ -92,9 +112,17 @@ func newInfoCmd() *cobra.Command {
 		Use:   "info",
 		Short: "View a comprehensive admin info payload for a user",
 		Long: `View a comprehensive admin info payload for a user, combining identity,
-risk state, two-factor state, payouts state, and earnings/sales stats into a
-single response. Mirrors the admin web user-detail page so support workflows
-can resolve from a single CLI invocation.
+risk state, two-factor state, payouts state, earnings/sales stats, Stripe
+Connect verification, and admin deep-links into a single response. Mirrors the
+admin web user-detail page so support workflows can resolve from a single CLI
+invocation without round-tripping to Stripe or the admin dashboard.
+
+The Stripe section reports whether a Stripe Connect account is attached and,
+when it is, its account id, dashboard URL, and live verification flags
+(charges/payouts enabled, details submitted) plus any outstanding requirement
+counts. If the live Stripe lookup fails it degrades to a verification error
+line instead. Admin links carry impersonate, user, purchases, and (when a
+Stripe account exists) Stripe-dashboard helper URLs.
 
 Identify the user with --email or --user-id. When both are supplied, the
 server resolves by --user-id.`,
@@ -135,6 +163,8 @@ func renderInfo(opts cmdutil.Options, identifier, userID string, info userInfo) 
 			strconv.Itoa(info.Stats.SalesCount),
 			info.Stats.TotalEarningsFormatted,
 			info.CreatedAt,
+			strconv.FormatBool(info.Stripe.Connected),
+			info.Stripe.StripeConnectAccountID,
 		}})
 	}
 
@@ -194,7 +224,15 @@ func renderInfo(opts cmdutil.Options, identifier, userID string, info userInfo) 
 	writePayouts(&b, info.Payouts)
 
 	fmt.Fprintln(&b)
+	writeStripe(&b, info.Stripe)
+
+	fmt.Fprintln(&b)
 	writeStats(&b, info.Stats)
+
+	if len(info.AdminLinks) > 0 {
+		fmt.Fprintln(&b)
+		writeAdminLinks(&b, info.AdminLinks)
+	}
 
 	return output.Writef(opts.Out(), "%s", b.String())
 }
@@ -393,6 +431,54 @@ func payoutsHeadlineState(p payoutsInfo) string {
 		return "paused (by user)"
 	default:
 		return "active"
+	}
+}
+
+func writeStripe(b *strings.Builder, s stripeInfo) {
+	if !s.Connected {
+		fmt.Fprintln(b, "Stripe: not connected")
+		return
+	}
+
+	fmt.Fprintln(b, "Stripe: connected")
+	if s.StripeConnectAccountID != "" {
+		fmt.Fprintf(b, "  account: %s\n", s.StripeConnectAccountID)
+	}
+	if s.StripeDashboardURL != "" {
+		fmt.Fprintf(b, "  dashboard: %s\n", s.StripeDashboardURL)
+	}
+	if s.Verification == nil {
+		return
+	}
+	if s.Verification.Error != "" {
+		fmt.Fprintf(b, "  verification error: %s\n", s.Verification.Error)
+		return
+	}
+
+	v := s.Verification
+	fmt.Fprintf(b, "  charges enabled: %s\n", strconv.FormatBool(v.ChargesEnabled))
+	fmt.Fprintf(b, "  payouts enabled: %s\n", strconv.FormatBool(v.PayoutsEnabled))
+	fmt.Fprintf(b, "  details submitted: %s\n", strconv.FormatBool(v.DetailsSubmitted))
+	if v.DisabledReason != "" {
+		fmt.Fprintf(b, "  disabled reason: %s\n", v.DisabledReason)
+	}
+	if v.CurrentlyDueCount > 0 {
+		fmt.Fprintf(b, "  currently due: %d\n", v.CurrentlyDueCount)
+	}
+	if v.PastDueCount > 0 {
+		fmt.Fprintf(b, "  past due: %d\n", v.PastDueCount)
+	}
+	if v.PendingVerificationCount > 0 {
+		fmt.Fprintf(b, "  pending verification: %d\n", v.PendingVerificationCount)
+	}
+}
+
+func writeAdminLinks(b *strings.Builder, links map[string]string) {
+	fmt.Fprintln(b, "Admin links:")
+	for _, key := range []string{"impersonate", "admin_user", "admin_purchases", "stripe_dashboard"} {
+		if value := links[key]; value != "" {
+			fmt.Fprintf(b, "  %s: %s\n", key, value)
+		}
 	}
 }
 

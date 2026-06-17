@@ -78,7 +78,7 @@ Most responses are wrapped in `{"success": true, ...}` with resource-specific ke
 - `products update --custom-html` → `.product.custom_html`, `.product.landing_url`, `.previous_custom_html`, `.sanitization_report`
 - Not every `products` write verb is flat: `create`, `update`, `unpublish`, and `delete` return top-level fields, but `covers add`, `thumbnail set`, and `content set` still wrap their payload in the `{success, …, result}` envelope — read those under `.result`
 - `webhooks list` → `.resource_subscriptions[]`
-- `admin users info` → `.user`
+- `admin users info` → `.user` (includes `.user.stripe` Stripe Connect state — `connected`, and when connected `stripe_connect_account_id`, `stripe_dashboard_url`, and a `verification` block of flags/counts or an `error` subfield when the live Stripe lookup failed — and `.user.admin_links` impersonate/user/purchases/stripe-dashboard URLs)
 - `admin users affiliates` → `.affiliates[]`
 - `admin users comments list` → `.comments[]`
 - `admin users comments add` → `.comment`
@@ -90,6 +90,7 @@ Most responses are wrapped in `{"success": true, ...}` with resource-specific ke
 - `admin users related` → `.related_users[]`, `.truncated`, `.per_signal_limit`
 - `admin users mark-compliant`, `admin users suspend`, `admin users suspend-for-tos-violation` → `.status`, `.message`, `.user_id`
 - `admin products flag-for-tos-violation` → `.status`, `.message`, `.user_id`, `.product_id`
+- `admin payouts list` → `.recent_payouts[]`, `.pagination.next`. Each payout carries `stripe_transfer_id` (a `po_…` payout or `py_…` destination payment, or null), `bank_account` (null for PayPal and debit-card payouts; otherwise `bank_number` routing/BIC, `account_holder_full_name`, `account_type`, `currency`), and `trace_id` (currently always null).
 - `admin payouts scheduled create` → `.message`, `.user_id`, `.scheduled_payout`
 - `admin users refund-balance` → `.status`, `.message`, `.user_id`, `.count`, `.total_amount_cents`, `.currency`
 - `admin purchases view` → `.purchase`
@@ -199,6 +200,9 @@ gumroad admin users suspend-for-tos-violation --user-id 2245593582708 --expected
 gumroad admin products flag-for-tos-violation <product-id> --user-id 2245593582708 --expected-email seller@example.com --yes --json --non-interactive --no-input
 gumroad admin payouts scheduled create --user-id 2245593582708 --expected-email seller@example.com --processor stripe --payout-date 2026-06-15 --note "Appeal window closes before payout." --yes --json --non-interactive --no-input
 gumroad admin payouts scheduled list --status pending --user-id 2245593582708 --json --non-interactive --no-input
+
+# Recent payouts, with Stripe transfer id and destination bank account per row
+gumroad admin payouts list --user-id 2245593582708 --limit 25 --json --jq '.recent_payouts[] | {external_id, stripe_transfer_id, bank_account}' --non-interactive --no-input
 
 # Refund-balance dry-run still calls the preview GET, but skips the guarded POST.
 gumroad admin users refund-balance --user-id 2245593582708 --expected-email seller@example.com --dry-run --json --non-interactive --no-input

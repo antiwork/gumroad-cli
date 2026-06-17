@@ -468,7 +468,7 @@ func TestInfoPlainOutput(t *testing.T) {
 	cmd.SetArgs([]string{"--email", "seller@example.com"})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
-	want := "seller@example.com\tSeller One\tsellerone\tCompliant\ttrue\tfalse\tfalse\t2026-05-15\t42\t$1,234.56\t2024-01-01T00:00:00Z"
+	want := "seller@example.com\tSeller One\tsellerone\tCompliant\ttrue\tfalse\tfalse\t2026-05-15\t42\t$1,234.56\t2024-01-01T00:00:00Z\tfalse"
 	if strings.TrimSpace(out) != want {
 		t.Fatalf("unexpected plain output: %q", out)
 	}
@@ -505,6 +505,145 @@ func TestInfoJSONPreservesResponse(t *testing.T) {
 	}
 	if stats["total_earnings_formatted"] != "$1,234.56" {
 		t.Errorf("expected stats.total_earnings_formatted=$1,234.56, got %v", stats["total_earnings_formatted"])
+	}
+}
+
+func TestInfoRendersStripeConnectedVerificationAndAdminLinks(t *testing.T) {
+	payload := sampleInfoPayload()
+	user := payload["user"].(map[string]any)
+	user["stripe"] = map[string]any{
+		"connected":                 true,
+		"stripe_connect_account_id": "acct_123abc",
+		"stripe_dashboard_url":      "https://dashboard.stripe.com/connect/accounts/acct_123abc",
+		"verification": map[string]any{
+			"charges_enabled":            true,
+			"payouts_enabled":            false,
+			"details_submitted":          true,
+			"disabled_reason":            "requirements.past_due",
+			"currently_due_count":        1,
+			"past_due_count":             1,
+			"pending_verification_count": 0,
+		},
+	}
+	user["admin_links"] = map[string]any{
+		"impersonate":      "https://app.example.com/admin/helper_actions/impersonate/u_abc",
+		"admin_user":       "https://app.example.com/admin/users/123",
+		"admin_purchases":  "https://app.example.com/admin/search/purchases?query=seller@example.com",
+		"stripe_dashboard": "https://app.example.com/admin/helper_actions/stripe_dashboard/u_abc",
+	}
+
+	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, payload)
+	})
+
+	cmd := testutil.Command(newInfoCmd(), testutil.Quiet(false))
+	cmd.SetArgs([]string{"--email", "seller@example.com"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	for _, want := range []string{
+		"Stripe: connected",
+		"account: acct_123abc",
+		"dashboard: https://dashboard.stripe.com/connect/accounts/acct_123abc",
+		"charges enabled: true",
+		"payouts enabled: false",
+		"details submitted: true",
+		"disabled reason: requirements.past_due",
+		"currently due: 1",
+		"past due: 1",
+		"Admin links:",
+		"impersonate: https://app.example.com/admin/helper_actions/impersonate/u_abc",
+		"admin_user: https://app.example.com/admin/users/123",
+		"admin_purchases: https://app.example.com/admin/search/purchases?query=seller@example.com",
+		"stripe_dashboard: https://app.example.com/admin/helper_actions/stripe_dashboard/u_abc",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q: %q", want, out)
+		}
+	}
+	if strings.Contains(out, "pending verification:") {
+		t.Errorf("zero pending-verification count must be suppressed: %q", out)
+	}
+}
+
+func TestInfoStripeConnectedPlainOutputCarriesAccountID(t *testing.T) {
+	payload := sampleInfoPayload()
+	user := payload["user"].(map[string]any)
+	user["stripe"] = map[string]any{
+		"connected":                 true,
+		"stripe_connect_account_id": "acct_123abc",
+		"stripe_dashboard_url":      "https://dashboard.stripe.com/connect/accounts/acct_123abc",
+		"verification": map[string]any{
+			"charges_enabled":   true,
+			"payouts_enabled":   true,
+			"details_submitted": true,
+		},
+	}
+
+	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, payload)
+	})
+
+	cmd := testutil.Command(newInfoCmd(), testutil.PlainOutput())
+	cmd.SetArgs([]string{"--email", "seller@example.com"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	want := "seller@example.com\tSeller One\tsellerone\tCompliant\ttrue\tfalse\tfalse\t2026-05-15\t42\t$1,234.56\t2024-01-01T00:00:00Z\ttrue\tacct_123abc"
+	if strings.TrimSpace(out) != want {
+		t.Fatalf("unexpected plain output: %q", out)
+	}
+}
+
+func TestInfoDegradesToVerificationErrorWhenStripeCallFailed(t *testing.T) {
+	payload := sampleInfoPayload()
+	user := payload["user"].(map[string]any)
+	user["stripe"] = map[string]any{
+		"connected":                 true,
+		"stripe_connect_account_id": "acct_revoked",
+		"stripe_dashboard_url":      "https://dashboard.stripe.com/connect/accounts/acct_revoked",
+		"verification":              map[string]any{"error": "access revoked"},
+	}
+
+	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, payload)
+	})
+
+	cmd := testutil.Command(newInfoCmd(), testutil.Quiet(false))
+	cmd.SetArgs([]string{"--email", "seller@example.com"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	for _, want := range []string{
+		"Stripe: connected",
+		"account: acct_revoked",
+		"verification error: access revoked",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q: %q", want, out)
+		}
+	}
+	if strings.Contains(out, "charges enabled:") {
+		t.Errorf("degraded verification must not print Stripe flags: %q", out)
+	}
+}
+
+func TestInfoReportsUnconnectedStripeWithoutInnerBlock(t *testing.T) {
+	payload := sampleInfoPayload()
+	payload["user"].(map[string]any)["stripe"] = map[string]any{"connected": false}
+
+	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, payload)
+	})
+
+	cmd := testutil.Command(newInfoCmd(), testutil.Quiet(false))
+	cmd.SetArgs([]string{"--email", "seller@example.com"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	if !strings.Contains(out, "Stripe: not connected") {
+		t.Errorf("expected unconnected Stripe headline: %q", out)
+	}
+	for _, unwanted := range []string{"charges enabled:", "dashboard:", "Admin links:"} {
+		if strings.Contains(out, unwanted) {
+			t.Errorf("unconnected Stripe / absent admin links must not render %q: %q", unwanted, out)
+		}
 	}
 }
 
