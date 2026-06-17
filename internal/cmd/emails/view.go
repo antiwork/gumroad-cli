@@ -1,4 +1,4 @@
-package email
+package emails
 
 import (
 	"net/url"
@@ -17,9 +17,9 @@ func newViewCmd() *cobra.Command {
 		Use:   "view <id>",
 		Short: "View an audience email",
 		Long:  "View an audience email, including its state, audience, send setting, URL, and publish time.",
-		Example: `  gumroad email view <id>
-  gumroad email view <id> --json
-  gumroad email view <id> --plain`,
+		Example: `  gumroad emails view <id>
+  gumroad emails view <id> --json
+  gumroad emails view <id> --plain`,
 		Args: cmdutil.ExactArgs(1),
 		RunE: func(c *cobra.Command, args []string) error {
 			opts := cmdutil.OptionsFrom(c)
@@ -39,7 +39,7 @@ func renderEmailView(opts cmdutil.Options, item emailRecord) error {
 			item.AudienceType,
 			emailBool(item.SendEmails),
 			item.URL,
-			item.PublishedAt,
+			emailDisplayDate(item),
 		}})
 	}
 
@@ -67,6 +67,9 @@ func renderEmailView(opts cmdutil.Options, item emailRecord) error {
 		if err := output.Writef(opts.Out(), "URL: %s\n", item.URL); err != nil {
 			return err
 		}
+	}
+	if item.State == emailStateScheduled && item.ScheduledAt != "" {
+		return output.Writef(opts.Out(), "Scheduled at: %s\n", item.ScheduledAt)
 	}
 	if item.PublishedAt != "" {
 		return output.Writef(opts.Out(), "Published at: %s\n", item.PublishedAt)

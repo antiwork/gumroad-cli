@@ -42,7 +42,7 @@ Always follow these rules:
 - Product custom HTML landing pages use `gumroad products page preview <id> ./landing.html` to run the backend sanitizer without writing, `gumroad products page publish <id> ./landing.html` to store the page, `gumroad products page clear <id> --yes` to remove it, and `gumroad products page url <id>` to print the live URL. `--dry-run` only previews the CLI request body; it does not call the backend sanitizer. Inspect `.sanitization_report` in `preview` and `publish` JSON output for server-side changes.
 - Product rich content uses `gumroad products content list <id> --json --no-input` to inspect page IDs, `gumroad products content get <id> --json --no-input` to dump the shared `rich_content` page array, and `gumroad products content set <id> content.json --dry-run --json --no-input` to preview a whole-document replacement. Without an explicit path, whole-document `set` reads `./content.json`; `set --page` reads `./page.json`. Use `--page <page_id>` with `get`/`set` to edit one matching page object; `set --page` still sends a merged whole-document PUT. For per-variant content, pass both `--variant <variant_id>` and `--category <cat_id>`. Whole-document `set` deletes existing pages omitted from the JSON.
 - Custom HTML pages can use `data-gumroad-field="name"`, `data-gumroad-field="price"`, `data-gumroad-field="description"`, and `data-gumroad-action="buy"`. To preselect checkout state, add `data-gumroad-option="<variant name>"`, `data-gumroad-quantity="<integer>"`, `data-gumroad-price="<decimal>"`, or `data-gumroad-recurrence="monthly|quarterly|biannually|yearly|every_two_years"`. Production validates these values and falls back to product defaults when invalid. Prefer anchors for buy CTAs so production can add a checkout href; non-anchor buy elements also post to checkout.
-- Audience emails are created as drafts by default. Use `gumroad email preview <id> --json --no-input` and inspect `.preview_url` before `gumroad email send <id> --yes --json --no-input`. Creating with `--draft=false` or `--send` publishes and blasts immediately, so use `--dry-run` first and require explicit human approval.
+- Audience emails are created as drafts by default. Use `gumroad emails send-preview <id> --json --no-input` and inspect `.preview_url` before `gumroad emails send <id> --yes --json --no-input`. Creating with `--send` publishes and blasts immediately, so use `--dry-run` first and require explicit human approval.
 - If a command fails with a seller auth error, run `gumroad auth status --json --no-input` first. Agents can start seller auth with `gumroad auth login --no-input` and hand the printed approval URL to a human, or use an existing seller token via `GUMROAD_ACCESS_TOKEN` or `gumroad auth login --with-token`.
 - For admin commands in agents/CI, pass `--non-interactive` and set `GUMROAD_ADMIN_TOKEN`; interactive shells can store an admin token with `gumroad auth login --web`.
 
@@ -335,30 +335,30 @@ gumroad files abort --upload-id up-123 --key attachments/u/k/original/pack.zip -
 
 `files upload` and `files complete` both return `.file_url`. When a JSON upload fails with recovery details, reuse `.error.recovery` with `files complete` to finish it or `files abort` to reclaim the orphaned multipart upload.
 
-### email — Manage audience emails
+### emails — Manage audience emails
 
 ```sh
-# Create a draft from an HTML body file. Draft is the default safety behavior.
-gumroad email create --subject "New release" --body ./email.html --json --no-input
-gumroad email create --subject "Product update" --body ./email.html --audience product --product <id> --json --no-input
+# Create a draft from an HTML body file (or - for stdin). Draft is the default safety behavior.
+gumroad emails create --subject "New release" --body ./email.html --json --no-input
+gumroad emails create --subject "Product update" --body ./email.html --audience product --product <id> --json --no-input
 
 # Preview before sending; use `.preview_url` for human review.
-gumroad email preview <id> --json --jq '.preview_url' --no-input
-gumroad email view <id> --json --no-input
+gumroad emails send-preview <id> --json --jq '.preview_url' --no-input
+gumroad emails view <id> --json --no-input
 
 # List drafts, scheduled emails, or sent emails.
-gumroad email list --state draft --json --no-input
-gumroad email list --state published --all --json --no-input
+gumroad emails list --state draft --json --no-input
+gumroad emails list --state published --all --json --no-input
 
 # Send or delete. Both are confirmation-gated; agents must pass --yes.
-gumroad email send <id> --yes --json --no-input
-gumroad email delete <id> --yes --json --no-input
+gumroad emails send <id> --yes --json --no-input
+gumroad emails delete <id> --yes --json --no-input
 ```
 
-**Create flags:** `--subject` (required), `--body` (required HTML file path), `--audience` (all|customers|followers|product, default all), `--product` (required for product audience), `--draft` (default true), `--send` (publish and send immediately).
+**Create flags:** `--subject` (required), `--body` (required HTML file path, or `-` for stdin), `--audience` (all|customers|followers|product, default all), `--product` (required for product audience), `--send` (publish and send immediately).
 **List flags:** `--state` (published|scheduled|draft), `--all`, `--page-key`.
 
-Use `--dry-run --json --no-input` to inspect create params without calling the API. Publishing with `--draft=false` or `--send` blasts immediately; prefer the draft → preview URL → send workflow.
+Use `--dry-run --json --no-input` to inspect create params without calling the API. Passing `--send` blasts the audience immediately; prefer the draft → `send-preview` URL → `send` workflow. `send-preview` emails a copy to the seller. Scheduled emails can only be created in the web UI; the CLI can list and view them (`--state scheduled`) but not create them.
 
 ### sales — Manage sales
 

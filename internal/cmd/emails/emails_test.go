@@ -1,4 +1,4 @@
-package email
+package emails
 
 import (
 	"encoding/json"
@@ -97,12 +97,12 @@ func assertUsageError(t *testing.T, err error, want string) {
 	}
 }
 
-func TestNewEmailCmd_HelpMentionsDraftPreviewWorkflow(t *testing.T) {
-	cmd := NewEmailCmd()
+func TestNewEmailsCmd_HelpMentionsDraftPreviewWorkflow(t *testing.T) {
+	cmd := NewEmailsCmd()
 	if !strings.Contains(cmd.Long, "created as drafts by default") {
 		t.Fatalf("expected draft default in help, got %q", cmd.Long)
 	}
-	if !strings.Contains(cmd.Long, "gumroad email preview <id>") {
+	if !strings.Contains(cmd.Long, "gumroad emails send-preview <id>") {
 		t.Fatalf("expected preview workflow in help, got %q", cmd.Long)
 	}
 }
@@ -146,24 +146,58 @@ func TestCreate_DefaultDraftPostsBodyFile(t *testing.T) {
 	}
 }
 
-func TestCreate_DraftFalsePublishes(t *testing.T) {
+func TestCreate_SendPublishesWithoutDraftParam(t *testing.T) {
 	bodyPath := writeEmailBody(t, "<p>Now</p>")
-	var gotPublish string
+	var gotForm url.Values
 
 	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
 		if err := r.ParseForm(); err != nil {
 			t.Fatalf("ParseForm failed: %v", err)
 		}
-		gotPublish = r.PostForm.Get("publish")
+		gotForm = r.PostForm
 		testutil.JSON(t, w, map[string]any{"email": emailPayload("email_123", "Now", "published")})
 	})
 
 	cmd := testutil.Command(newCreateCmd(), testutil.Yes(true))
-	cmd.SetArgs([]string{"--subject", "Now", "--body", bodyPath, "--draft=false"})
+	cmd.SetArgs([]string{"--subject", "Now", "--body", bodyPath, "--send"})
 	testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
-	if gotPublish != "true" {
-		t.Fatalf("publish = %q, want true", gotPublish)
+	if gotForm.Get("publish") != "true" {
+		t.Fatalf("publish = %q, want true", gotForm.Get("publish"))
+	}
+	if _, ok := gotForm["draft"]; ok {
+		t.Fatal("draft param must never be sent")
+	}
+}
+
+func TestCreate_BodyFromStdin(t *testing.T) {
+	var gotBody string
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			t.Fatalf("ParseForm failed: %v", err)
+		}
+		gotBody = r.PostForm.Get("body")
+		testutil.JSON(t, w, map[string]any{"email": emailPayload("email_123", "Piped", "draft")})
+	})
+
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe: %v", err)
+	}
+	if _, err := w.WriteString("<p>From stdin</p>"); err != nil {
+		t.Fatalf("write stdin: %v", err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatalf("close stdin writer: %v", err)
+	}
+	t.Cleanup(func() { _ = r.Close() })
+
+	cmd := testutil.Command(newCreateCmd(), testutil.Stdin(r))
+	cmd.SetArgs([]string{"--subject", "Piped", "--body", "-"})
+	testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	if gotBody != "<p>From stdin</p>" {
+		t.Fatalf("body = %q, want stdin contents", gotBody)
 	}
 }
 
@@ -260,7 +294,7 @@ func TestPreview_PostsEndpointAndPrintsURL(t *testing.T) {
 		})
 	})
 
-	cmd := testutil.Command(newPreviewCmd(), testutil.Quiet(false))
+	cmd := testutil.Command(newSendPreviewCmd(), testutil.Quiet(false))
 	cmd.SetArgs([]string{"email_123"})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
@@ -280,7 +314,7 @@ func TestPreview_DefaultOutputPrintsFallbackMessageAndURL(t *testing.T) {
 		})
 	})
 
-	cmd := testutil.Command(newPreviewCmd(), testutil.Quiet(false))
+	cmd := testutil.Command(newSendPreviewCmd(), testutil.Quiet(false))
 	cmd.SetArgs([]string{"email_123"})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
@@ -299,7 +333,7 @@ func TestPreview_PlainOutputPrintsURL(t *testing.T) {
 		})
 	})
 
-	cmd := testutil.Command(newPreviewCmd(), testutil.PlainOutput())
+	cmd := testutil.Command(newSendPreviewCmd(), testutil.PlainOutput())
 	cmd.SetArgs([]string{"email_123"})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
@@ -395,7 +429,7 @@ func TestList_EmptyPageRendersPaginationHint(t *testing.T) {
 
 	for _, want := range []string{
 		"No emails found on this page.",
-		"More results available: gumroad email list --state draft --page-key cursor_2",
+		"More results available: gumroad emails list --state draft --page-key cursor_2",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("empty page output missing %q in %q", want, out)
@@ -530,6 +564,45 @@ func TestView_RendersFields(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Fatalf("view output missing %q in %q", want, out)
 		}
+	}
+}
+
+func TestView_ScheduledShowsScheduledDate(t *testing.T) {
+	scheduled := completeEmailPayload("email_sched", "Upcoming", "scheduled")
+	scheduled["published_at"] = ""
+	scheduled["scheduled_at"] = "2026-06-18T14:00:00Z"
+
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{"email": scheduled})
+	})
+
+	cmd := testutil.Command(newViewCmd(), testutil.Quiet(false))
+	cmd.SetArgs([]string{"email_sched"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	if !strings.Contains(out, "Scheduled at: 2026-06-18T14:00:00Z") {
+		t.Fatalf("scheduled view missing scheduled date in %q", out)
+	}
+	if strings.Contains(out, "Published at:") {
+		t.Fatalf("scheduled view must not show a published date in %q", out)
+	}
+}
+
+func TestView_PlainScheduledShowsScheduledDate(t *testing.T) {
+	scheduled := completeEmailPayload("email_sched", "Upcoming", "scheduled")
+	scheduled["published_at"] = ""
+	scheduled["scheduled_at"] = "2026-06-18T14:00:00Z"
+
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{"email": scheduled})
+	})
+
+	cmd := testutil.Command(newViewCmd(), testutil.PlainOutput())
+	cmd.SetArgs([]string{"email_sched"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	if !strings.HasSuffix(out, "\t2026-06-18T14:00:00Z\n") {
+		t.Fatalf("plain scheduled view missing scheduled date column in %q", out)
 	}
 }
 

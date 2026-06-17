@@ -1,12 +1,12 @@
-package email
+package emails
 
 import (
 	"net/url"
-	"os"
 	"strings"
 
 	"github.com/antiwork/gumroad-cli/internal/cmdutil"
 	"github.com/antiwork/gumroad-cli/internal/output"
+	"github.com/antiwork/gumroad-cli/internal/pageutil"
 	"github.com/spf13/cobra"
 )
 
@@ -16,19 +16,20 @@ type createEmailResponse struct {
 
 func newCreateCmd() *cobra.Command {
 	var subject, body, audience, product string
-	var draft, send bool
+	var send bool
 
 	cmd := &cobra.Command{
 		Use:   "create",
 		Short: "Create an audience email",
 		Long: `Create an audience email from an HTML body file.
 
-Emails are drafts by default. Pass --draft=false or --send only when you intend
-to publish and send the email to its audience immediately.`,
-		Example: `  gumroad email create --subject "New release" --body ./email.html
-  gumroad email create --subject "Product update" --body ./email.html --audience product --product <id>
-  gumroad email create --subject "Launch now" --body ./email.html --draft=false --yes
-  gumroad email create --subject "Check params" --body ./email.html --dry-run`,
+Emails are created as drafts. Pass --send only when you intend to publish and
+send the email to its audience immediately.`,
+		Example: `  gumroad emails create --subject "New release" --body ./email.html
+  gumroad emails create --subject "Product update" --body ./email.html --audience product --product <id>
+  gumroad emails create --subject "Launch now" --body ./email.html --send --yes
+  build-email | gumroad emails create --subject "From stdin" --body -
+  gumroad emails create --subject "Check params" --body ./email.html --dry-run`,
 		Args: cmdutil.ExactArgs(0),
 		RunE: func(c *cobra.Command, args []string) error {
 			if subject == "" {
@@ -43,18 +44,14 @@ to publish and send the email to its audience immediately.`,
 			if audience == emailAudienceProduct && product == "" {
 				return cmdutil.MissingFlagError(c, "--product")
 			}
-			if send && c.Flags().Changed("draft") && draft {
-				return cmdutil.UsageErrorf(c, "--send cannot be used with --draft=true")
-			}
-
-			html, err := os.ReadFile(body)
-			if err != nil {
-				return cmdutil.UsageErrorf(c, "--body: cannot read %s: %v", body, err)
-			}
 
 			opts := cmdutil.OptionsFrom(c)
-			publish := send || (c.Flags().Changed("draft") && !draft)
-			if publish {
+			input, err := pageutil.ReadHTML(opts.In(), body)
+			if err != nil {
+				return cmdutil.UsageErrorf(c, "--body: %v", err)
+			}
+
+			if send {
 				ok, err := cmdutil.ConfirmAction(opts, "Send this email to your audience now?")
 				if err != nil {
 					return err
@@ -66,15 +63,13 @@ to publish and send the email to its audience immediately.`,
 
 			params := url.Values{}
 			params.Set("subject", subject)
-			params.Set("body", string(html))
+			params.Set("body", input.HTML)
 			params.Set("audience", audience)
 			if audience == emailAudienceProduct {
 				params.Set("link_id", product)
 			}
-			if publish {
+			if send {
 				params.Set("publish", "true")
-			} else if c.Flags().Changed("draft") {
-				params.Set("draft", "true")
 			}
 
 			return cmdutil.RunRequestDecoded[createEmailResponse](opts,
@@ -95,10 +90,9 @@ to publish and send the email to its audience immediately.`,
 	}
 
 	cmd.Flags().StringVar(&subject, "subject", "", "Email subject (required)")
-	cmd.Flags().StringVar(&body, "body", "", "Path to an HTML body file (required)")
+	cmd.Flags().StringVar(&body, "body", "", "Path to an HTML body file, or - for stdin (required)")
 	cmd.Flags().StringVar(&audience, "audience", emailAudienceAll, "Audience: all, customers, followers, product")
 	cmd.Flags().StringVar(&product, "product", "", "Product ID when --audience product")
-	cmd.Flags().BoolVar(&draft, "draft", true, "Create as a draft")
 	cmd.Flags().BoolVar(&send, "send", false, "Publish and send immediately")
 
 	return cmd

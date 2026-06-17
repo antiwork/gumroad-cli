@@ -1,4 +1,4 @@
-package email
+package emails
 
 import (
 	"io"
@@ -28,10 +28,10 @@ func newListCmd() *cobra.Command {
 		Short: "List audience emails",
 		Long:  "List audience emails by draft, scheduled, or published state.",
 		Args:  cmdutil.ExactArgs(0),
-		Example: `  gumroad email list
-  gumroad email list --state draft
-  gumroad email list --state published --all
-  gumroad email list --json --jq '.emails[0].id'`,
+		Example: `  gumroad emails list
+  gumroad emails list --state draft
+  gumroad emails list --state published --all
+  gumroad emails list --json --jq '.emails[0].id'`,
 		RunE: func(c *cobra.Command, args []string) error {
 			if state != "" && !emailValidValue(state, emailValidStateValues()) {
 				return cmdutil.UsageErrorf(c, "--state must be one of: %s", strings.Join(emailValidStateValues(), ", "))
@@ -170,7 +170,7 @@ func renderEmptyEmailList(opts cmdutil.Options, state, nextPageKey string) error
 }
 
 func emailPaginationHint(state, nextPageKey string) string {
-	return cmdutil.ReplayCommand("gumroad email list",
+	return cmdutil.ReplayCommand("gumroad emails list",
 		cmdutil.CommandArg{Flag: "--state", Value: state},
 		cmdutil.CommandArg{Flag: "--page-key", Value: nextPageKey},
 	)

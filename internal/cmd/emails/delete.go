@@ -1,4 +1,4 @@
-package email
+package emails
 
 import (
 	"net/url"
@@ -12,8 +12,8 @@ func newDeleteCmd() *cobra.Command {
 		Use:   "delete <id>",
 		Short: "Delete an audience email",
 		Long:  "Delete a draft or scheduled audience email.",
-		Example: `  gumroad email delete <id> --yes
-  gumroad email delete <id> --json --yes`,
+		Example: `  gumroad emails delete <id> --yes
+  gumroad emails delete <id> --json --yes`,
 		Args: cmdutil.ExactArgs(1),
 		RunE: func(c *cobra.Command, args []string) error {
 			opts := cmdutil.OptionsFrom(c)

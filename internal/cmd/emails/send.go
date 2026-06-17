@@ -1,4 +1,4 @@
-package email
+package emails
 
 import (
 	"net/url"
@@ -17,8 +17,8 @@ func newSendCmd() *cobra.Command {
 		Use:   "send <id>",
 		Short: "Send an audience email",
 		Long:  "Publish and send an audience email to its recipients. This action is irreversible.",
-		Example: `  gumroad email send <id> --yes
-  gumroad email send <id> --json --yes`,
+		Example: `  gumroad emails send <id> --yes
+  gumroad emails send <id> --json --yes`,
 		Args: cmdutil.ExactArgs(1),
 		RunE: func(c *cobra.Command, args []string) error {
 			opts := cmdutil.OptionsFrom(c)

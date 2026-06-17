@@ -1,4 +1,4 @@
-package email
+package emails
 
 import (
 	"net/url"
@@ -14,14 +14,14 @@ type previewEmailResponse struct {
 	Message    string `json:"message"`
 }
 
-func newPreviewCmd() *cobra.Command {
+func newSendPreviewCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "preview <id>",
-		Short: "Send an email preview",
-		Long:  "Send an email preview and print the preview URL for review before sending.",
-		Example: `  gumroad email preview <id>
-  gumroad email preview <id> --plain
-  gumroad email preview <id> --json`,
+		Use:   "send-preview <id>",
+		Short: "Send a preview email to yourself",
+		Long:  "Send a preview of an audience email to your own inbox and print the preview URL, so you can review it before sending to the whole audience.",
+		Example: `  gumroad emails send-preview <id>
+  gumroad emails send-preview <id> --plain
+  gumroad emails send-preview <id> --json`,
 		Args: cmdutil.ExactArgs(1),
 		RunE: func(c *cobra.Command, args []string) error {
 			opts := cmdutil.OptionsFrom(c)
