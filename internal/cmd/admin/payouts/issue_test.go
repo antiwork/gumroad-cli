@@ -156,6 +156,70 @@ func TestIssue_SendsRequestAndShowsResult(t *testing.T) {
 	}
 }
 
+func TestIssue_ForceSendsBypassMinimumPayout(t *testing.T) {
+	var body issueRequest
+
+	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
+		raw, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("read body: %v", err)
+		}
+		if err := json.Unmarshal(raw, &body); err != nil {
+			t.Fatalf("decode body: %v", err)
+		}
+		testutil.JSON(t, w, map[string]any{
+			"success": true,
+			"payout":  map[string]any{"external_id": "pay_abc", "amount_cents": 5000, "currency": "usd", "state": "processing", "processor": "stripe"},
+		})
+	})
+
+	cmd := testutil.Command(newIssueCmd(), testutil.Yes(true))
+	cmd.SetArgs([]string{"--user-id", "2245593582708", "--through", "2020-01-01", "--processor", "stripe", "--force"})
+	testutil.MustExecute(t, cmd)
+
+	if !body.BypassMinimumPayout {
+		t.Fatalf("expected --force to send bypass_minimum_payout=true, got body: %+v", body)
+	}
+}
+
+func TestIssue_OmitsBypassMinimumPayoutByDefault(t *testing.T) {
+	var raw []byte
+
+	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
+		var err error
+		raw, err = io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("read body: %v", err)
+		}
+		testutil.JSON(t, w, map[string]any{
+			"success": true,
+			"payout":  map[string]any{"external_id": "pay_abc", "amount_cents": 5000},
+		})
+	})
+
+	cmd := testutil.Command(newIssueCmd(), testutil.Yes(true))
+	cmd.SetArgs([]string{"--user-id", "2245593582708", "--through", "2020-01-01", "--processor", "stripe"})
+	testutil.MustExecute(t, cmd)
+
+	if strings.Contains(string(raw), "bypass_minimum_payout") {
+		t.Fatalf("bypass_minimum_payout must be omitted when --force is absent, got body: %s", raw)
+	}
+}
+
+func TestIssue_DryRunIncludesBypassMinimumPayout(t *testing.T) {
+	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Error("dry-run must not POST to the issue endpoint")
+	})
+
+	cmd := testutil.Command(newIssueCmd(), testutil.DryRun(true), testutil.NoInput(true))
+	cmd.SetArgs([]string{"--user-id", "2245593582708", "--through", "2020-01-01", "--processor", "stripe", "--force"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	if !strings.Contains(out, "bypass_minimum_payout: true") {
+		t.Errorf("dry-run output missing bypass_minimum_payout: %q", out)
+	}
+}
+
 func TestIssue_ServerErrorSurfacesMessageAndNonZeroExit(t *testing.T) {
 	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnprocessableEntity)
