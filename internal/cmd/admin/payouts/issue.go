@@ -21,6 +21,7 @@ type issueRequest struct {
 	PayoutProcessor      string `json:"payout_processor"`
 	PayoutPeriodEndDate  string `json:"payout_period_end_date"`
 	ShouldSplitTheAmount bool   `json:"should_split_the_amount,omitempty"`
+	BypassMinimumPayout  bool   `json:"bypass_minimum_payout,omitempty"`
 }
 
 type issueResponse struct {
@@ -44,6 +45,7 @@ func newIssueCmd() *cobra.Command {
 		through     string
 		processor   string
 		split       bool
+		force       bool
 	)
 
 	cmd := &cobra.Command{
@@ -55,9 +57,14 @@ The --through date is the payout period end date and must be in the past
 (YYYY-MM-DD). --split is only valid with --processor paypal and asks the
 server to split the payout amount across multiple PayPal transfers.
 
+--force releases a balance below the $100 payout minimum (e.g. a compliant
+creator discontinuing a product who won't reach the threshold). Without it,
+sub-minimum balances are rejected, unchanged.
+
 This moves money. --yes is required.`,
 		Example: `  gumroad admin payouts issue --user-id 2245593582708 --through 2026-04-30 --processor stripe --yes
-  gumroad admin payouts issue --user-id 2245593582708 --expected-email seller@example.com --through 2026-04-30 --processor paypal --split --yes`,
+  gumroad admin payouts issue --user-id 2245593582708 --expected-email seller@example.com --through 2026-04-30 --processor paypal --split --yes
+  gumroad admin payouts issue --user-id 2245593582708 --through 2026-04-30 --processor stripe --force --yes`,
 		Args: cmdutil.ExactArgs(0),
 		RunE: func(c *cobra.Command, args []string) error {
 			opts := cmdutil.OptionsFrom(c)
@@ -93,9 +100,13 @@ This moves money. --yes is required.`,
 				PayoutProcessor:      normalizedProcessor,
 				PayoutPeriodEndDate:  through,
 				ShouldSplitTheAmount: split,
+				BypassMinimumPayout:  force,
 			}
 
 			confirmMsg := "Issue manual " + normalizedProcessor + " payout for user_id " + target.UserID + " through " + through + "? This moves money."
+			if force {
+				confirmMsg += " (forcing past the $100 payout minimum)"
+			}
 			ok, err := cmdutil.ConfirmAction(opts, confirmMsg)
 			if err != nil {
 				return err
@@ -131,6 +142,7 @@ This moves money. --yes is required.`,
 	cmd.Flags().StringVar(&through, "through", "", "Payout period end date in YYYY-MM-DD (required, must be in the past)")
 	cmd.Flags().StringVar(&processor, "processor", "", "Payout processor: stripe or paypal (required)")
 	cmd.Flags().BoolVar(&split, "split", false, "Split the amount across multiple PayPal transfers (paypal only)")
+	cmd.Flags().BoolVar(&force, "force", false, "Release a balance below the $100 payout minimum")
 
 	return cmd
 }
@@ -145,6 +157,9 @@ func issueDryRunParams(req issueRequest) url.Values {
 	params.Set("payout_period_end_date", req.PayoutPeriodEndDate)
 	if req.ShouldSplitTheAmount {
 		params.Set("should_split_the_amount", "true")
+	}
+	if req.BypassMinimumPayout {
+		params.Set("bypass_minimum_payout", "true")
 	}
 	return params
 }
