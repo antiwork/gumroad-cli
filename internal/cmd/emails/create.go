@@ -41,6 +41,9 @@ send the email to its audience immediately.`,
 			if !emailValidValue(audience, emailValidAudienceValues()) {
 				return cmdutil.UsageErrorf(c, "--audience must be one of: %s", strings.Join(emailValidAudienceValues(), ", "))
 			}
+			if c.Flags().Changed("product") && audience != emailAudienceProduct {
+				return cmdutil.UsageErrorf(c, "--product requires --audience product")
+			}
 			if audience == emailAudienceProduct && product == "" {
 				return cmdutil.MissingFlagError(c, "--product")
 			}
@@ -64,7 +67,7 @@ send the email to its audience immediately.`,
 			params := url.Values{}
 			params.Set("subject", subject)
 			params.Set("body", input.HTML)
-			params.Set("audience", audience)
+			params.Set("audience", emailAPIAudienceValue(audience))
 			if audience == emailAudienceProduct {
 				params.Set("link_id", product)
 			}

@@ -135,8 +135,8 @@ func TestCreate_DefaultDraftPostsBodyFile(t *testing.T) {
 	if gotForm.Get("body") != "<h1>Launch</h1>" {
 		t.Fatalf("body = %q", gotForm.Get("body"))
 	}
-	if gotForm.Get("audience") != "all" {
-		t.Fatalf("audience = %q, want all", gotForm.Get("audience"))
+	if gotForm.Get("audience") != "audience" {
+		t.Fatalf("audience = %q, want audience", gotForm.Get("audience"))
 	}
 	if _, ok := gotForm["publish"]; ok {
 		t.Fatal("publish must be omitted for default draft creation")
@@ -227,14 +227,44 @@ func TestCreate_ProductAudienceRequiresProduct(t *testing.T) {
 	assertUsageError(t, err, "--product")
 }
 
+func TestCreate_ProductFlagRequiresProductAudience(t *testing.T) {
+	cases := []struct {
+		name         string
+		audienceArgs []string
+	}{
+		{name: "default audience"},
+		{name: "customers audience", audienceArgs: []string{"--audience", "customers"}},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			bodyPath := writeEmailBody(t, "<p>Hello</p>")
+			testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+				t.Fatal("API must not be called when product audience is not selected")
+			})
+
+			args := []string{"--subject", "Hello", "--body", bodyPath}
+			args = append(args, tc.audienceArgs...)
+			args = append(args, "--product", "prod_123")
+			cmd := testutil.Command(newCreateCmd())
+			cmd.SetArgs(args)
+			err := cmd.Execute()
+
+			assertUsageError(t, err, "--product requires --audience product")
+		})
+	}
+}
+
 func TestCreate_ProductAudienceSendsLinkID(t *testing.T) {
 	bodyPath := writeEmailBody(t, "<p>Product update</p>")
+	var gotAudience string
 	var gotLinkID string
 
 	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
 		if err := r.ParseForm(); err != nil {
 			t.Fatalf("ParseForm failed: %v", err)
 		}
+		gotAudience = r.PostForm.Get("audience")
 		gotLinkID = r.PostForm.Get("link_id")
 		testutil.JSON(t, w, map[string]any{"email": emailPayload("email_123", "Product update", "draft")})
 	})
@@ -243,8 +273,46 @@ func TestCreate_ProductAudienceSendsLinkID(t *testing.T) {
 	cmd.SetArgs([]string{"--subject", "Product update", "--body", bodyPath, "--audience", "product", "--product", "prod_123"})
 	testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
+	if gotAudience != "product" {
+		t.Fatalf("audience = %q, want product", gotAudience)
+	}
 	if gotLinkID != "prod_123" {
 		t.Fatalf("link_id = %q, want prod_123", gotLinkID)
+	}
+}
+
+func TestCreate_MapsAudienceLabelsToAPIValues(t *testing.T) {
+	cases := []struct {
+		name         string
+		audience     string
+		wantAudience string
+	}{
+		{name: "all", audience: "all", wantAudience: "audience"},
+		{name: "customers", audience: "customers", wantAudience: "seller"},
+		{name: "followers", audience: "followers", wantAudience: "follower"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			bodyPath := writeEmailBody(t, "<p>Segment</p>")
+			var gotAudience string
+
+			testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+				if err := r.ParseForm(); err != nil {
+					t.Fatalf("ParseForm failed: %v", err)
+				}
+				gotAudience = r.PostForm.Get("audience")
+				testutil.JSON(t, w, map[string]any{"email": emailPayload("email_123", "Segment", "draft")})
+			})
+
+			cmd := testutil.Command(newCreateCmd())
+			cmd.SetArgs([]string{"--subject", "Segment", "--body", bodyPath, "--audience", tc.audience})
+			testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+			if gotAudience != tc.wantAudience {
+				t.Fatalf("audience = %q, want %s", gotAudience, tc.wantAudience)
+			}
+		})
 	}
 }
 
@@ -276,7 +344,7 @@ func TestCreate_DryRunPrintsRequestWithoutCallingAPI(t *testing.T) {
 	if called {
 		t.Fatal("API was called during dry-run")
 	}
-	for _, want := range []string{"POST", "/emails", "subject: Preview params", "audience: followers", "body: <p>Preview params</p>"} {
+	for _, want := range []string{"POST", "/emails", "subject: Preview params", "audience: follower", "body: <p>Preview params</p>"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("dry-run output missing %q in %q", want, out)
 		}
@@ -399,6 +467,38 @@ func TestList_PlainOutputRendersRowsWithDisplayDates(t *testing.T) {
 	}
 }
 
+func TestEmailDisplayDateUsesStateSpecificTimestamp(t *testing.T) {
+	cases := []struct {
+		name string
+		item emailRecord
+		want string
+	}{
+		{
+			name: "published",
+			item: emailRecord{State: emailStatePublished, PublishedAt: "2026-06-17T10:00:00Z", ScheduledAt: "2026-06-18T14:00:00Z"},
+			want: "2026-06-17T10:00:00Z",
+		},
+		{
+			name: "scheduled",
+			item: emailRecord{State: emailStateScheduled, PublishedAt: "2026-06-17T10:00:00Z", ScheduledAt: "2026-06-18T14:00:00Z"},
+			want: "2026-06-18T14:00:00Z",
+		},
+		{
+			name: "draft",
+			item: emailRecord{State: emailStateDraft, PublishedAt: "2026-06-17T10:00:00Z", ScheduledAt: "2026-06-18T14:00:00Z"},
+			want: "",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := emailDisplayDate(tc.item); got != tc.want {
+				t.Fatalf("emailDisplayDate() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestList_RendersFriendlyAudiencesAndProductTargets(t *testing.T) {
 	all := completeEmailPayload("email_all", "All buyers", "draft")
 
@@ -423,10 +523,10 @@ func TestList_RendersFriendlyAudiencesAndProductTargets(t *testing.T) {
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
 	for _, want := range []string{
-		"email_all\tAll buyers\tdraft\tall\t\t2026-06-17T10:00:00Z\n",
-		"email_customers\tCustomers\tdraft\tcustomers\t\t2026-06-17T10:00:00Z\n",
-		"email_followers\tFollowers\tdraft\tfollowers\t\t2026-06-17T10:00:00Z\n",
-		"email_product\tProduct\tdraft\tproduct\tprod_123\t2026-06-17T10:00:00Z\n",
+		"email_all\tAll buyers\tdraft\tall\t\t\n",
+		"email_customers\tCustomers\tdraft\tcustomers\t\t\n",
+		"email_followers\tFollowers\tdraft\tfollowers\t\t\n",
+		"email_product\tProduct\tdraft\tproduct\tprod_123\t\n",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("plain list output missing %q in %q", want, out)
@@ -533,10 +633,12 @@ func TestList_AllJSONFetchesAllPages(t *testing.T) {
 		requests++
 		switch r.URL.Query().Get("page_key") {
 		case "":
+			first := completeEmailPayload("email_1", "First", "draft")
+			first["message"] = "<p>First body</p>"
+			first["product_id"] = nil
+			first["url"] = nil
 			testutil.JSON(t, w, map[string]any{
-				"emails": []map[string]any{
-					completeEmailPayload("email_1", "First", "draft"),
-				},
+				"emails":        []map[string]any{first},
 				"next_page_key": "cursor_2",
 				"next_page_url": "https://example.com/emails?page_key=cursor_2",
 			})
@@ -564,8 +666,39 @@ func TestList_AllJSONFetchesAllPages(t *testing.T) {
 	if len(resp.Emails) != 2 {
 		t.Fatalf("got %d emails, want 2", len(resp.Emails))
 	}
+	if resp.Emails[0]["message"] != "<p>First body</p>" {
+		t.Fatalf("message = %v, want raw API message", resp.Emails[0]["message"])
+	}
+	if got, ok := resp.Emails[0]["product_id"]; !ok || got != nil {
+		t.Fatalf("product_id = %#v, want preserved null", got)
+	}
+	if _, ok := resp.Emails[0]["audience_count"]; !ok {
+		t.Fatalf("audience_count missing from raw email object: %#v", resp.Emails[0])
+	}
 	if requests != 2 {
 		t.Fatalf("got %d requests, want 2", requests)
+	}
+}
+
+func TestList_AllJQPreservesRawEmailFields(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		item := completeEmailPayload("email_1", "First", "draft")
+		item["message"] = "<p>First body</p>"
+		testutil.JSON(t, w, map[string]any{
+			"emails": []map[string]any{item},
+		})
+	})
+
+	cmd := testutil.Command(newListCmd(), testutil.JQ(".emails[].message"))
+	cmd.SetArgs([]string{"--all"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	var got string
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("jq output is not a JSON string: %v\n%s", err, out)
+	}
+	if got != "<p>First body</p>" {
+		t.Fatalf("jq output = %q, want raw message", got)
 	}
 }
 

@@ -1,6 +1,7 @@
 package emails
 
 import (
+	"encoding/json"
 	"io"
 	"net/url"
 	"strings"
@@ -13,10 +14,39 @@ import (
 )
 
 type emailListResponse struct {
-	Success     bool          `json:"success"`
-	Emails      []emailRecord `json:"emails"`
-	NextPageKey string        `json:"next_page_key,omitempty"`
-	NextPageURL string        `json:"next_page_url,omitempty"`
+	Success     bool              `json:"success"`
+	Emails      []emailRecord     `json:"emails"`
+	RawEmails   []json.RawMessage `json:"-"`
+	NextPageKey string            `json:"next_page_key,omitempty"`
+	NextPageURL string            `json:"next_page_url,omitempty"`
+}
+
+func (resp *emailListResponse) UnmarshalJSON(data []byte) error {
+	var raw struct {
+		Success     bool              `json:"success"`
+		Emails      []json.RawMessage `json:"emails"`
+		NextPageKey string            `json:"next_page_key,omitempty"`
+		NextPageURL string            `json:"next_page_url,omitempty"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+
+	emails := make([]emailRecord, 0, len(raw.Emails))
+	for _, data := range raw.Emails {
+		var item emailRecord
+		if err := json.Unmarshal(data, &item); err != nil {
+			return err
+		}
+		emails = append(emails, item)
+	}
+
+	resp.Success = raw.Success
+	resp.Emails = emails
+	resp.RawEmails = raw.Emails
+	resp.NextPageKey = raw.NextPageKey
+	resp.NextPageURL = raw.NextPageURL
+	return nil
 }
 
 func newListCmd() *cobra.Command {
@@ -130,6 +160,15 @@ func hasEmails(page emailListResponse) bool {
 }
 
 func writeEmailItems(page emailListResponse, writeItem func(any) error) error {
+	if len(page.RawEmails) > 0 {
+		for _, item := range page.RawEmails {
+			if err := writeItem(item); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
 	for _, item := range page.Emails {
 		if err := writeItem(item); err != nil {
 			return err

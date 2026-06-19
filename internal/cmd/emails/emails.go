@@ -92,12 +92,26 @@ func emailAudienceLabel(item emailRecord) string {
 	}
 }
 
+func emailAPIAudienceValue(value string) string {
+	switch value {
+	case emailAudienceAll:
+		return emailAPIAudienceAll
+	case emailAudienceCustomers:
+		return emailAPIAudienceCustomers
+	case emailAudienceFollowers:
+		return emailAPIAudienceFollowers
+	default:
+		return value
+	}
+}
+
 func emailDisplayDate(item emailRecord) string {
-	if item.State == emailStateScheduled && item.ScheduledAt != "" {
+	switch item.State {
+	case emailStateScheduled:
 		return item.ScheduledAt
-	}
-	if item.PublishedAt != "" {
+	case emailStatePublished:
 		return item.PublishedAt
+	default:
+		return ""
 	}
-	return item.ScheduledAt
 }
