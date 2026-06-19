@@ -717,6 +717,12 @@ func TestDefaultFlowConfig(t *testing.T) {
 	}
 }
 
+func TestDefaultScopesRequestAccountOnly(t *testing.T) {
+	if Scopes != "account" {
+		t.Fatalf("Scopes = %q, want account only", Scopes)
+	}
+}
+
 func TestBrowserFlow_ErrorParamWithoutDescription(t *testing.T) {
 	tokenSrv := httptest.NewServer(tokenHandler(t, false))
 	defer tokenSrv.Close()
