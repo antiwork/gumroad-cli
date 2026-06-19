@@ -797,7 +797,7 @@ func TestView_PlainOutputRendersPublishedFields(t *testing.T) {
 func TestView_DraftOutputRendersNoSendEmailsAndOmitsNullFields(t *testing.T) {
 	draft := completeEmailPayload("email_draft", "Draft update", "draft")
 	draft["audience_type"] = "follower"
-	draft["published_at"] = nil
+	draft["published_at"] = "2026-06-17T10:00:00Z"
 	draft["scheduled_at"] = nil
 	draft["send_emails"] = false
 	draft["url"] = nil

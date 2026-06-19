@@ -74,10 +74,13 @@ func renderEmailView(opts cmdutil.Options, item emailRecord) error {
 			return err
 		}
 	}
-	if item.State == emailStateScheduled && item.ScheduledAt != "" {
-		return output.Writef(opts.Out(), "Scheduled at: %s\n", item.ScheduledAt)
+	if item.State == emailStateScheduled {
+		if item.ScheduledAt != "" {
+			return output.Writef(opts.Out(), "Scheduled at: %s\n", item.ScheduledAt)
+		}
+		return nil
 	}
-	if item.PublishedAt != "" {
+	if item.State == emailStatePublished && item.PublishedAt != "" {
 		return output.Writef(opts.Out(), "Published at: %s\n", item.PublishedAt)
 	}
 	return nil
