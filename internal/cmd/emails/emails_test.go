@@ -39,7 +39,7 @@ func emailPayload(id, subject, state string) map[string]any {
 		"id":               id,
 		"subject":          subject,
 		"message":          "<p>Hello</p>",
-		"audience_type":    "all",
+		"audience_type":    "audience",
 		"state":            state,
 		"published_at":     "2026-06-17T10:00:00Z",
 		"scheduled_at":     "",
@@ -389,12 +389,52 @@ func TestList_PlainOutputRendersRowsWithDisplayDates(t *testing.T) {
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
 	for _, want := range []string{
-		"email_published\tPublished note\tpublished\tall\t2026-06-17T10:00:00Z\n",
-		"email_scheduled\tScheduled note\tscheduled\tall\t2026-06-18T14:00:00Z\n",
-		"email_draft\tDraft note\tdraft\tall\t\n",
+		"email_published\tPublished note\tpublished\tall\t\t2026-06-17T10:00:00Z\n",
+		"email_scheduled\tScheduled note\tscheduled\tall\t\t2026-06-18T14:00:00Z\n",
+		"email_draft\tDraft note\tdraft\tall\t\t\n",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("plain list output missing %q in %q", want, out)
+		}
+	}
+}
+
+func TestList_RendersFriendlyAudiencesAndProductTargets(t *testing.T) {
+	all := completeEmailPayload("email_all", "All buyers", "draft")
+
+	customers := completeEmailPayload("email_customers", "Customers", "draft")
+	customers["audience_type"] = "seller"
+
+	followers := completeEmailPayload("email_followers", "Followers", "draft")
+	followers["audience_type"] = "follower"
+
+	product := completeEmailPayload("email_product", "Product", "draft")
+	product["audience_type"] = "product"
+	product["product_id"] = "prod_123"
+
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{
+			"emails": []map[string]any{all, customers, followers, product},
+		})
+	})
+
+	cmd := testutil.Command(newListCmd(), testutil.PlainOutput())
+	cmd.SetArgs([]string{})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	for _, want := range []string{
+		"email_all\tAll buyers\tdraft\tall\t\t2026-06-17T10:00:00Z\n",
+		"email_customers\tCustomers\tdraft\tcustomers\t\t2026-06-17T10:00:00Z\n",
+		"email_followers\tFollowers\tdraft\tfollowers\t\t2026-06-17T10:00:00Z\n",
+		"email_product\tProduct\tdraft\tproduct\tprod_123\t2026-06-17T10:00:00Z\n",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("plain list output missing %q in %q", want, out)
+		}
+	}
+	for _, unwanted := range []string{"\tseller\t", "\tfollower\t", "\taudience\t"} {
+		if strings.Contains(out, unwanted) {
+			t.Fatalf("plain list output leaked server audience %q in %q", unwanted, out)
 		}
 	}
 }
@@ -615,7 +655,7 @@ func TestView_PlainOutputRendersPublishedFields(t *testing.T) {
 	cmd.SetArgs([]string{"email_123"})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
-	want := "email_123\tLaunch\tpublished\tall\tyes\thttps://example.com/emails/email_123\t2026-06-17T10:00:00Z\n"
+	want := "email_123\tLaunch\tpublished\tall\t\tyes\thttps://example.com/emails/email_123\t2026-06-17T10:00:00Z\n"
 	if out != want {
 		t.Fatalf("got %q, want %q", out, want)
 	}
@@ -623,7 +663,7 @@ func TestView_PlainOutputRendersPublishedFields(t *testing.T) {
 
 func TestView_DraftOutputRendersNoSendEmailsAndOmitsNullFields(t *testing.T) {
 	draft := completeEmailPayload("email_draft", "Draft update", "draft")
-	draft["audience_type"] = "followers"
+	draft["audience_type"] = "follower"
 	draft["published_at"] = nil
 	draft["scheduled_at"] = nil
 	draft["send_emails"] = false
@@ -646,6 +686,26 @@ func TestView_DraftOutputRendersNoSendEmailsAndOmitsNullFields(t *testing.T) {
 	for _, unwanted := range []string{"URL:", "Published at:"} {
 		if strings.Contains(out, unwanted) {
 			t.Fatalf("draft view output contains %q in %q", unwanted, out)
+		}
+	}
+}
+
+func TestView_RendersProductTargetAndFriendlyAudience(t *testing.T) {
+	product := completeEmailPayload("email_product", "Product update", "draft")
+	product["audience_type"] = "product"
+	product["product_id"] = "prod_123"
+
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{"email": product})
+	})
+
+	cmd := testutil.Command(newViewCmd(), testutil.Quiet(false))
+	cmd.SetArgs([]string{"email_product"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	for _, want := range []string{"Product update", "Audience: product", "Product ID: prod_123"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("product view output missing %q in %q", want, out)
 		}
 	}
 }

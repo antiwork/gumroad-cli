@@ -141,15 +141,15 @@ func writeEmailItems(page emailListResponse, writeItem func(any) error) error {
 func writeEmailPlain(w io.Writer, items []emailRecord) error {
 	var rows [][]string
 	for _, item := range items {
-		rows = append(rows, []string{item.ID, item.Subject, item.State, item.AudienceType, emailDisplayDate(item)})
+		rows = append(rows, []string{item.ID, item.Subject, item.State, emailAudienceLabel(item), item.ProductID, emailDisplayDate(item)})
 	}
 	return output.PrintPlain(w, rows)
 }
 
 func writeEmailTable(w io.Writer, style output.Styler, items []emailRecord) error {
-	tbl := output.NewStyledTable(style, "ID", "SUBJECT", "STATE", "AUDIENCE", "PUBLISHED/SCHEDULED AT")
+	tbl := output.NewStyledTable(style, "ID", "SUBJECT", "STATE", "AUDIENCE", "PRODUCT", "PUBLISHED/SCHEDULED AT")
 	for _, item := range items {
-		tbl.AddRow(item.ID, item.Subject, item.State, item.AudienceType, emailDisplayDate(item))
+		tbl.AddRow(item.ID, item.Subject, item.State, emailAudienceLabel(item), item.ProductID, emailDisplayDate(item))
 	}
 	return tbl.Render(w)
 }

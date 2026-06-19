@@ -36,7 +36,8 @@ func renderEmailView(opts cmdutil.Options, item emailRecord) error {
 			item.ID,
 			item.Subject,
 			item.State,
-			item.AudienceType,
+			emailAudienceLabel(item),
+			item.ProductID,
 			emailBool(item.SendEmails),
 			item.URL,
 			emailDisplayDate(item),
@@ -57,8 +58,13 @@ func renderEmailView(opts cmdutil.Options, item emailRecord) error {
 	if err := output.Writef(opts.Out(), "State: %s\n", item.State); err != nil {
 		return err
 	}
-	if err := output.Writef(opts.Out(), "Audience: %s\n", item.AudienceType); err != nil {
+	if err := output.Writef(opts.Out(), "Audience: %s\n", emailAudienceLabel(item)); err != nil {
 		return err
+	}
+	if item.ProductID != "" {
+		if err := output.Writef(opts.Out(), "Product ID: %s\n", item.ProductID); err != nil {
+			return err
+		}
 	}
 	if err := output.Writef(opts.Out(), "Send emails: %s\n", emailBool(item.SendEmails)); err != nil {
 		return err

@@ -8,6 +8,10 @@ const (
 	emailAudienceFollowers = "followers"
 	emailAudienceProduct   = "product"
 
+	emailAPIAudienceAll       = "audience"
+	emailAPIAudienceCustomers = "seller"
+	emailAPIAudienceFollowers = "follower"
+
 	emailStatePublished = "published"
 	emailStateScheduled = "scheduled"
 	emailStateDraft     = "draft"
@@ -17,6 +21,7 @@ type emailRecord struct {
 	ID           string `json:"id"`
 	Subject      string `json:"subject"`
 	AudienceType string `json:"audience_type"`
+	ProductID    string `json:"product_id"`
 	State        string `json:"state"`
 	PublishedAt  string `json:"published_at"`
 	ScheduledAt  string `json:"scheduled_at"`
@@ -72,6 +77,19 @@ func emailBool(value bool) string {
 		return "yes"
 	}
 	return "no"
+}
+
+func emailAudienceLabel(item emailRecord) string {
+	switch item.AudienceType {
+	case emailAPIAudienceAll:
+		return emailAudienceAll
+	case emailAPIAudienceCustomers:
+		return emailAudienceCustomers
+	case emailAPIAudienceFollowers:
+		return emailAudienceFollowers
+	default:
+		return item.AudienceType
+	}
 }
 
 func emailDisplayDate(item emailRecord) string {
