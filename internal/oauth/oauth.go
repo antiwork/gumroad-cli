@@ -11,7 +11,7 @@ const (
 	TokenURL      = "https://app.gumroad.com/oauth/token" //nolint:gosec // G101: not a credential
 	DeviceCodeURL = "https://app.gumroad.com/oauth/device/code"
 
-	Scopes = "edit_products view_sales mark_sales_as_shipped edit_sales view_payouts view_profile account"
+	Scopes = "edit_products edit_emails view_sales mark_sales_as_shipped edit_sales view_payouts view_profile account"
 
 	DeviceGrantType = "urn:ietf:params:oauth:grant-type:device_code"
 
