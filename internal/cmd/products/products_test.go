@@ -1370,6 +1370,249 @@ func TestUnpublish_JSONExposesFlatProduct(t *testing.T) {
 	}
 }
 
+func TestList_PaginationHint(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{
+			"products": []map[string]any{
+				{"id": "p1", "name": "Art Pack", "published": true, "formatted_price": "$10", "sales_count": 42},
+			},
+			"next_page_key": "cursor123",
+		})
+	})
+
+	cmd := testutil.Command(newListCmd(), testutil.Quiet(false))
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+	if !strings.Contains(out, "cursor123") {
+		t.Errorf("expected pagination hint with cursor, got: %q", out)
+	}
+	if !strings.Contains(out, "More results available") {
+		t.Errorf("expected pagination message, got: %q", out)
+	}
+}
+
+func TestList_PageKeyPassedToAPI(t *testing.T) {
+	var gotQuery url.Values
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.Query()
+		testutil.JSON(t, w, map[string]any{
+			"products": []map[string]any{
+				{"id": "p2", "name": "Book", "published": true, "formatted_price": "$25", "sales_count": 10},
+			},
+		})
+	})
+
+	cmd := newListCmd()
+	cmd.SetArgs([]string{"--page-key", "cursor123"})
+	testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+	if gotQuery.Get("page_key") != "cursor123" {
+		t.Errorf("got page_key=%q, want cursor123", gotQuery.Get("page_key"))
+	}
+}
+
+func TestList_AllFetchesAllPages(t *testing.T) {
+	requests := 0
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		switch r.URL.Query().Get("page_key") {
+		case "":
+			testutil.JSON(t, w, map[string]any{
+				"products": []map[string]any{
+					{"id": "p1", "name": "Art Pack", "published": true, "formatted_price": "$10", "sales_count": 42},
+				},
+				"next_page_key": "cursor123",
+			})
+		case "cursor123":
+			testutil.JSON(t, w, map[string]any{
+				"products": []map[string]any{
+					{"id": "p2", "name": "Book", "published": false, "formatted_price": "$25", "sales_count": 0},
+				},
+			})
+		default:
+			t.Fatalf("unexpected page_key %q", r.URL.Query().Get("page_key"))
+		}
+	})
+
+	cmd := testutil.Command(newListCmd(), testutil.JSONOutput())
+	cmd.SetArgs([]string{"--all"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	var resp struct {
+		Products []map[string]any `json:"products"`
+	}
+	if err := json.Unmarshal([]byte(out), &resp); err != nil {
+		t.Fatalf("not valid JSON: %v\n%s", err, out)
+	}
+	if len(resp.Products) != 2 {
+		t.Fatalf("got %d products, want 2", len(resp.Products))
+	}
+	if requests != 2 {
+		t.Fatalf("got %d requests, want 2", requests)
+	}
+}
+
+func TestList_AllPlainOutputStreamsAllPages(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Query().Get("page_key") {
+		case "":
+			testutil.JSON(t, w, map[string]any{
+				"products": []map[string]any{
+					{"id": "p1", "name": "Art Pack", "published": true, "formatted_price": "$10", "sales_count": 42},
+				},
+				"next_page_key": "cursor123",
+			})
+		case "cursor123":
+			testutil.JSON(t, w, map[string]any{
+				"products": []map[string]any{
+					{"id": "p2", "name": "Book", "published": false, "formatted_price": "$25", "sales_count": 0},
+				},
+			})
+		default:
+			t.Fatalf("unexpected page_key %q", r.URL.Query().Get("page_key"))
+		}
+	})
+
+	cmd := testutil.Command(newListCmd(), testutil.PlainOutput())
+	cmd.SetArgs([]string{"--all"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+	if !strings.Contains(out, "p1") || !strings.Contains(out, "p2") {
+		t.Fatalf("expected both pages in plain output, got %q", out)
+	}
+}
+
+func TestList_AllTableOutputStreamsAllPages(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Query().Get("page_key") {
+		case "":
+			testutil.JSON(t, w, map[string]any{
+				"products": []map[string]any{
+					{"id": "p1", "name": "Art Pack", "published": true, "formatted_price": "$10", "sales_count": 42},
+				},
+				"next_page_key": "cursor123",
+			})
+		case "cursor123":
+			testutil.JSON(t, w, map[string]any{
+				"products": []map[string]any{
+					{"id": "p2", "name": "Book", "published": false, "formatted_price": "$25", "sales_count": 0},
+				},
+			})
+		default:
+			t.Fatalf("unexpected page_key %q", r.URL.Query().Get("page_key"))
+		}
+	})
+
+	cmd := testutil.Command(newListCmd(), testutil.Quiet(false))
+	cmd.SetArgs([]string{"--all"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+	if !strings.Contains(out, "p1") || !strings.Contains(out, "p2") {
+		t.Fatalf("expected streamed table output with both pages, got %q", out)
+	}
+}
+
+func TestList_AllOutputEmpty(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{"products": []any{}})
+	})
+
+	cmd := testutil.Command(newListCmd(), testutil.Quiet(false))
+	cmd.SetArgs([]string{"--all"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+	if !strings.Contains(out, "No products found") {
+		t.Fatalf("expected empty message, got %q", out)
+	}
+}
+
+func TestList_AllAndPageKeyMutuallyExclusive(t *testing.T) {
+	cmd := newListCmd()
+	cmd.SetArgs([]string{"--all", "--page-key", "abc"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for mutually exclusive flags")
+	}
+}
+
+func TestList_SinglePageDoesNotWalkPages(t *testing.T) {
+	requests := 0
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		if pageKey := r.URL.Query().Get("page_key"); pageKey != "" {
+			t.Fatalf("unexpected page_key %q", pageKey)
+		}
+		testutil.JSON(t, w, map[string]any{
+			"products": []map[string]any{
+				{"id": "p1", "name": "Art Pack", "published": true, "formatted_price": "$10", "sales_count": 42},
+			},
+			"next_page_key": "cursor123",
+		})
+	})
+
+	cmd := testutil.Command(newListCmd(), testutil.JSONOutput())
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	var resp struct {
+		Products    []map[string]any `json:"products"`
+		NextPageKey string           `json:"next_page_key"`
+	}
+	if err := json.Unmarshal([]byte(out), &resp); err != nil {
+		t.Fatalf("not valid JSON: %v\n%s", err, out)
+	}
+	if requests != 1 {
+		t.Fatalf("got %d requests, want 1", requests)
+	}
+	if len(resp.Products) != 1 {
+		t.Fatalf("got %d products, want 1", len(resp.Products))
+	}
+	if resp.NextPageKey != "cursor123" {
+		t.Fatalf("got next_page_key=%q, want cursor123", resp.NextPageKey)
+	}
+}
+
+func TestList_EmptyWithNextPageKey(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{
+			"products":      []any{},
+			"next_page_key": "cursor123",
+		})
+	})
+
+	cmd := testutil.Command(newListCmd(), testutil.Quiet(false))
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+	if !strings.Contains(out, "No products found on this page") {
+		t.Errorf("expected empty page message, got: %q", out)
+	}
+	if !strings.Contains(out, "More results available") {
+		t.Errorf("expected pagination hint, got: %q", out)
+	}
+}
+
+func TestList_AllJQFetchesAllPages(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Query().Get("page_key") {
+		case "":
+			testutil.JSON(t, w, map[string]any{
+				"products": []map[string]any{
+					{"id": "p1", "name": "Art Pack", "published": true, "formatted_price": "$10", "sales_count": 42},
+				},
+				"next_page_key": "cursor123",
+			})
+		case "cursor123":
+			testutil.JSON(t, w, map[string]any{
+				"products": []map[string]any{
+					{"id": "p2", "name": "Book", "published": false, "formatted_price": "$25", "sales_count": 0},
+				},
+			})
+		default:
+			t.Fatalf("unexpected page_key %q", r.URL.Query().Get("page_key"))
+		}
+	})
+
+	cmd := testutil.Command(newListCmd(), testutil.JQ(".products[].id"))
+	cmd.SetArgs([]string{"--all"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+	if !strings.Contains(out, "p1") || !strings.Contains(out, "p2") {
+		t.Fatalf("expected both product IDs in JQ output, got %q", out)
+	}
+}
+
 func TestList_APIError(t *testing.T) {
 	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(500)

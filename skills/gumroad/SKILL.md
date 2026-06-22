@@ -228,8 +228,10 @@ gumroad admin users unwatch --user-id 2245593582708 --expected-email seller@exam
 ### products — Manage products
 
 ```sh
-# List all products
+# List products (paginated)
 gumroad products list --json --no-input
+gumroad products list --all --json --no-input
+gumroad products list --page-key <cursor> --json --no-input
 
 # View a product
 gumroad products view <id> --json --no-input
@@ -307,6 +309,8 @@ In custom HTML, use Gumroad data attributes for live product values and checkout
 <button data-gumroad-action="buy" data-gumroad-quantity="2">Buy 2 seats</button>
 <button data-gumroad-action="buy" data-gumroad-price="19.99">Pay $19.99</button>
 ```
+
+**List flags:** `--all`, `--page-key`.
 
 **Categories:** `products categories [--search <term>]` returns label, path, and numeric ID. Prefer `--category <path>` for product create/update. `--taxonomy-id` remains supported when you already have the numeric ID, but it cannot be combined with `--category`.
 
@@ -534,6 +538,6 @@ gumroad webhooks delete <id> --yes --json --no-input
 
 ## Tips
 
-- Use `--all` with `sales list`, `subscribers list`, `payouts list` to fetch every page automatically.
+- Use `--all` with `products list`, `sales list`, `subscribers list`, `payouts list` to fetch every page automatically.
 - Use `--plain` for tab-separated output suitable for `cut`, `awk`, and other Unix tools.
 - Run `gumroad <command> --help` for full flag details on any command.
