@@ -1401,7 +1401,7 @@ func TestList_PageKeyPassedToAPI(t *testing.T) {
 		})
 	})
 
-	cmd := newListCmd()
+	cmd := testutil.Command(newListCmd(), testutil.JSONOutput())
 	cmd.SetArgs([]string{"--page-key", "cursor123"})
 	testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 	if gotQuery.Get("page_key") != "cursor123" {
