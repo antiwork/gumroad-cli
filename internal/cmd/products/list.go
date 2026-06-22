@@ -78,15 +78,7 @@ func renderProductsList(opts cmdutil.Options, resp productsListResponse) error {
 	}
 
 	if opts.PlainOutput {
-		var rows [][]string
-		for _, p := range resp.Products {
-			status := "draft"
-			if p.Published {
-				status = "published"
-			}
-			rows = append(rows, []string{p.ID, p.Name, status, p.FormattedPrice, fmt.Sprintf("%d", p.SalesCount)})
-		}
-		return output.PrintPlain(opts.Out(), rows)
+		return writeProductsPlain(opts.Out(), resp.Products)
 	}
 
 	style := opts.Style()
@@ -101,13 +93,7 @@ func renderProductsList(opts cmdutil.Options, resp productsListResponse) error {
 
 	buildTable := func(items []productListItem, countHeader string) *output.Table {
 		tbl := output.NewStyledTable(style, "ID", "NAME", "STATUS", "PRICE", countHeader)
-		for _, p := range items {
-			status := style.Yellow("draft")
-			if p.Published {
-				status = style.Green("published")
-			}
-			tbl.AddRow(p.ID, p.Name, status, p.FormattedPrice, fmt.Sprintf("%d", p.SalesCount))
-		}
+		addProductRows(tbl, style, items)
 		return tbl
 	}
 
@@ -214,6 +200,11 @@ func writeProductsPlain(w io.Writer, products []productListItem) error {
 
 func writeProductsTable(w io.Writer, style output.Styler, products []productListItem) error {
 	tbl := output.NewStyledTable(style, "ID", "NAME", "STATUS", "PRICE", "SALES")
+	addProductRows(tbl, style, products)
+	return tbl.Render(w)
+}
+
+func addProductRows(tbl *output.Table, style output.Styler, products []productListItem) {
 	for _, p := range products {
 		status := style.Yellow("draft")
 		if p.Published {
@@ -221,7 +212,6 @@ func writeProductsTable(w io.Writer, style output.Styler, products []productList
 		}
 		tbl.AddRow(p.ID, p.Name, status, p.FormattedPrice, fmt.Sprintf("%d", p.SalesCount))
 	}
-	return tbl.Render(w)
 }
 
 func productsPaginationHint(nextPageKey string) string {
