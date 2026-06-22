@@ -50,7 +50,7 @@ Always follow these rules:
 
 Most responses are wrapped in `{"success": true, ...}` with resource-specific keys:
 
-- `user` → `.user`
+- `user` → `.user`, `user update` → `.user`
 - `refund-policy view/set` → `.refund_policy`
 - `products list` → `.products[]`
 - `products view` → `.product`
@@ -148,6 +148,10 @@ gumroad auth logout --yes --no-input
 ```sh
 gumroad user --json --no-input
 gumroad user --json --jq '.user.email' --no-input
+
+# Update the seller name and/or bio. Pass an empty value to clear a field.
+gumroad user update --name "Jane Doe" --bio "I make great things." --json --no-input
+gumroad user update --bio "" --json --no-input
 ```
 
 ### refund-policy — Store-wide refund policy
