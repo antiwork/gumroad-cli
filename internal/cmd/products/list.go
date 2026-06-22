@@ -1,6 +1,7 @@
 package products
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/url"
@@ -10,6 +11,11 @@ import (
 	"github.com/antiwork/gumroad-cli/internal/config"
 	"github.com/antiwork/gumroad-cli/internal/output"
 	"github.com/spf13/cobra"
+)
+
+const (
+	salesCountHeader   = "SALES"
+	membersCountHeader = "MEMBERS"
 )
 
 type productListItem struct {
@@ -23,7 +29,32 @@ type productListItem struct {
 
 type productsListResponse struct {
 	Products    []productListItem `json:"products"`
+	RawProducts []json.RawMessage `json:"-"`
 	NextPageKey string            `json:"next_page_key,omitempty"`
+}
+
+func (resp *productsListResponse) UnmarshalJSON(data []byte) error {
+	var raw struct {
+		Products    []json.RawMessage `json:"products"`
+		NextPageKey string            `json:"next_page_key,omitempty"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+
+	products := make([]productListItem, 0, len(raw.Products))
+	for _, item := range raw.Products {
+		var p productListItem
+		if err := json.Unmarshal(item, &p); err != nil {
+			return err
+		}
+		products = append(products, p)
+	}
+
+	resp.Products = products
+	resp.RawProducts = raw.Products
+	resp.NextPageKey = raw.NextPageKey
+	return nil
 }
 
 func newListCmd() *cobra.Command {
@@ -82,46 +113,9 @@ func renderProductsList(opts cmdutil.Options, resp productsListResponse) error {
 	}
 
 	style := opts.Style()
-	var memberships, standard []productListItem
-	for _, p := range resp.Products {
-		if p.IsTieredMembership {
-			memberships = append(memberships, p)
-		} else {
-			standard = append(standard, p)
-		}
-	}
-
-	buildTable := func(items []productListItem, countHeader string) *output.Table {
-		tbl := output.NewStyledTable(style, "ID", "NAME", "STATUS", "PRICE", countHeader)
-		addProductRows(tbl, style, items)
-		return tbl
-	}
-
 	return output.WithPager(opts.Out(), opts.Err(), func(w io.Writer) error {
-		split := len(memberships) > 0 && len(standard) > 0
-		if split {
-			if err := output.Writeln(w, style.Bold("Memberships")); err != nil {
-				return err
-			}
-			if err := buildTable(memberships, "MEMBERS").Render(w); err != nil {
-				return err
-			}
-			if err := output.Writeln(w, "\n"+style.Bold("Products")); err != nil {
-				return err
-			}
-			if err := buildTable(standard, "SALES").Render(w); err != nil {
-				return err
-			}
-		} else {
-			items := standard
-			header := "SALES"
-			if len(memberships) > 0 {
-				items = memberships
-				header = "MEMBERS"
-			}
-			if err := buildTable(items, header).Render(w); err != nil {
-				return err
-			}
+		if err := writeProductSections(w, style, resp.Products); err != nil {
+			return err
 		}
 		if resp.NextPageKey != "" && !opts.Quiet {
 			hint := productsPaginationHint(resp.NextPageKey)
@@ -162,7 +156,7 @@ func streamProductsListAll(opts cmdutil.Options, params url.Values) error {
 			return writeProductsPlain(w, page.Products)
 		},
 		WriteTablePage: func(w io.Writer, page productsListResponse) error {
-			return writeProductsTable(w, style, page.Products)
+			return writeProductSections(w, style, page.Products)
 		},
 	})
 }
@@ -178,6 +172,15 @@ func hasProducts(page productsListResponse) bool {
 }
 
 func writeProductItems(page productsListResponse, writeItem func(any) error) error {
+	if len(page.RawProducts) > 0 {
+		for _, item := range page.RawProducts {
+			if err := writeItem(item); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
 	for _, p := range page.Products {
 		if err := writeItem(p); err != nil {
 			return err
@@ -198,10 +201,42 @@ func writeProductsPlain(w io.Writer, products []productListItem) error {
 	return output.PrintPlain(w, rows)
 }
 
-func writeProductsTable(w io.Writer, style output.Styler, products []productListItem) error {
-	tbl := output.NewStyledTable(style, "ID", "NAME", "STATUS", "PRICE", "SALES")
-	addProductRows(tbl, style, products)
-	return tbl.Render(w)
+func writeProductSections(w io.Writer, style output.Styler, products []productListItem) error {
+	var memberships, standard []productListItem
+	for _, p := range products {
+		if p.IsTieredMembership {
+			memberships = append(memberships, p)
+		} else {
+			standard = append(standard, p)
+		}
+	}
+
+	buildTable := func(items []productListItem, countHeader string) *output.Table {
+		tbl := output.NewStyledTable(style, "ID", "NAME", "STATUS", "PRICE", countHeader)
+		addProductRows(tbl, style, items)
+		return tbl
+	}
+
+	if len(memberships) > 0 && len(standard) > 0 {
+		if err := output.Writeln(w, style.Bold("Memberships")); err != nil {
+			return err
+		}
+		if err := buildTable(memberships, membersCountHeader).Render(w); err != nil {
+			return err
+		}
+		if err := output.Writeln(w, "\n"+style.Bold("Products")); err != nil {
+			return err
+		}
+		return buildTable(standard, salesCountHeader).Render(w)
+	}
+
+	items := standard
+	header := salesCountHeader
+	if len(memberships) > 0 {
+		items = memberships
+		header = membersCountHeader
+	}
+	return buildTable(items, header).Render(w)
 }
 
 func addProductRows(tbl *output.Table, style output.Styler, products []productListItem) {

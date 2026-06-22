@@ -1613,6 +1613,87 @@ func TestList_AllJQFetchesAllPages(t *testing.T) {
 	}
 }
 
+func TestList_AllJSONPreservesNonDisplayFields(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Query().Get("page_key") {
+		case "":
+			testutil.JSON(t, w, map[string]any{
+				"products": []map[string]any{
+					{"id": "p1", "name": "Art Pack", "published": true, "formatted_price": "$10", "sales_count": 42, "short_url": "https://example.com/l/p1", "custom_permalink": "art-pack"},
+				},
+				"next_page_key": "cursor123",
+			})
+		case "cursor123":
+			testutil.JSON(t, w, map[string]any{
+				"products": []map[string]any{
+					{"id": "p2", "name": "Book", "published": false, "formatted_price": "$25", "sales_count": 0, "short_url": "https://example.com/l/p2", "custom_permalink": "book"},
+				},
+			})
+		default:
+			t.Fatalf("unexpected page_key %q", r.URL.Query().Get("page_key"))
+		}
+	})
+
+	cmd := testutil.Command(newListCmd(), testutil.JSONOutput())
+	cmd.SetArgs([]string{"--all"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	var resp struct {
+		Products []map[string]any `json:"products"`
+	}
+	if err := json.Unmarshal([]byte(out), &resp); err != nil {
+		t.Fatalf("not valid JSON: %v\n%s", err, out)
+	}
+	if len(resp.Products) != 2 {
+		t.Fatalf("got %d products, want 2", len(resp.Products))
+	}
+	for _, p := range resp.Products {
+		if p["short_url"] == nil || p["custom_permalink"] == nil {
+			t.Fatalf("--all --json dropped non-display fields, got %v", p)
+		}
+	}
+}
+
+func TestList_AllTableLabelsMembershipsAsMembers(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{
+			"products": []map[string]any{
+				{"id": "m1", "name": "Pro Tier", "published": true, "formatted_price": "$10/mo", "sales_count": 7, "is_tiered_membership": true},
+			},
+		})
+	})
+
+	cmd := testutil.Command(newListCmd(), testutil.Quiet(false))
+	cmd.SetArgs([]string{"--all"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+	if !strings.Contains(out, "MEMBERS") {
+		t.Fatalf("expected MEMBERS header for membership-only page, got %q", out)
+	}
+	if strings.Contains(out, "SALES") {
+		t.Fatalf("did not expect SALES header for membership-only page, got %q", out)
+	}
+}
+
+func TestList_AllTableSplitsMixedPage(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{
+			"products": []map[string]any{
+				{"id": "m1", "name": "Pro Tier", "published": true, "formatted_price": "$10/mo", "sales_count": 7, "is_tiered_membership": true},
+				{"id": "p1", "name": "Art Pack", "published": true, "formatted_price": "$10", "sales_count": 42},
+			},
+		})
+	})
+
+	cmd := testutil.Command(newListCmd(), testutil.Quiet(false))
+	cmd.SetArgs([]string{"--all"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+	for _, want := range []string{"Memberships", "Products", "MEMBERS", "SALES", "m1", "p1"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("expected mixed --all page to contain %q, got %q", want, out)
+		}
+	}
+}
+
 func TestList_APIError(t *testing.T) {
 	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(500)
