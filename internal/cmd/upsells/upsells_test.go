@@ -553,6 +553,212 @@ func TestDelete_APIError(t *testing.T) {
 	}
 }
 
+func crossSellWithVariantPayload() map[string]any {
+	return map[string]any{
+		"upsell": map[string]any{
+			"id":                        "up1",
+			"name":                      "Companion",
+			"cross_sell":                true,
+			"replace_selected_products": false,
+			"universal":                 false,
+			"text":                      "Add it",
+			"description":               "Great deal",
+			"paused":                    false,
+			"product": map[string]any{
+				"id":            "prod-offered",
+				"name":          "Audiobook",
+				"currency_type": "usd",
+				"variant":       map[string]any{"id": "var-old", "name": "Deluxe"},
+			},
+			"discount":          map[string]any{"type": "percent", "percents": 30},
+			"selected_products": []map[string]any{{"id": "prod-book", "name": "Book"}},
+			"upsell_variants":   []map[string]any{},
+		},
+	}
+}
+
+func versionUpsellPayload() map[string]any {
+	return map[string]any{
+		"upsell": map[string]any{
+			"id": "up1", "name": "Pro upgrade", "cross_sell": false, "paused": false,
+			"product":         map[string]any{"id": "p1", "name": "Course"},
+			"upsell_variants": []map[string]any{{"id": "uv1", "selected_variant": map[string]any{"id": "v1", "name": "Basic"}, "offered_variant": map[string]any{"id": "v2", "name": "Premium"}}},
+		},
+	}
+}
+
+func updatePutBody(t *testing.T, args []string, getPayload map[string]any) map[string]any {
+	t.Helper()
+	var putBody map[string]any
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			testutil.JSON(t, w, getPayload)
+			return
+		}
+		putBody = decodeBody(t, r)
+		testutil.JSON(t, w, crossSellPayload())
+	})
+	cmd := newUpdateCmd()
+	cmd.SetArgs(args)
+	testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+	return putBody
+}
+
+func TestUpdate_ProductChangeDropsStaleVariant(t *testing.T) {
+	body := updatePutBody(t, []string{"up1", "--product", "new-prod"}, crossSellWithVariantPayload())
+	if body["product_id"] != "new-prod" {
+		t.Errorf("product_id not applied: %v", body["product_id"])
+	}
+	if _, ok := body["variant_id"]; ok {
+		t.Errorf("stale variant_id should be dropped when product changes, got %v", body["variant_id"])
+	}
+}
+
+func TestUpdate_KeepsVariantWhenProductUnchanged(t *testing.T) {
+	body := updatePutBody(t, []string{"up1", "--name", "X"}, crossSellWithVariantPayload())
+	if body["variant_id"] != "var-old" {
+		t.Errorf("variant_id should be preserved, got %v", body["variant_id"])
+	}
+}
+
+func TestUpdate_ClearSelectedProducts(t *testing.T) {
+	body := updatePutBody(t, []string{"up1", "--selected-product", ""}, crossSellWithVariantPayload())
+	ids, ok := body["product_ids"].([]any)
+	if !ok || len(ids) != 0 {
+		t.Errorf("product_ids should be cleared to empty, got %v", body["product_ids"])
+	}
+}
+
+func TestUpdate_ReplaceSelectedProducts(t *testing.T) {
+	body := updatePutBody(t, []string{"up1", "--selected-product", "new-book"}, crossSellWithVariantPayload())
+	ids, ok := body["product_ids"].([]any)
+	if !ok || len(ids) != 1 || ids[0] != "new-book" {
+		t.Errorf("product_ids should be replaced, got %v", body["product_ids"])
+	}
+}
+
+func TestUpdate_UniversalDropsSelectedProducts(t *testing.T) {
+	body := updatePutBody(t, []string{"up1", "--universal"}, crossSellWithVariantPayload())
+	if body["universal"] != true {
+		t.Errorf("universal should be true, got %v", body["universal"])
+	}
+	if _, ok := body["product_ids"]; ok {
+		t.Errorf("universal cross-sell should not send product_ids, got %v", body["product_ids"])
+	}
+}
+
+func TestUpdate_ReplaceOfferVariants(t *testing.T) {
+	body := updatePutBody(t, []string{"up1", "--offer-variant", "v3:v4"}, versionUpsellPayload())
+	variants, ok := body["upsell_variants"].([]any)
+	if !ok || len(variants) != 1 {
+		t.Fatalf("expected one upsell variant, got %v", body["upsell_variants"])
+	}
+	first := variants[0].(map[string]any)
+	if first["selected_variant_id"] != "v3" || first["offered_variant_id"] != "v4" {
+		t.Errorf("upsell variant not replaced: %v", first)
+	}
+}
+
+func TestUpdate_Plain(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, crossSellPayload())
+	})
+	cmd := testutil.Command(newUpdateCmd(), testutil.PlainOutput())
+	cmd.SetArgs([]string{"up1", "--name", "Renamed"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+	if !strings.Contains(out, "up1\tAudiobook") {
+		t.Errorf("plain update row mismatch: %q", out)
+	}
+}
+
+func TestUpdate_DryRunJSON(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPut {
+			t.Error("PUT should not be sent in dry-run")
+		}
+		testutil.JSON(t, w, crossSellPayload())
+	})
+	cmd := testutil.Command(newUpdateCmd(), testutil.DryRun(true), testutil.JSONOutput())
+	cmd.SetArgs([]string{"up1", "--name", "Renamed"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(out), &payload); err != nil {
+		t.Fatalf("dry-run not valid JSON: %v\n%s", err, out)
+	}
+	if payload["method"] != "PUT" || payload["dry_run"] != true {
+		t.Errorf("unexpected dry-run payload: %v", payload)
+	}
+}
+
+func TestCreate_Plain(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{"upsell": map[string]any{"id": "up9", "name": "Add-on"}})
+	})
+	cmd := testutil.Command(newCreateCmd(), testutil.PlainOutput())
+	cmd.SetArgs([]string{"--name", "Add-on", "--product", "p1"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+	if !strings.Contains(out, "up9\tAdd-on") {
+		t.Errorf("plain create row mismatch: %q", out)
+	}
+}
+
+func TestCreate_AmountDiscount(t *testing.T) {
+	var body map[string]any
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		body = decodeBody(t, r)
+		testutil.JSON(t, w, crossSellPayload())
+	})
+	cmd := newCreateCmd()
+	cmd.SetArgs([]string{"--name", "X", "--product", "p1", "--cross-sell", "--amount", "5"})
+	testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+	offer, ok := body["offer_code"].(map[string]any)
+	if !ok || offer["amount_cents"] != float64(500) {
+		t.Errorf("offer_code amount_cents mismatch: %v", body["offer_code"])
+	}
+}
+
+func TestCreate_DryRunJSON(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Error("should not reach API in dry-run")
+	})
+	cmd := testutil.Command(newCreateCmd(), testutil.DryRun(true), testutil.JSONOutput())
+	cmd.SetArgs([]string{"--name", "X", "--product", "p1"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(out), &payload); err != nil {
+		t.Fatalf("dry-run not valid JSON: %v\n%s", err, out)
+	}
+	if payload["method"] != "POST" {
+		t.Errorf("unexpected dry-run method: %v", payload["method"])
+	}
+}
+
+func TestView_Plain(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, crossSellWithVariantPayload())
+	})
+	cmd := testutil.Command(newViewCmd(), testutil.PlainOutput())
+	cmd.SetArgs([]string{"up1"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+	if !strings.Contains(out, "cross-sell") || !strings.Contains(out, "30% off") {
+		t.Errorf("plain view mismatch: %q", out)
+	}
+}
+
+func TestView_FullDetail(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, crossSellWithVariantPayload())
+	})
+	cmd := newViewCmd()
+	cmd.SetArgs([]string{"up1"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+	for _, want := range []string{"Offered version: Deluxe", "Text: Add it", "Description: Great deal", "30% off", "Book (prod-book)"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("detail view missing %q: %q", want, out)
+		}
+	}
+}
+
 func TestNewUpsellsCmd_RegistersSubcommands(t *testing.T) {
 	cmd := NewUpsellsCmd()
 	for _, args := range [][]string{{"list"}, {"view"}, {"create"}, {"update"}, {"delete"}} {

@@ -96,18 +96,23 @@ Pass --remove-offer to drop the discount. Passing --selected-product or
 			}
 			if flags.Changed("variant") {
 				body["variant_id"] = variant
+			} else if flags.Changed("product") {
+				delete(body, "variant_id")
 			}
-			if len(selectedProducts) > 0 {
-				body["product_ids"] = selectedProducts
+			if flags.Changed("selected-product") {
+				body["product_ids"] = nonEmptyValues(selectedProducts)
+			}
+			if flags.Changed("offer-variant") {
+				body["upsell_variants"] = parsedVariants
+			}
+			if body["universal"] == true {
+				delete(body, "product_ids")
 			}
 			if hasOfferCode {
 				body["offer_code"] = offerCode
 			}
 			if removeOffer {
 				delete(body, "offer_code")
-			}
-			if len(parsedVariants) > 0 {
-				body["upsell_variants"] = parsedVariants
 			}
 
 			return runUpsellWrite(opts, http.MethodPut, cmdutil.JoinPath("upsells", id), body, "Updating upsell...", "Updated")
@@ -145,6 +150,16 @@ func fetchUpsell(opts cmdutil.Options, token, id string) (upsell, error) {
 		return upsell{}, err
 	}
 	return resp.Upsell, nil
+}
+
+func nonEmptyValues(values []string) []string {
+	result := make([]string, 0, len(values))
+	for _, v := range values {
+		if v != "" {
+			result = append(result, v)
+		}
+	}
+	return result
 }
 
 func currentUpsellBody(u upsell) map[string]any {
