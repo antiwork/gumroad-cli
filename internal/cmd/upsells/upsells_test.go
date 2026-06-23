@@ -692,6 +692,17 @@ func TestUpdate_CrossSellClearsUpsellVariants(t *testing.T) {
 	}
 }
 
+func TestUpdate_ProductChangeClearsVersionMappings(t *testing.T) {
+	body := updatePutBody(t, []string{"up1", "--product", "new-prod"}, versionUpsellPayload())
+	if body["product_id"] != "new-prod" {
+		t.Errorf("product_id not applied: %v", body["product_id"])
+	}
+	variants, ok := body["upsell_variants"].([]any)
+	if !ok || len(variants) != 0 {
+		t.Errorf("changing the product should clear the old product's version mappings, got %v", body["upsell_variants"])
+	}
+}
+
 func TestUpdate_ReplaceOfferVariants(t *testing.T) {
 	body := updatePutBody(t, []string{"up1", "--offer-variant", "v3:v4"}, versionUpsellPayload())
 	variants, ok := body["upsell_variants"].([]any)

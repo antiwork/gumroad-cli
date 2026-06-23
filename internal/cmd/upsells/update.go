@@ -134,6 +134,9 @@ Pass --remove-offer to drop the discount. Passing --selected-product or
 				body["product_ids"] = []string{}
 				body["universal"] = false
 				body["replace_selected_products"] = false
+				if flags.Changed("product") && !flags.Changed("offer-variant") {
+					body["upsell_variants"] = []map[string]any{}
+				}
 			}
 			if hasOfferCode {
 				body["offer_code"] = offerCode
