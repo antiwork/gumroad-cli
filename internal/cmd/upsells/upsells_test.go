@@ -704,6 +704,22 @@ func TestUpdate_ReplaceOfferVariants(t *testing.T) {
 	}
 }
 
+func TestUpdate_ConversionToVersionUpsellClearsCrossSellFields(t *testing.T) {
+	body := updatePutBody(t, []string{"up1", "--cross-sell=false", "--offer-variant", "v1:v2"}, crossSellWithVariantPayload())
+	if body["variant_id"] != "" {
+		t.Errorf("variant_id should be cleared, got %v", body["variant_id"])
+	}
+	if ids, ok := body["product_ids"].([]any); !ok || len(ids) != 0 {
+		t.Errorf("product_ids should be cleared, got %v", body["product_ids"])
+	}
+	if body["universal"] != false {
+		t.Errorf("universal should be false, got %v", body["universal"])
+	}
+	if vs, ok := body["upsell_variants"].([]any); !ok || len(vs) != 1 {
+		t.Errorf("upsell_variants should be set, got %v", body["upsell_variants"])
+	}
+}
+
 func TestUpdate_Plain(t *testing.T) {
 	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
 		testutil.JSON(t, w, crossSellPayload())

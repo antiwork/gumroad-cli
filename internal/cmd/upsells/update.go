@@ -122,11 +122,18 @@ Pass --remove-offer to drop the discount. Passing --selected-product or
 			if flags.Changed("selected-product") && !flags.Changed("universal") {
 				body["universal"] = false
 			}
-			if body["cross_sell"] == true && !flags.Changed("offer-variant") {
-				body["upsell_variants"] = []map[string]any{}
-			}
-			if body["universal"] == true {
+			if finalCrossSell {
+				if !flags.Changed("offer-variant") {
+					body["upsell_variants"] = []map[string]any{}
+				}
+				if body["universal"] == true {
+					body["product_ids"] = []string{}
+				}
+			} else {
+				body["variant_id"] = ""
 				body["product_ids"] = []string{}
+				body["universal"] = false
+				body["replace_selected_products"] = false
 			}
 			if hasOfferCode {
 				body["offer_code"] = offerCode
