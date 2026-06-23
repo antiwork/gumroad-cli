@@ -187,6 +187,25 @@ func offerCodeFromFlags(c *cobra.Command, amount string, percentOff int) (map[st
 	return nil, false, nil
 }
 
+func validateFlagConsistency(c *cobra.Command, crossSell, universal bool) error {
+	flags := c.Flags()
+	if crossSell {
+		if flags.Changed("offer-variant") {
+			return cmdutil.UsageErrorf(c, "--offer-variant applies to version upsells, not cross-sells")
+		}
+		if universal && flags.Changed("selected-product") {
+			return cmdutil.UsageErrorf(c, "--universal and --selected-product cannot be used together")
+		}
+		return nil
+	}
+	for _, flag := range []string{"variant", "universal", "selected-product", "replace-selected-products"} {
+		if flags.Changed(flag) {
+			return cmdutil.UsageErrorf(c, "--%s applies to cross-sells; pass --cross-sell", flag)
+		}
+	}
+	return nil
+}
+
 func parseOfferVariants(c *cobra.Command, raw []string) ([]map[string]any, error) {
 	variants := make([]map[string]any, 0, len(raw))
 	for _, entry := range raw {

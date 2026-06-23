@@ -641,13 +641,31 @@ func TestUpdate_UniversalDropsSelectedProducts(t *testing.T) {
 
 func TestUpdate_UniversalAndSelectedProductConflict(t *testing.T) {
 	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
-		t.Error("should not reach API")
+		if r.Method == http.MethodPut {
+			t.Error("should not PUT on a contradictory update")
+		}
+		testutil.JSON(t, w, crossSellPayload())
 	})
 	cmd := newUpdateCmd()
 	cmd.SetArgs([]string{"up1", "--universal", "--selected-product", "x"})
 	err := cmd.Execute()
 	if err == nil || !strings.Contains(err.Error(), "--universal and --selected-product cannot be used together") {
 		t.Fatalf("expected conflict error, got: %v", err)
+	}
+}
+
+func TestUpdate_SelectedProductOnVersionUpsellRejected(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPut {
+			t.Error("should not PUT on a contradictory update")
+		}
+		testutil.JSON(t, w, versionUpsellPayload())
+	})
+	cmd := newUpdateCmd()
+	cmd.SetArgs([]string{"up1", "--selected-product", "x"})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "pass --cross-sell") {
+		t.Fatalf("expected cross-sell requirement error, got: %v", err)
 	}
 }
 
@@ -736,8 +754,20 @@ func TestCreate_UniversalConflictsSelectedProduct(t *testing.T) {
 	cmd := newCreateCmd()
 	cmd.SetArgs([]string{"--name", "X", "--product", "p1", "--cross-sell", "--universal", "--selected-product", "x"})
 	err := cmd.Execute()
-	if err == nil || !strings.Contains(err.Error(), "cannot be combined with --universal") {
+	if err == nil || !strings.Contains(err.Error(), "cannot be used together") {
 		t.Fatalf("expected universal conflict error, got: %v", err)
+	}
+}
+
+func TestCreate_OfferVariantOnCrossSellRejected(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Error("should not reach API")
+	})
+	cmd := newCreateCmd()
+	cmd.SetArgs([]string{"--name", "X", "--product", "p1", "--cross-sell", "--offer-variant", "a:b"})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "offer-variant applies to version upsells") {
+		t.Fatalf("expected offer-variant rejection, got: %v", err)
 	}
 }
 

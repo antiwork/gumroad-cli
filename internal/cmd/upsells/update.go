@@ -45,9 +45,6 @@ Pass --remove-offer to drop the discount. Passing --selected-product or
 			if err := cmdutil.RequirePercentFlag(c, "percent-off", percentOff); err != nil {
 				return err
 			}
-			if c.Flags().Changed("universal") && universal && c.Flags().Changed("selected-product") {
-				return cmdutil.UsageErrorf(c, "--universal and --selected-product cannot be used together")
-			}
 
 			offerCode, hasOfferCode, err := offerCodeFromFlags(c, amount, percentOff)
 			if err != nil {
@@ -71,8 +68,22 @@ Pass --remove-offer to drop the discount. Passing --selected-product or
 				return err
 			}
 
-			body := currentUpsellBody(current)
 			flags := c.Flags()
+			finalCrossSell := current.CrossSell
+			if flags.Changed("cross-sell") {
+				finalCrossSell = crossSell
+			}
+			finalUniversal := current.Universal
+			if flags.Changed("universal") {
+				finalUniversal = universal
+			} else if flags.Changed("selected-product") {
+				finalUniversal = false
+			}
+			if err := validateFlagConsistency(c, finalCrossSell, finalUniversal); err != nil {
+				return err
+			}
+
+			body := currentUpsellBody(current)
 			if flags.Changed("name") {
 				body["name"] = name
 			}
