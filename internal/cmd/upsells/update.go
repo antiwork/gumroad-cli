@@ -97,7 +97,7 @@ Pass --remove-offer to drop the discount. Passing --selected-product or
 			if flags.Changed("variant") {
 				body["variant_id"] = variant
 			} else if flags.Changed("product") {
-				delete(body, "variant_id")
+				body["variant_id"] = ""
 			}
 			if flags.Changed("selected-product") {
 				body["product_ids"] = nonEmptyValues(selectedProducts)
@@ -105,14 +105,17 @@ Pass --remove-offer to drop the discount. Passing --selected-product or
 			if flags.Changed("offer-variant") {
 				body["upsell_variants"] = parsedVariants
 			}
-			if body["universal"] == true {
-				delete(body, "product_ids")
+			if body["cross_sell"] == true && !flags.Changed("offer-variant") {
+				body["upsell_variants"] = []map[string]any{}
+			}
+			if body["universal"] == true && !flags.Changed("selected-product") {
+				body["product_ids"] = []string{}
 			}
 			if hasOfferCode {
 				body["offer_code"] = offerCode
 			}
 			if removeOffer {
-				delete(body, "offer_code")
+				body["offer_code"] = map[string]any{}
 			}
 
 			return runUpsellWrite(opts, http.MethodPut, cmdutil.JoinPath("upsells", id), body, "Updating upsell...", "Updated")

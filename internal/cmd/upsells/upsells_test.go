@@ -50,8 +50,6 @@ func crossSellPayload() map[string]any {
 	}
 }
 
-// --- List ---
-
 func TestList_CorrectEndpoint(t *testing.T) {
 	var gotMethod, gotPath string
 	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
@@ -157,8 +155,6 @@ func TestList_APIError(t *testing.T) {
 	}
 }
 
-// --- View ---
-
 func TestView_RendersCrossSell(t *testing.T) {
 	var gotPath string
 	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
@@ -226,8 +222,6 @@ func TestView_ArgRequired(t *testing.T) {
 		t.Fatal("expected error without upsell id")
 	}
 }
-
-// --- Create ---
 
 func TestCreate_NameRequired(t *testing.T) {
 	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
@@ -397,8 +391,6 @@ func TestCreate_DryRun(t *testing.T) {
 	}
 }
 
-// --- Update ---
-
 func TestUpdate_RequiresAtLeastOneField(t *testing.T) {
 	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
 		t.Error("should not reach API")
@@ -466,8 +458,9 @@ func TestUpdate_RemoveOffer(t *testing.T) {
 	cmd.SetArgs([]string{"up1", "--remove-offer"})
 	testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
-	if _, ok := putBody["offer_code"]; ok {
-		t.Errorf("offer_code should be dropped, got: %v", putBody["offer_code"])
+	offer, ok := putBody["offer_code"].(map[string]any)
+	if !ok || len(offer) != 0 {
+		t.Errorf("offer_code should be an explicit empty object to clear, got: %v", putBody["offer_code"])
 	}
 }
 
@@ -504,8 +497,6 @@ func TestUpdate_DryRun(t *testing.T) {
 		t.Errorf("expected dry-run output, got: %q", out)
 	}
 }
-
-// --- Delete ---
 
 func TestDelete_RequiresConfirmation(t *testing.T) {
 	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
@@ -609,8 +600,8 @@ func TestUpdate_ProductChangeDropsStaleVariant(t *testing.T) {
 	if body["product_id"] != "new-prod" {
 		t.Errorf("product_id not applied: %v", body["product_id"])
 	}
-	if _, ok := body["variant_id"]; ok {
-		t.Errorf("stale variant_id should be dropped when product changes, got %v", body["variant_id"])
+	if body["variant_id"] != "" {
+		t.Errorf("stale variant_id should be cleared when product changes, got %v", body["variant_id"])
 	}
 }
 
@@ -642,8 +633,25 @@ func TestUpdate_UniversalDropsSelectedProducts(t *testing.T) {
 	if body["universal"] != true {
 		t.Errorf("universal should be true, got %v", body["universal"])
 	}
-	if _, ok := body["product_ids"]; ok {
-		t.Errorf("universal cross-sell should not send product_ids, got %v", body["product_ids"])
+	ids, ok := body["product_ids"].([]any)
+	if !ok || len(ids) != 0 {
+		t.Errorf("universal cross-sell should clear product_ids to empty, got %v", body["product_ids"])
+	}
+}
+
+func TestUpdate_UniversalRespectsExplicitSelectedProduct(t *testing.T) {
+	body := updatePutBody(t, []string{"up1", "--universal", "--selected-product", "keep-me"}, crossSellWithVariantPayload())
+	ids, ok := body["product_ids"].([]any)
+	if !ok || len(ids) != 1 || ids[0] != "keep-me" {
+		t.Errorf("explicit --selected-product should win over universal clearing, got %v", body["product_ids"])
+	}
+}
+
+func TestUpdate_CrossSellClearsUpsellVariants(t *testing.T) {
+	body := updatePutBody(t, []string{"up1", "--cross-sell"}, versionUpsellPayload())
+	variants, ok := body["upsell_variants"].([]any)
+	if !ok || len(variants) != 0 {
+		t.Errorf("converting to a cross-sell should clear upsell_variants, got %v", body["upsell_variants"])
 	}
 }
 
@@ -699,6 +707,20 @@ func TestCreate_Plain(t *testing.T) {
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 	if !strings.Contains(out, "up9\tAdd-on") {
 		t.Errorf("plain create row mismatch: %q", out)
+	}
+}
+
+func TestCreate_UniversalOmitsSelectedProducts(t *testing.T) {
+	var body map[string]any
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		body = decodeBody(t, r)
+		testutil.JSON(t, w, crossSellPayload())
+	})
+	cmd := newCreateCmd()
+	cmd.SetArgs([]string{"--name", "X", "--product", "p1", "--cross-sell", "--universal", "--selected-product", "ignored"})
+	testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+	if _, ok := body["product_ids"]; ok {
+		t.Errorf("universal create should not send product_ids, got %v", body["product_ids"])
 	}
 }
 
