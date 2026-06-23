@@ -383,7 +383,7 @@ func TestCreate_DryRun(t *testing.T) {
 	})
 
 	cmd := testutil.Command(newCreateCmd(), testutil.DryRun(true))
-	cmd.SetArgs([]string{"--name", "X", "--product", "p1", "--cross-sell"})
+	cmd.SetArgs([]string{"--name", "X", "--product", "p1", "--cross-sell", "--universal"})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
 	if !strings.Contains(out, "Dry run") || !strings.Contains(out, "POST /upsells") {
@@ -612,11 +612,18 @@ func TestUpdate_KeepsVariantWhenProductUnchanged(t *testing.T) {
 	}
 }
 
-func TestUpdate_ClearSelectedProducts(t *testing.T) {
-	body := updatePutBody(t, []string{"up1", "--selected-product", ""}, crossSellWithVariantPayload())
-	ids, ok := body["product_ids"].([]any)
-	if !ok || len(ids) != 0 {
-		t.Errorf("product_ids should be cleared to empty, got %v", body["product_ids"])
+func TestUpdate_ClearingCrossSellAudienceRejected(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPut {
+			t.Error("should not PUT a no-audience cross-sell")
+		}
+		testutil.JSON(t, w, crossSellWithVariantPayload())
+	})
+	cmd := newUpdateCmd()
+	cmd.SetArgs([]string{"up1", "--selected-product", ""})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "needs an audience") {
+		t.Fatalf("expected audience error when clearing a cross-sell's only audience, got: %v", err)
 	}
 }
 
@@ -685,10 +692,37 @@ func TestUpdate_SelectedProductMakesTargeted(t *testing.T) {
 }
 
 func TestUpdate_CrossSellClearsUpsellVariants(t *testing.T) {
-	body := updatePutBody(t, []string{"up1", "--cross-sell"}, versionUpsellPayload())
+	body := updatePutBody(t, []string{"up1", "--cross-sell", "--selected-product", "buyer-prod"}, versionUpsellPayload())
 	variants, ok := body["upsell_variants"].([]any)
 	if !ok || len(variants) != 0 {
 		t.Errorf("converting to a cross-sell should clear upsell_variants, got %v", body["upsell_variants"])
+	}
+}
+
+func TestCreate_CrossSellRequiresAudience(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Error("should not reach API")
+	})
+	cmd := newCreateCmd()
+	cmd.SetArgs([]string{"--name", "X", "--product", "p1", "--cross-sell"})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "needs an audience") {
+		t.Fatalf("expected audience error, got: %v", err)
+	}
+}
+
+func TestUpdate_ConversionToCrossSellRequiresAudience(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPut {
+			t.Error("should not PUT a no-audience cross-sell")
+		}
+		testutil.JSON(t, w, versionUpsellPayload())
+	})
+	cmd := newUpdateCmd()
+	cmd.SetArgs([]string{"up1", "--cross-sell"})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "needs an audience") {
+		t.Fatalf("expected audience error, got: %v", err)
 	}
 }
 
@@ -817,7 +851,7 @@ func TestCreate_AmountDiscount(t *testing.T) {
 		testutil.JSON(t, w, crossSellPayload())
 	})
 	cmd := newCreateCmd()
-	cmd.SetArgs([]string{"--name", "X", "--product", "p1", "--cross-sell", "--amount", "5"})
+	cmd.SetArgs([]string{"--name", "X", "--product", "p1", "--cross-sell", "--universal", "--amount", "5"})
 	testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 	offer, ok := body["offer_code"].(map[string]any)
 	if !ok || offer["amount_cents"] != float64(500) {

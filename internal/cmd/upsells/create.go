@@ -43,6 +43,9 @@ products). Add an optional discount with --amount or --percent-off.`,
 			if err := validateFlagConsistency(c, crossSell, universal); err != nil {
 				return err
 			}
+			if crossSell && !universal && len(nonEmptyValues(selectedProducts)) == 0 {
+				return cmdutil.UsageErrorf(c, "a cross-sell needs an audience; pass --universal or --selected-product")
+			}
 
 			offerCode, hasOfferCode, err := offerCodeFromFlags(c, amount, percentOff)
 			if err != nil {

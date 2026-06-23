@@ -82,6 +82,13 @@ Pass --remove-offer to drop the discount. Passing --selected-product or
 			if err := validateFlagConsistency(c, finalCrossSell, finalUniversal); err != nil {
 				return err
 			}
+			if finalCrossSell && !finalUniversal {
+				audience := flags.Changed("selected-product") && len(nonEmptyValues(selectedProducts)) > 0
+				audience = audience || (!flags.Changed("selected-product") && len(current.SelectedProducts) > 0)
+				if !audience {
+					return cmdutil.UsageErrorf(c, "a cross-sell needs an audience; pass --universal or --selected-product")
+				}
+			}
 
 			body := currentUpsellBody(current)
 			if flags.Changed("name") {
