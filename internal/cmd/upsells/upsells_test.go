@@ -639,11 +639,30 @@ func TestUpdate_UniversalDropsSelectedProducts(t *testing.T) {
 	}
 }
 
-func TestUpdate_UniversalRespectsExplicitSelectedProduct(t *testing.T) {
-	body := updatePutBody(t, []string{"up1", "--universal", "--selected-product", "keep-me"}, crossSellWithVariantPayload())
+func TestUpdate_UniversalAndSelectedProductConflict(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Error("should not reach API")
+	})
+	cmd := newUpdateCmd()
+	cmd.SetArgs([]string{"up1", "--universal", "--selected-product", "x"})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "--universal and --selected-product cannot be used together") {
+		t.Fatalf("expected conflict error, got: %v", err)
+	}
+}
+
+func TestUpdate_SelectedProductMakesTargeted(t *testing.T) {
+	payload := crossSellWithVariantPayload()
+	payload["upsell"].(map[string]any)["universal"] = true
+	payload["upsell"].(map[string]any)["selected_products"] = []map[string]any{}
+
+	body := updatePutBody(t, []string{"up1", "--selected-product", "prod1"}, payload)
+	if body["universal"] != false {
+		t.Errorf("targeting with --selected-product should set universal false, got %v", body["universal"])
+	}
 	ids, ok := body["product_ids"].([]any)
-	if !ok || len(ids) != 1 || ids[0] != "keep-me" {
-		t.Errorf("explicit --selected-product should win over universal clearing, got %v", body["product_ids"])
+	if !ok || len(ids) != 1 || ids[0] != "prod1" {
+		t.Errorf("product_ids should be the targeted set, got %v", body["product_ids"])
 	}
 }
 
@@ -710,17 +729,27 @@ func TestCreate_Plain(t *testing.T) {
 	}
 }
 
-func TestCreate_UniversalOmitsSelectedProducts(t *testing.T) {
-	var body map[string]any
+func TestCreate_UniversalConflictsSelectedProduct(t *testing.T) {
 	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
-		body = decodeBody(t, r)
-		testutil.JSON(t, w, crossSellPayload())
+		t.Error("should not reach API")
 	})
 	cmd := newCreateCmd()
-	cmd.SetArgs([]string{"--name", "X", "--product", "p1", "--cross-sell", "--universal", "--selected-product", "ignored"})
-	testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
-	if _, ok := body["product_ids"]; ok {
-		t.Errorf("universal create should not send product_ids, got %v", body["product_ids"])
+	cmd.SetArgs([]string{"--name", "X", "--product", "p1", "--cross-sell", "--universal", "--selected-product", "x"})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "cannot be combined with --universal") {
+		t.Fatalf("expected universal conflict error, got: %v", err)
+	}
+}
+
+func TestCreate_SelectedProductRequiresCrossSell(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Error("should not reach API")
+	})
+	cmd := newCreateCmd()
+	cmd.SetArgs([]string{"--name", "X", "--product", "p1", "--selected-product", "x"})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "pass --cross-sell") {
+		t.Fatalf("expected cross-sell requirement error, got: %v", err)
 	}
 }
 

@@ -40,6 +40,14 @@ products). Add an optional discount with --amount or --percent-off.`,
 			if err := cmdutil.RequirePercentFlag(c, "percent-off", percentOff); err != nil {
 				return err
 			}
+			if len(selectedProducts) > 0 {
+				if !crossSell {
+					return cmdutil.UsageErrorf(c, "--selected-product applies to cross-sells; pass --cross-sell")
+				}
+				if universal {
+					return cmdutil.UsageErrorf(c, "--selected-product cannot be combined with --universal")
+				}
+			}
 
 			offerCode, hasOfferCode, err := offerCodeFromFlags(c, amount, percentOff)
 			if err != nil {
@@ -74,7 +82,7 @@ products). Add an optional discount with --amount or --percent-off.`,
 			if flags.Changed("paused") {
 				body["paused"] = paused
 			}
-			if !universal {
+			if crossSell && !universal {
 				if ids := nonEmptyValues(selectedProducts); len(ids) > 0 {
 					body["product_ids"] = ids
 				}
