@@ -159,7 +159,7 @@ func TestRadarPlainOutputWithoutRecentEFWs(t *testing.T) {
 	}
 }
 
-func TestRadarRequiresEmailOrUserID(t *testing.T) {
+func TestRadarRequiresUserLookup(t *testing.T) {
 	cmd := newRadarCmd()
 	cmd.SetArgs([]string{})
 

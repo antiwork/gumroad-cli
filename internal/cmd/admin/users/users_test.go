@@ -43,7 +43,7 @@ func TestSuspensionUsesInternalAdminEndpoint(t *testing.T) {
 	}
 }
 
-func TestSuspensionRequiresEmailOrUserID(t *testing.T) {
+func TestSuspensionRequiresUserLookup(t *testing.T) {
 	cmd := newSuspensionCmd()
 	cmd.SetArgs([]string{})
 

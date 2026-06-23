@@ -12,6 +12,7 @@ func NewUsersCmd() *cobra.Command {
 		Short: "Read and manage admin user records",
 		Example: `  gumroad admin users info --email user@example.com
   gumroad admin users info --user-id 2245593582708
+  gumroad admin users info --username sellerone
   gumroad admin users affiliates --user-id 2245593582708 --direction granted
   gumroad admin users comments list --user-id 2245593582708
   gumroad admin users comments add --user-id 2245593582708 --content "VAT exempt confirmed"

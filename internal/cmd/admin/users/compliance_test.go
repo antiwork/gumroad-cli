@@ -123,7 +123,7 @@ func TestCompliancePassesUserIDAndEmail(t *testing.T) {
 	}
 }
 
-func TestComplianceRequiresEmailOrUserID(t *testing.T) {
+func TestComplianceRequiresUserLookup(t *testing.T) {
 	cmd := newComplianceCmd()
 	cmd.SetArgs([]string{})
 

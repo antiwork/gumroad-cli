@@ -177,25 +177,33 @@ gumroad admin users info --username sellerone --json --non-interactive --no-inpu
 
 # Review affiliate relationships
 gumroad admin users affiliates --user-id 2245593582708 --direction granted --limit 50 --json --non-interactive --no-input
+gumroad admin users affiliates --username sellerone --direction granted --limit 50 --json --non-interactive --no-input
 gumroad admin users affiliates --email seller@example.com --direction received --cursor cur-next --json --non-interactive --no-input
 
 # Read and add admin comments
 gumroad admin users comments list --user-id 2245593582708 --type note --limit 50 --json --non-interactive --no-input
+gumroad admin users comments list --username sellerone --type note --limit 50 --json --non-interactive --no-input
 gumroad admin users comments add --user-id 2245593582708 --content "VAT exempt confirmed" --yes --json --non-interactive --no-input
 
 # Account credits. credits add is a high-stakes write: dry-run first, then issue with explicit --yes.
 # Amounts are cents, positive only, capped at $1,000 unless --allow-large-amount is explicitly passed.
 gumroad admin users credits list --user-id 2245593582708 --limit 50 --json --non-interactive --no-input
+gumroad admin users credits list --username sellerone --limit 50 --json --non-interactive --no-input
 gumroad admin users credits add --user-id 2245593582708 --expected-email seller@example.com --amount-cents 1000 --reason "Goodwill for checkout bug" --dry-run --json --non-interactive --no-input
 gumroad admin users credits add --user-id 2245593582708 --expected-email seller@example.com --amount-cents 1000 --reason "Goodwill for checkout bug" --yes --json --non-interactive --no-input
 
 # Inspect compliance, Radar risk, and buyer history
 gumroad admin users compliance --user-id 2245593582708 --json --non-interactive --no-input
+gumroad admin users compliance --username sellerone --json --non-interactive --no-input
 gumroad admin users radar --user-id 2245593582708 --limit 50 --json --non-interactive --no-input
+gumroad admin users radar --username sellerone --limit 50 --json --non-interactive --no-input
 gumroad admin users purchases --user-id 2245593582708 --status successful --has-early-fraud-warning=false --limit 50 --json --non-interactive --no-input
+gumroad admin users purchases --username sellerone --status successful --limit 50 --json --non-interactive --no-input
+gumroad admin users suspension --username sellerone --json --non-interactive --no-input
 
 # Find related accounts by risk signals
 gumroad admin users related --email seller@example.com --signal ip --signal payment_address --json --non-interactive --no-input
+gumroad admin users related --username sellerone --signal ip --json --non-interactive --no-input
 gumroad admin users related --email seller@example.com --json --jq '{related_users, truncated, per_signal_limit}' --non-interactive --no-input
 
 # Mutate user compliance and suspension state

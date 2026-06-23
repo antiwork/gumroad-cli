@@ -109,7 +109,7 @@ func TestListShowsNextCursorFooter(t *testing.T) {
 	}
 }
 
-func TestListRequiresEmailOrUserID(t *testing.T) {
+func TestListRequiresUserLookup(t *testing.T) {
 	cmd := newListCmd()
 	cmd.SetArgs([]string{})
 

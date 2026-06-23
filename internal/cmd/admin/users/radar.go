@@ -53,9 +53,11 @@ func newRadarCmd() *cobra.Command {
 		Short: "View seller-level Radar and early fraud warning stats",
 		Long: `View seller-level Radar aggregates and recent early fraud warnings.
 
-Identify the seller with --email or --user-id. When both are supplied, the
-server resolves by --user-id.`,
+Identify the seller with --email, --user-id, or --username. When more than one
+is supplied, the server resolves by --user-id first, then --email, then
+--username.`,
 		Example: `  gumroad admin users radar --user-id 2245593582708
+  gumroad admin users radar --username sellerone
   gumroad admin users radar --email seller@example.com --limit 50
   gumroad admin users radar --user-id 2245593582708 --cursor cur-next --json`,
 		Args: cmdutil.ExactArgs(0),

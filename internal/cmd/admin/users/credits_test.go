@@ -470,7 +470,7 @@ func TestCreditsListEmptyResultShowsFooter(t *testing.T) {
 	}
 }
 
-func TestCreditsListRequiresEmailOrUserID(t *testing.T) {
+func TestCreditsListRequiresUserLookup(t *testing.T) {
 	cmd := newCreditsListCmd()
 	cmd.SetArgs([]string{})
 

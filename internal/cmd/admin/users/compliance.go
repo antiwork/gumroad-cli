@@ -80,9 +80,11 @@ func newComplianceCmd() *cobra.Command {
 		Short: "View a user's submitted compliance info",
 		Long: `View a user's submitted KYC data and open compliance info requests.
 
-Identify the user with --email or --user-id. When both are supplied, the
-server resolves by --user-id.`,
+Identify the user with --email, --user-id, or --username. When more than one
+is supplied, the server resolves by --user-id first, then --email, then
+--username.`,
 		Example: `  gumroad admin users compliance --user-id 2245593582708
+  gumroad admin users compliance --username sellerone
   gumroad admin users compliance --email user@example.com --json`,
 		Args: cmdutil.ExactArgs(0),
 		RunE: func(c *cobra.Command, args []string) error {

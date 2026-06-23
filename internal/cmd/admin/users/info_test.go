@@ -51,7 +51,7 @@ func sampleInfoPayload() map[string]any {
 	}
 }
 
-func TestInfoRequiresEmailOrUserID(t *testing.T) {
+func TestInfoRequiresUserLookup(t *testing.T) {
 	cmd := newInfoCmd()
 	cmd.SetArgs([]string{})
 

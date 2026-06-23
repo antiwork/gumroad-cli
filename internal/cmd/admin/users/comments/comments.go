@@ -7,6 +7,7 @@ func NewCommentsCmd() *cobra.Command {
 		Use:   "comments",
 		Short: "Read and add admin comments on users",
 		Example: `  gumroad admin users comments list --user-id 2245593582708
+  gumroad admin users comments list --username sellerone --type note
   gumroad admin users comments list --email user@example.com --type note --type suspension_note --limit 50
   gumroad admin users comments add --user-id 2245593582708 --content "VAT exempt confirmed"`,
 	}

@@ -60,6 +60,7 @@ func newRelatedCmd() *cobra.Command {
 fingerprint. By default the server evaluates all available signals; repeat
 --signal to restrict the search to one or more signals.`,
 		Example: `  gumroad admin users related --user-id 2245593582708
+  gumroad admin users related --username sellerone --signal ip
   gumroad admin users related --email user@example.com --signal ip --signal payment_address
   gumroad admin users related --email user@example.com --limit 25 --json`,
 		Args: cmdutil.ExactArgs(0),

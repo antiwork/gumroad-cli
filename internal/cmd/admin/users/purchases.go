@@ -43,6 +43,7 @@ func newPurchasesCmd() *cobra.Command {
 Status filters are sent as purchase_state values. Use --chargedback,
 --has-early-fraud-warning, and --has-affiliate for the boolean risk filters.`,
 		Example: `  gumroad admin users purchases --user-id 2245593582708
+  gumroad admin users purchases --username sellerone
   gumroad admin users purchases --email buyer@example.com --status successful --status failed
   gumroad admin users purchases --user-id 2245593582708 --start-at 2026-01-01T00:00:00Z
   gumroad admin users purchases --user-id 2245593582708 --chargedback=false --limit 50`,

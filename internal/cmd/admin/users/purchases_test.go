@@ -228,7 +228,7 @@ func TestUserPurchasesPlainOutput(t *testing.T) {
 	}
 }
 
-func TestUserPurchasesRequiresEmailOrUserID(t *testing.T) {
+func TestUserPurchasesRequiresUserLookup(t *testing.T) {
 	cmd := newPurchasesCmd()
 	cmd.SetArgs([]string{})
 

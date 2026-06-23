@@ -106,7 +106,7 @@ func TestAffiliatesShowsNextCursorFooter(t *testing.T) {
 	}
 }
 
-func TestAffiliatesRequiresEmailOrUserID(t *testing.T) {
+func TestAffiliatesRequiresUserLookup(t *testing.T) {
 	cmd := newAffiliatesCmd()
 	cmd.SetArgs([]string{"--direction", "granted"})
 

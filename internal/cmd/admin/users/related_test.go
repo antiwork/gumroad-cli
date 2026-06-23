@@ -106,7 +106,7 @@ func TestRelatedDefaultOmitsSignalsAndLimit(t *testing.T) {
 	}
 }
 
-func TestRelatedRequiresEmailOrUserID(t *testing.T) {
+func TestRelatedRequiresUserLookup(t *testing.T) {
 	cmd := newRelatedCmd()
 	cmd.SetArgs([]string{"--signal", "ip"})
 

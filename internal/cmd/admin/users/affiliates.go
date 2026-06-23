@@ -69,6 +69,7 @@ func newAffiliatesCmd() *cobra.Command {
 --direction granted when the user is the seller granting affiliate access, or
 --direction received when the user is the affiliate receiving access.`,
 		Example: `  gumroad admin users affiliates --user-id 2245593582708 --direction granted
+  gumroad admin users affiliates --username sellerone --direction granted
   gumroad admin users affiliates --email user@example.com --direction received --limit 50
   gumroad admin users affiliates --email user@example.com --direction received --cursor cur-next`,
 		Args: cmdutil.ExactArgs(0),

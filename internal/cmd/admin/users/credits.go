@@ -53,6 +53,7 @@ func newCreditsCmd() *cobra.Command {
 		Use:   "credits",
 		Short: "List and issue user credits",
 		Example: `  gumroad admin users credits list --user-id 2245593582708
+  gumroad admin users credits list --username sellerone
   gumroad admin users credits list --email seller@example.com --cursor cur-next
   gumroad admin users credits add --user-id 2245593582708 --amount-cents 1000 --reason "Goodwill for checkout bug" --dry-run
   gumroad admin users credits add --user-id 2245593582708 --expected-email seller@example.com --amount-cents 1000 --reason "Goodwill for checkout bug" --yes`,
@@ -174,6 +175,7 @@ func newCreditsListCmd() *cobra.Command {
 		Short: "List credits for a user",
 		Long:  `List a user's account credits, newest first.`,
 		Example: `  gumroad admin users credits list --user-id 2245593582708
+  gumroad admin users credits list --username sellerone
   gumroad admin users credits list --email seller@example.com --limit 50
   gumroad admin users credits list --user-id 2245593582708 --cursor cur-next`,
 		Args: cmdutil.ExactArgs(0),

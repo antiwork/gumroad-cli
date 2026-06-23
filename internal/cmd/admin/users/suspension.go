@@ -22,10 +22,12 @@ func newSuspensionCmd() *cobra.Command {
 		Short: "View a user's suspension status",
 		Long: `View a user's suspension status.
 
-Identify the user with --email or --user-id. When both are supplied, the
-server resolves by --user-id.`,
+Identify the user with --email, --user-id, or --username. When more than one
+is supplied, the server resolves by --user-id first, then --email, then
+--username.`,
 		Example: `  gumroad admin users suspension --email user@example.com
-  gumroad admin users suspension --user-id 2245593582708`,
+  gumroad admin users suspension --user-id 2245593582708
+  gumroad admin users suspension --username sellerone`,
 		Args: cmdutil.ExactArgs(0),
 		RunE: func(c *cobra.Command, args []string) error {
 			opts := cmdutil.OptionsFrom(c)
