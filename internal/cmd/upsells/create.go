@@ -74,8 +74,10 @@ products). Add an optional discount with --amount or --percent-off.`,
 			if flags.Changed("paused") {
 				body["paused"] = paused
 			}
-			if !universal && len(selectedProducts) > 0 {
-				body["product_ids"] = selectedProducts
+			if !universal {
+				if ids := nonEmptyValues(selectedProducts); len(ids) > 0 {
+					body["product_ids"] = ids
+				}
 			}
 			if hasOfferCode {
 				body["offer_code"] = offerCode
