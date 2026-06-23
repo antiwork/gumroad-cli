@@ -67,6 +67,7 @@ Most responses are wrapped in `{"success": true, ...}` with resource-specific ke
 - `subscribers list` → `.subscribers[]`, `subscribers view` → `.subscriber`
 - `licenses verify` → `.purchase`
 - `offer-codes list` → `.offer_codes[]`
+- `upsells list` → `.upsells[]`, `upsells view/create/update` → `.upsell`, `upsells delete` → `.message`
 - `variant-categories list` → `.variant_categories[]`
 - `variants list` → `.variants[]`
 - `files upload` / `files complete` → `.file_url`
@@ -485,6 +486,33 @@ gumroad offer-codes delete <code_id> --product <id> --yes --json --no-input
 ```
 
 **Create flags:** `--product` (required), `--name` (required), `--percent-off` OR `--amount`, `--minimum-amount` (minimum order total before the discount applies, e.g. `100.00`), `--max-purchase-count`, `--universal`.
+
+### upsells — Manage upsells and cross-sells
+
+An upsell offers a different version of the product being bought. A cross-sell offers a different product (optionally discounted) to buyers of selected products, or to buyers of every product when universal.
+
+```sh
+# List all upsells and cross-sells
+gumroad upsells list --json --no-input
+
+# Version upsell: offer a higher version of the same product
+gumroad upsells create --name "Pro upgrade" --product <id> --offer-variant <selected_variant_id>:<offered_variant_id> --json --no-input
+
+# Cross-sell to buyers of specific products, with a discount
+gumroad upsells create --name "Audiobook" --product <offered_id> --cross-sell --selected-product <id> --percent-off 50 --json --no-input
+
+# Universal cross-sell (offered to buyers of every product), flat discount
+gumroad upsells create --name "Add-on" --product <offered_id> --cross-sell --universal --amount 5 --json --no-input
+
+# View / update / delete
+gumroad upsells view <upsell_id> --json --no-input
+gumroad upsells update <upsell_id> --paused=false --json --no-input
+gumroad upsells delete <upsell_id> --yes --json --no-input
+```
+
+**Create flags:** `--name` (required), `--product` (required, the offered product), `--cross-sell`, `--text`, `--description`, `--variant` (offered version), `--universal`, `--replace-selected-products`, `--paused`, `--amount` OR `--percent-off`, `--selected-product` (repeatable), `--offer-variant <selected>:<offered>` (repeatable).
+
+**Update** fetches the upsell and changes only the flags you pass; pass `--remove-offer` to drop the discount. `--selected-product` / `--offer-variant` replace the current set.
 
 ### variant-categories — Manage variant categories
 
