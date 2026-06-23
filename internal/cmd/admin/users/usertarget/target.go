@@ -10,17 +10,20 @@ import (
 type LookupFlags struct {
 	Email           string
 	UserID          string
+	Username        string
 	ExternalIDAlias string
 }
 
 type LookupTarget struct {
-	Email  string
-	UserID string
+	Email    string
+	UserID   string
+	Username string
 }
 
 func AddLookupFlags(cmd *cobra.Command, flags *LookupFlags) {
 	cmd.Flags().StringVar(&flags.Email, "email", "", "User email")
 	cmd.Flags().StringVar(&flags.UserID, "user-id", "", "User external ID")
+	cmd.Flags().StringVar(&flags.Username, "username", "", "User username")
 	cmd.Flags().StringVar(&flags.ExternalIDAlias, "external-id", "", "Alias for --user-id")
 	_ = cmd.Flags().MarkHidden("external-id")
 }
@@ -30,14 +33,14 @@ func ResolveLookupTarget(cmd *cobra.Command, flags LookupFlags) (LookupTarget, e
 	if err != nil {
 		return LookupTarget{}, err
 	}
-	if err := RequireEmailOrUserID(cmd, flags.Email, userID); err != nil {
+	if err := RequireUserLookup(cmd, flags.Email, userID, flags.Username); err != nil {
 		return LookupTarget{}, err
 	}
-	return LookupTarget{Email: flags.Email, UserID: userID}, nil
+	return LookupTarget{Email: flags.Email, UserID: userID, Username: flags.Username}, nil
 }
 
 func (t LookupTarget) Identifier() string {
-	return UserIdentifier(t.Email, t.UserID)
+	return UserIdentifier(t.Email, t.UserID, t.Username)
 }
 
 func (t LookupTarget) Values() url.Values {
@@ -47,6 +50,9 @@ func (t LookupTarget) Values() url.Values {
 	}
 	if t.UserID != "" {
 		params.Set("user_id", t.UserID)
+	}
+	if t.Username != "" {
+		params.Set("username", t.Username)
 	}
 	return params
 }
@@ -111,16 +117,19 @@ func Fallback(value, alt string) string {
 	return value
 }
 
-func UserIdentifier(email, externalID string) string {
+func UserIdentifier(email, externalID, username string) string {
 	if externalID != "" {
 		return externalID
 	}
-	return email
+	if email != "" {
+		return email
+	}
+	return username
 }
 
-func RequireEmailOrUserID(cmd *cobra.Command, email, userID string) error {
-	if email == "" && userID == "" {
-		return cmdutil.UsageErrorf(cmd, "supply --email or --user-id")
+func RequireUserLookup(cmd *cobra.Command, email, userID, username string) error {
+	if email == "" && userID == "" && username == "" {
+		return cmdutil.UsageErrorf(cmd, "supply --email, --user-id, or --username")
 	}
 	return nil
 }

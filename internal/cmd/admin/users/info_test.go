@@ -59,8 +59,36 @@ func TestInfoRequiresEmailOrUserID(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected missing identifier error")
 	}
-	if !strings.Contains(err.Error(), "supply --email or --user-id") {
+	if !strings.Contains(err.Error(), "supply --email, --user-id, or --username") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestInfoResolvesByUsername(t *testing.T) {
+	var gotEmail, gotUserID, gotUsername string
+
+	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
+		gotEmail = r.URL.Query().Get("email")
+		gotUserID = r.URL.Query().Get("user_id")
+		gotUsername = r.URL.Query().Get("username")
+		testutil.JSON(t, w, sampleInfoPayload())
+	})
+
+	cmd := testutil.Command(newInfoCmd(), testutil.Quiet(false))
+	cmd.SetArgs([]string{"--username", "sellerone"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	if gotUsername != "sellerone" {
+		t.Fatalf("got username %q, want sellerone", gotUsername)
+	}
+	if gotEmail != "" {
+		t.Errorf("expected email to be empty, got %q", gotEmail)
+	}
+	if gotUserID != "" {
+		t.Errorf("expected user_id to be empty, got %q", gotUserID)
+	}
+	if !strings.Contains(out, "Seller One") {
+		t.Errorf("expected resolved user info in output: %q", out)
 	}
 }
 

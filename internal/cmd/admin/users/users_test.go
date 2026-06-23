@@ -51,7 +51,7 @@ func TestSuspensionRequiresEmailOrUserID(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected missing identifier error")
 	}
-	if !strings.Contains(err.Error(), "supply --email or --user-id") {
+	if !strings.Contains(err.Error(), "supply --email, --user-id, or --username") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }

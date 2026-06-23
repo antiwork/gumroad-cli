@@ -171,7 +171,9 @@ gumroad refund-policy set --period none --fine-print "" --json --no-input
 # In agents/CI, set GUMROAD_ADMIN_TOKEN and pass --non-interactive.
 
 # Inspect user identity, sign-in, social, risk, payout, and watchlist state
+# Look up by --email, --user-id, or --username (resolves user_id > email > username)
 gumroad admin users info --email seller@example.com --json --non-interactive --no-input
+gumroad admin users info --username sellerone --json --non-interactive --no-input
 
 # Review affiliate relationships
 gumroad admin users affiliates --user-id 2245593582708 --direction granted --limit 50 --json --non-interactive --no-input

@@ -124,10 +124,12 @@ counts. If the live Stripe lookup fails it degrades to a verification error
 line instead. Admin links carry impersonate, user, purchases, and (when a
 Stripe account exists) Stripe-dashboard helper URLs.
 
-Identify the user with --email or --user-id. When both are supplied, the
-server resolves by --user-id.`,
+Identify the user with --email, --user-id, or --username. When more than one
+is supplied, the server resolves by --user-id first, then --email, then
+--username.`,
 		Example: `  gumroad admin users info --email user@example.com
   gumroad admin users info --user-id 2245593582708
+  gumroad admin users info --username sellerone
   gumroad admin users info --email user@example.com --json`,
 		Args: cmdutil.ExactArgs(0),
 		RunE: func(c *cobra.Command, args []string) error {
