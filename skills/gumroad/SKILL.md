@@ -11,6 +11,7 @@ description: >
   "refund a sale", "create a product", "upload a file", "attach a file to a product",
   "add a cover image", "set a product thumbnail", "get product content", "set product content", "upload product media",
   "publish a product landing page", "publish custom HTML", "clear custom HTML",
+  "customize my profile page", "publish a profile landing page", "set profile custom HTML",
   "attach a file to a variant", "finish a failed upload", "abort an upload", "manage webhooks",
   "draft an email", "preview a broadcast", "send an audience email", "list drafts",
   "set refund policy", "check my refund policy", "check my earnings", "see my revenue", "who subscribed", "manage my store",
@@ -40,6 +41,7 @@ Always follow these rules:
 - Products are created as drafts — use `gumroad products publish <id>` to make them live.
 - Product cover and thumbnail uploads support JPEG, PNG, and GIF. WebP is not supported by the API and the CLI rejects it before upload.
 - Product custom HTML landing pages use `gumroad products page preview <id> ./landing.html` to run the backend sanitizer without writing, `gumroad products page publish <id> ./landing.html` to store the page, `gumroad products page clear <id> --yes` to remove it, and `gumroad products page url <id>` to print the live URL. `--dry-run` only previews the CLI request body; it does not call the backend sanitizer. Inspect `.sanitization_report` in `preview` and `publish` JSON output for server-side changes.
+- Profile custom HTML landing pages mirror the product commands without a product id and without checkout: `gumroad user page preview ./landing.html`, `gumroad user page publish ./landing.html` (read from stdin with `-`), `gumroad user page clear --yes`, and `gumroad user page url` (prints the public profile URL and its `/landing/embed` URL). A profile has no buy button, so omit `data-gumroad-action="buy"` and the checkout data attributes; link to products instead.
 - Product rich content uses `gumroad products content list <id> --json --no-input` to inspect page IDs, `gumroad products content get <id> --json --no-input` to dump the shared `rich_content` page array, and `gumroad products content set <id> content.json --dry-run --json --no-input` to preview a whole-document replacement. Without an explicit path, whole-document `set` reads `./content.json`; `set --page` reads `./page.json`. Use `--page <page_id>` with `get`/`set` to edit one matching page object; `set --page` still sends a merged whole-document PUT. For per-variant content, pass both `--variant <variant_id>` and `--category <cat_id>`. Whole-document `set` deletes existing pages omitted from the JSON.
 - Custom HTML pages can use `data-gumroad-field="name"`, `data-gumroad-field="price"`, `data-gumroad-field="description"`, and `data-gumroad-action="buy"`. To preselect checkout state, add `data-gumroad-option="<variant name>"`, `data-gumroad-quantity="<integer>"`, `data-gumroad-price="<decimal>"`, or `data-gumroad-recurrence="monthly|quarterly|biannually|yearly|every_two_years"`. Production validates these values and falls back to product defaults when invalid. Prefer anchors for buy CTAs so production can add a checkout href; non-anchor buy elements also post to checkout.
 - Audience emails are created as drafts by default. Use `gumroad emails send-preview <id> --json --no-input` and inspect `.preview_url` before `gumroad emails send <id> --yes --json --no-input`. Creating with `--send` publishes and blasts immediately, so use `--dry-run` first and require explicit human approval.
@@ -51,6 +53,9 @@ Always follow these rules:
 Most responses are wrapped in `{"success": true, ...}` with resource-specific keys:
 
 - `user` → `.user`, `user update` → `.user`
+- `user page preview` → `.custom_html`, `.sanitization_report`
+- `user page publish` / `user page clear` → `.custom_html`, `.previous_custom_html`, `.profile_url`, `.sanitization_report`
+- `user page url` → `.profile_url`, `.has_landing_page`
 - `refund-policy view/set` → `.refund_policy`
 - `products list` → `.products[]`
 - `products view` → `.product`
@@ -153,6 +158,14 @@ gumroad user --json --jq '.user.email' --no-input
 # Update the seller name and/or bio. Pass an empty value to clear a field.
 gumroad user update --name "Jane Doe" --bio "I make great things." --json --no-input
 gumroad user update --bio "" --json --no-input
+
+# Custom HTML profile landing page (authored by your agent; no checkout flags).
+gumroad user page preview ./landing.html --json --no-input
+gumroad user page publish ./landing.html --json --no-input
+gumroad user page publish - --json --no-input < landing.html
+gumroad user page clear --yes --json --no-input
+gumroad user page url --no-input
+gumroad user page url --json --jq '.profile_url' --no-input
 ```
 
 ### refund-policy — Store-wide refund policy
