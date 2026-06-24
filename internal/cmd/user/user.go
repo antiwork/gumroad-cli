@@ -31,13 +31,15 @@ func NewUserCmd() *cobra.Command {
 		Example: `  gumroad user
   gumroad user --json
   gumroad user --json --jq '.user.email'
-  gumroad user update --name "Jane Doe" --bio "I make great things."`,
+  gumroad user update --name "Jane Doe" --bio "I make great things."
+  gumroad user page publish ./landing.html`,
 		RunE: func(c *cobra.Command, args []string) error {
 			return runShow(cmdutil.OptionsFrom(c))
 		},
 	}
 
 	cmd.AddCommand(newUpdateCmd())
+	cmd.AddCommand(newPageCmd())
 
 	return cmd
 }
