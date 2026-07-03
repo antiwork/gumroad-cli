@@ -76,8 +76,7 @@ Do not push code with failing tests. CI is not a substitute for local verificati
 
 - Run `gofmt` before committing (the linter enforces this)
 - Follow [Effective Go](https://go.dev/doc/effective_go) for Go style and the [Command Line Interface Guidelines](https://clig.dev/) (clig.dev) for CLI UX — flags, output, errors, and help text. clig.dev is the design baseline this CLI is built on.
-- Don't leave comments in the code
-- No explanatory comments please
+- Don't leave comments in the code — no explanatory comments that narrate what the code plainly does. The rare exceptions (a non-obvious invariant, a gotcha, a link to a decision) are covered in [AGENTS.md](AGENTS.md)
 - Don't apologize for errors, fix them
 - Assign raw numbers to named constants to clarify their purpose
 
