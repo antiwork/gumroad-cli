@@ -118,6 +118,9 @@ func defaultIsTerminal(r interface{}) bool {
 
 func oauthLogin(opts cmdutil.Options, webFlag bool) (loginCredentials, error) {
 	cfg := oauth.DefaultFlowConfig()
+	if opts.DebugEnabled() {
+		cfg.DebugWriter = opts.Err()
+	}
 
 	if webFlag {
 		result, err := tryBrowserFlow(opts, cfg)

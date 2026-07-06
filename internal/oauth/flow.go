@@ -56,6 +56,19 @@ type FlowConfig struct {
 	Timeout       time.Duration
 	HTTPClient    *http.Client // optional; defaults to http.DefaultClient
 	Sleep         func(context.Context, time.Duration) error
+	DebugWriter   io.Writer // optional; when set, poll attempts and outcomes are logged
+}
+
+// devicePollRequestTimeout caps how long a single device token poll can hang.
+// Without it, a dead reused connection stalls a poll for the full flow timeout
+// (2 minutes) with no feedback before the next attempt.
+const devicePollRequestTimeout = 30 * time.Second
+
+func (cfg FlowConfig) debugf(format string, args ...any) {
+	if cfg.DebugWriter == nil {
+		return
+	}
+	fmt.Fprintf(cfg.DebugWriter, "DEBUG "+format+"\n", args...)
 }
 
 // DefaultFlowConfigFunc returns a FlowConfig using the built-in constants.
@@ -289,6 +302,7 @@ func DeviceFlowResult(ctx context.Context, cfg FlowConfig, out io.Writer) (FlowR
 	if err != nil {
 		return FlowResult{}, err
 	}
+	cfg.debugf("device code request url=%s expires_in=%d interval=%d", cfg.DeviceCodeURL, deviceCode.ExpiresIn, deviceCode.Interval)
 	if deviceCode.DeviceCode == "" {
 		return FlowResult{}, fmt.Errorf("device code response did not contain a device code")
 	}
@@ -364,6 +378,7 @@ func pollDeviceToken(ctx context.Context, cfg FlowConfig, deviceCode DeviceCodeR
 	}
 	expiresAt := time.Now().Add(time.Duration(deviceCode.ExpiresIn) * time.Second)
 
+	poll := 0
 	for {
 		remaining := time.Until(expiresAt)
 		if remaining <= 0 {
@@ -377,14 +392,32 @@ func pollDeviceToken(ctx context.Context, cfg FlowConfig, deviceCode DeviceCodeR
 			return FlowResult{}, fmt.Errorf("authorization cancelled: %w", err)
 		}
 
+		poll++
 		result, nextInterval, err := pollDeviceTokenOnce(ctx, cfg, deviceCode.DeviceCode, interval)
 		if err == nil {
+			cfg.debugf("device poll attempt=%d outcome=approved", poll)
 			return result, nil
 		}
 		var oauthErr *oauthDevicePollError
 		if !errors.As(err, &oauthErr) {
-			return FlowResult{}, err
+			var transient *transientPollError
+			if !errors.As(err, &transient) {
+				// A completed response we could not use (invalid JSON,
+				// missing access token, unexpected HTTP status) is a
+				// permanent contract failure; retrying would hide it.
+				return FlowResult{}, err
+			}
+			// The request itself failed in transport (connection reset,
+			// DNS blip, hung request). The authorization window is still
+			// open server-side, so keep polling until it expires instead
+			// of aborting the whole login.
+			if ctx.Err() != nil {
+				return FlowResult{}, fmt.Errorf("authorization cancelled: %w", err)
+			}
+			cfg.debugf("device poll attempt=%d outcome=transient_error retrying err=%q", poll, err)
+			continue
 		}
+		cfg.debugf("device poll attempt=%d outcome=%s", poll, oauthErr.Code)
 		switch oauthErr.Code {
 		case "authorization_pending":
 			continue
@@ -413,6 +446,18 @@ func (e *oauthDevicePollError) Error() string {
 	return e.Code + ": " + e.Description
 }
 
+// transientPollError marks a poll failure that happened in transport (the
+// request never completed) rather than in the server's response. Only these
+// are safe to retry: a response-level error (bad JSON, missing token) is a
+// permanent contract failure and retrying would hide it until expiry.
+type transientPollError struct {
+	err error
+}
+
+func (e *transientPollError) Error() string { return e.err.Error() }
+
+func (e *transientPollError) Unwrap() error { return e.err }
+
 func pollDeviceTokenOnce(ctx context.Context, cfg FlowConfig, deviceCode string, currentInterval time.Duration) (FlowResult, time.Duration, error) {
 	data := url.Values{
 		"grant_type":  {DeviceGrantType},
@@ -420,7 +465,7 @@ func pollDeviceTokenOnce(ctx context.Context, cfg FlowConfig, deviceCode string,
 		"device_code": {deviceCode},
 	}
 
-	requestCtx, cancel := requestContext(ctx, cfg)
+	requestCtx, cancel := devicePollContext(ctx, cfg)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(requestCtx, "POST", cfg.TokenURL, strings.NewReader(data.Encode()))
@@ -431,13 +476,13 @@ func pollDeviceTokenOnce(ctx context.Context, cfg FlowConfig, deviceCode string,
 
 	resp, err := cfg.HTTPClient.Do(req)
 	if err != nil {
-		return FlowResult{}, currentInterval, fmt.Errorf("token exchange failed: %w", err)
+		return FlowResult{}, currentInterval, &transientPollError{err: fmt.Errorf("token exchange failed: %w", err)}
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
-		return FlowResult{}, currentInterval, fmt.Errorf("could not read token response: %w", err)
+		return FlowResult{}, currentInterval, &transientPollError{err: fmt.Errorf("could not read token response: %w", err)}
 	}
 
 	if resp.StatusCode == http.StatusOK {
@@ -463,6 +508,18 @@ func requestContext(ctx context.Context, cfg FlowConfig) (context.Context, conte
 		return ctx, func() {}
 	}
 	return context.WithTimeout(ctx, cfg.Timeout)
+}
+
+// devicePollContext bounds a single device token poll. Polls are cheap and
+// repeated, so a poll hung on a dead reused connection should fail fast and
+// let the loop retry on a fresh attempt rather than stall for the full flow
+// timeout.
+func devicePollContext(ctx context.Context, cfg FlowConfig) (context.Context, context.CancelFunc) {
+	timeout := devicePollRequestTimeout
+	if cfg.Timeout > 0 && cfg.Timeout < timeout {
+		timeout = cfg.Timeout
+	}
+	return context.WithTimeout(ctx, timeout)
 }
 
 func generateState() (string, error) {
