@@ -204,6 +204,55 @@ func TestDeviceFlow_ApprovedResponseReadErrorDoesNotRetry(t *testing.T) {
 	}
 }
 
+func TestDeviceFlow_TruncatedReadWithCompleteBodySalvagesToken(t *testing.T) {
+	polls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/oauth/device/code":
+			w.Header().Set("Content-Type", "application/json")
+			mustEncode(t, w, DeviceCodeResponse{
+				DeviceCode:      "device-code-123",
+				UserCode:        "GRD-ABCD-1234",
+				VerificationURI: "https://gumroad.com/oauth/device",
+				ExpiresIn:       600,
+				Interval:        1,
+			})
+		case "/oauth/token":
+			polls++
+			// The declared Content-Length is larger than the body, so the
+			// read ends with an error - but the bytes that did arrive form
+			// a complete token response. The login should finish with that
+			// token rather than telling the user to start over.
+			hj, ok := w.(http.Hijacker)
+			if !ok {
+				t.Fatal("response writer does not support hijacking")
+			}
+			conn, bufrw, err := hj.Hijack()
+			if err != nil {
+				t.Fatalf("hijack: %v", err)
+			}
+			body := `{"access_token":"salvaged-token","token_type":"Bearer"}`
+			_, _ = bufrw.WriteString("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 500\r\n\r\n" + body)
+			_ = bufrw.Flush()
+			_ = conn.Close()
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer srv.Close()
+
+	result, err := DeviceFlowResult(context.Background(), deviceFlowConfig(srv), &strings.Builder{})
+	if err != nil {
+		t.Fatalf("expected the complete body to complete the login, got: %v", err)
+	}
+	if result.AccessToken != "salvaged-token" {
+		t.Fatalf("got access token %q, want salvaged-token", result.AccessToken)
+	}
+	if polls != 1 {
+		t.Fatalf("got %d polls, want 1 (a salvaged approval must not retry)", polls)
+	}
+}
+
 func TestDeviceFlow_DebugLogsPollAttempts(t *testing.T) {
 	var tokenPolls int
 	srv := deviceRetryServer(t, &tokenPolls)

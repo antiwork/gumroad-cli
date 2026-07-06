@@ -487,6 +487,16 @@ func pollDeviceTokenOnce(ctx context.Context, cfg FlowConfig, deviceCode string,
 		// code. Retrying the poll would then fail with a confusing
 		// "authorization expired" instead of explaining what happened.
 		if resp.StatusCode == http.StatusOK {
+			// The read can fail after the full body already arrived (for
+			// example when the declared Content-Length overshoots the
+			// actual body). If the bytes we did receive form a valid token
+			// response, finish the login with them instead of throwing
+			// away a completed approval.
+			if len(body) > 0 {
+				if result, parseErr := tokenResponseResult(body, "", ""); parseErr == nil {
+					return result, currentInterval, nil
+				}
+			}
 			return FlowResult{}, currentInterval, fmt.Errorf("connection dropped while reading the approval response: %w; run the login again", err)
 		}
 		return FlowResult{}, currentInterval, &transientPollError{err: fmt.Errorf("could not read token response: %w", err)}
