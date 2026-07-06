@@ -156,6 +156,57 @@ func TestDeviceFlow_PermanentResponseErrorFailsFast(t *testing.T) {
 	}
 }
 
+func TestDeviceFlow_ApprovedResponseReadErrorFailsFast(t *testing.T) {
+	polls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/oauth/device/code":
+			mustEncode(t, w, DeviceCodeResponse{
+				DeviceCode:      "device-code-123",
+				UserCode:        "GRD-ABCD-1234",
+				VerificationURI: "https://gumroad.com/oauth/device",
+				ExpiresIn:       600,
+				Interval:        1,
+			})
+		case "/oauth/token":
+			polls++
+			// Promise a 200 body, then cut the connection before delivering
+			// it. The server may already have consumed the device code, so
+			// the flow must fail with guidance instead of retrying the poll.
+			w.Header().Set("Content-Length", "512")
+			w.WriteHeader(http.StatusOK)
+			if _, err := w.Write([]byte(`{"access_`)); err != nil {
+				t.Fatalf("write partial body: %v", err)
+			}
+			w.(http.Flusher).Flush()
+			hj, ok := w.(http.Hijacker)
+			if !ok {
+				t.Fatal("response writer does not support hijacking")
+			}
+			conn, _, err := hj.Hijack()
+			if err != nil {
+				t.Fatalf("hijack: %v", err)
+			}
+			_ = conn.Close()
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer srv.Close()
+
+	_, err := DeviceFlowResult(context.Background(), deviceFlowConfig(srv), &strings.Builder{})
+	if err == nil {
+		t.Fatal("expected error when the approved token response cannot be read")
+	}
+	if !strings.Contains(err.Error(), "run the login command again") {
+		t.Fatalf("got error %q, want guidance to run the login command again", err)
+	}
+	if polls != 1 {
+		t.Fatalf("got %d polls, want 1 (read errors on an approved response must not retry)", polls)
+	}
+}
+
 func TestDeviceFlow_DebugLogsPollAttempts(t *testing.T) {
 	var tokenPolls int
 	srv := deviceRetryServer(t, &tokenPolls)
