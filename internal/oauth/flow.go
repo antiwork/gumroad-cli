@@ -482,6 +482,13 @@ func pollDeviceTokenOnce(ctx context.Context, cfg FlowConfig, deviceCode string,
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
+		// A 200 status means the server approved the login before the
+		// connection dropped, so it may have already consumed the device
+		// code. Retrying the poll would then fail with a confusing
+		// "authorization expired" instead of explaining what happened.
+		if resp.StatusCode == http.StatusOK {
+			return FlowResult{}, currentInterval, fmt.Errorf("connection dropped while reading the approval response: %w; run the login again", err)
+		}
 		return FlowResult{}, currentInterval, &transientPollError{err: fmt.Errorf("could not read token response: %w", err)}
 	}
 
