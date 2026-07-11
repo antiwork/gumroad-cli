@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 
 	"github.com/antiwork/gumroad-cli/internal/adminapi"
 	"github.com/antiwork/gumroad-cli/internal/admincmd"
@@ -20,6 +21,7 @@ type refundRequest struct {
 	AmountCents        int    `json:"amount_cents,omitempty"`
 	Force              bool   `json:"force,omitempty"`
 	CancelSubscription bool   `json:"cancel_subscription,omitempty"`
+	Reason             string `json:"reason,omitempty"`
 }
 
 type refundResponse struct {
@@ -35,6 +37,7 @@ func newRefundCmd() *cobra.Command {
 		amount             string
 		force              bool
 		cancelSubscription bool
+		reason             string
 	)
 
 	cmd := &cobra.Command{
@@ -45,17 +48,24 @@ func newRefundCmd() *cobra.Command {
 The buyer email is required as a sanity check against the purchase. Without --amount,
 the entire purchase is refunded. --force bypasses the refund-policy timeframe and
 fine-print guards (the active-chargeback guard still applies). --cancel-subscription
-cancels the linked subscription after a successful refund.`,
-		Example: `  gumroad admin purchases refund 12345 --email buyer@example.com
-  gumroad admin purchases refund 12345 --email buyer@example.com --amount 5.00
-  gumroad admin purchases refund 12345 --email buyer@example.com --force
-  gumroad admin purchases refund 12345 --email buyer@example.com --cancel-subscription`,
+cancels the linked subscription after a successful refund.
+
+A reason is required. It is stored on the refund and shown to the creator in the
+"A sale has been refunded" email so they know why Gumroad refunded the sale on
+their behalf.`,
+		Example: `  gumroad admin purchases refund 12345 --email buyer@example.com --reason "Buyer reported being charged twice"
+  gumroad admin purchases refund 12345 --email buyer@example.com --amount 5.00 --reason "Partial refund agreed with buyer"
+  gumroad admin purchases refund 12345 --email buyer@example.com --force --reason "Product not delivered"
+  gumroad admin purchases refund 12345 --email buyer@example.com --cancel-subscription --reason "Buyer requested cancellation and refund"`,
 		Args: cmdutil.ExactArgs(1),
 		RunE: func(c *cobra.Command, args []string) error {
 			opts := cmdutil.OptionsFrom(c)
 
 			if email == "" {
 				return cmdutil.MissingFlagError(c, "--email")
+			}
+			if strings.TrimSpace(reason) == "" {
+				return cmdutil.MissingFlagError(c, "--reason")
 			}
 
 			refundPath := cmdutil.JoinPath("purchases", args[0], "refund")
@@ -125,6 +135,7 @@ cancels the linked subscription after a successful refund.`,
 				AmountCents:        cents,
 				Force:              force,
 				CancelSubscription: cancelSubscription,
+				Reason:             strings.TrimSpace(reason),
 			}
 
 			if opts.DryRun {
@@ -152,6 +163,7 @@ cancels the linked subscription after a successful refund.`,
 	cmd.Flags().StringVar(&amount, "amount", "", "Partial refund amount in displayed currency (e.g. 5, 5.00); omit for full refund")
 	cmd.Flags().BoolVar(&force, "force", false, "Bypass refund-policy timeframe and fine-print guards")
 	cmd.Flags().BoolVar(&cancelSubscription, "cancel-subscription", false, "Cancel the linked subscription after the refund succeeds")
+	cmd.Flags().StringVar(&reason, "reason", "", "Why the sale is being refunded; shown to the creator in the refund notification email (required)")
 
 	return cmd
 }
@@ -191,6 +203,9 @@ func refundDryRunParams(req refundRequest) url.Values {
 	}
 	if req.CancelSubscription {
 		params.Set("cancel_subscription", "true")
+	}
+	if req.Reason != "" {
+		params.Set("reason", req.Reason)
 	}
 	return params
 }

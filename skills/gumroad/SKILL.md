@@ -243,6 +243,11 @@ gumroad admin users refund-balance --user-id 2245593582708 --expected-email sell
 gumroad admin purchases view <purchase-id> --with-clusters --json --non-interactive --no-input
 gumroad admin purchases search --email buyer@example.com --json --jq '{purchases, has_more, limit}' --non-interactive --no-input
 gumroad admin purchases lookup --stripe-fingerprint fp_abc --limit 25 --json --non-interactive --no-input
+
+# Refund a purchase. --reason is required: it is stored on the refund and shown to the
+# creator in the "A sale has been refunded" notification email.
+gumroad admin purchases refund <purchase-id> --email buyer@example.com --reason "Buyer reported being charged twice" --yes --json --non-interactive --no-input
+gumroad admin purchases refund <purchase-id> --email buyer@example.com --amount 5.00 --reason "Partial refund agreed with buyer" --yes --json --non-interactive --no-input
 gumroad admin products list --email seller@example.com --page 2 --per-page 25 --json --non-interactive --no-input
 gumroad admin products view <product-id> --with-fraud-context --json --non-interactive --no-input
 

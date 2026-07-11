@@ -55,7 +55,7 @@ func purchaseLookupResponderWithRefundable(currency string, refundableCents int)
 
 func TestRefund_RequiresEmail(t *testing.T) {
 	cmd := newRefundCmd()
-	cmd.SetArgs([]string{"123"})
+	cmd.SetArgs([]string{"123", "--reason", "Buyer reported being charged twice"})
 
 	err := cmd.Execute()
 	if err == nil {
@@ -66,13 +66,47 @@ func TestRefund_RequiresEmail(t *testing.T) {
 	}
 }
 
+func TestRefund_RequiresReason(t *testing.T) {
+	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Error("should not reach API without a reason")
+	})
+
+	cmd := testutil.Command(newRefundCmd(), testutil.Yes(true))
+	cmd.SetArgs([]string{"123", "--email", "buyer@example.com"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected missing reason error")
+	}
+	if !strings.Contains(err.Error(), "missing required flag: --reason") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestRefund_RejectsWhitespaceOnlyReason(t *testing.T) {
+	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Error("should not reach API with a blank reason")
+	})
+
+	cmd := testutil.Command(newRefundCmd(), testutil.Yes(true))
+	cmd.SetArgs([]string{"123", "--email", "buyer@example.com", "--reason", "   "})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected missing reason error")
+	}
+	if !strings.Contains(err.Error(), "missing required flag: --reason") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestRefund_RequiresConfirmation(t *testing.T) {
 	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
 		t.Error("should not reach API without confirmation")
 	})
 
 	cmd := testutil.Command(newRefundCmd(), testutil.NoInput(true))
-	cmd.SetArgs([]string{"123", "--email", "buyer@example.com"})
+	cmd.SetArgs([]string{"123", "--email", "buyer@example.com", "--reason", "Buyer reported being charged twice"})
 
 	err := cmd.Execute()
 	if err == nil {
@@ -116,7 +150,7 @@ func TestRefund_FullSendsEmailAndOmitsAmountCents(t *testing.T) {
 	}))
 
 	cmd := testutil.Command(newRefundCmd(), testutil.Yes(true), testutil.Quiet(false))
-	cmd.SetArgs([]string{"123", "--email", "buyer@example.com"})
+	cmd.SetArgs([]string{"123", "--email", "buyer@example.com", "--reason", "Buyer reported being charged twice"})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
 	if gotMethod != "POST" || gotPath != "/internal/admin/purchases/123/refund" {
@@ -130,6 +164,9 @@ func TestRefund_FullSendsEmailAndOmitsAmountCents(t *testing.T) {
 	}
 	if body.Email != "buyer@example.com" {
 		t.Fatalf("got email %q, want buyer@example.com", body.Email)
+	}
+	if body.Reason != "Buyer reported being charged twice" {
+		t.Fatalf("got reason %q, want the provided reason forwarded in the body", body.Reason)
 	}
 	if _, present := bodyKeys["amount_cents"]; present {
 		t.Errorf("amount_cents must be omitted on full refund, got body keys: %v", bodyKeys)
@@ -171,7 +208,7 @@ func TestRefund_PartialLooksUpPurchaseAndConvertsUSD(t *testing.T) {
 		}))
 
 	cmd := testutil.Command(newRefundCmd(), testutil.Yes(true), testutil.Quiet(false))
-	cmd.SetArgs([]string{"123", "--email", "buyer@example.com", "--amount", "5.00"})
+	cmd.SetArgs([]string{"123", "--email", "buyer@example.com", "--amount", "5.00", "--reason", "Partial refund agreed with buyer"})
 	testutil.MustExecute(t, cmd)
 
 	if lookupHits != 1 {
@@ -202,7 +239,7 @@ func TestRefund_PartialUsesPurchaseCurrencyForJPY(t *testing.T) {
 		}))
 
 	cmd := testutil.Command(newRefundCmd(), testutil.Yes(true), testutil.Quiet(false))
-	cmd.SetArgs([]string{"123", "--email", "buyer@example.com", "--amount", "500"})
+	cmd.SetArgs([]string{"123", "--email", "buyer@example.com", "--amount", "500", "--reason", "Partial refund agreed with buyer"})
 	testutil.MustExecute(t, cmd)
 
 	if body.AmountCents != 500 {
@@ -222,7 +259,7 @@ func TestRefund_RejectsMissingCurrencyTypeFromLookup(t *testing.T) {
 		}))
 
 	cmd := testutil.Command(newRefundCmd(), testutil.Yes(true))
-	cmd.SetArgs([]string{"123", "--email", "buyer@example.com", "--amount", "500"})
+	cmd.SetArgs([]string{"123", "--email", "buyer@example.com", "--amount", "500", "--reason", "Partial refund agreed with buyer"})
 
 	err := cmd.Execute()
 	if err == nil {
@@ -256,7 +293,7 @@ func TestRefund_RejectsEmptyCurrencyTypeFromLookup(t *testing.T) {
 		}))
 
 	cmd := testutil.Command(newRefundCmd(), testutil.Yes(true))
-	cmd.SetArgs([]string{"123", "--email", "buyer@example.com", "--amount", "500"})
+	cmd.SetArgs([]string{"123", "--email", "buyer@example.com", "--amount", "500", "--reason", "Partial refund agreed with buyer"})
 
 	err := cmd.Execute()
 	if err == nil || !strings.Contains(err.Error(), "could not determine purchase currency") {
@@ -276,7 +313,7 @@ func TestRefund_RejectsDecimalAmountForJPY(t *testing.T) {
 		}))
 
 	cmd := testutil.Command(newRefundCmd(), testutil.Yes(true))
-	cmd.SetArgs([]string{"123", "--email", "buyer@example.com", "--amount", "5.00"})
+	cmd.SetArgs([]string{"123", "--email", "buyer@example.com", "--amount", "5.00", "--reason", "Partial refund agreed with buyer"})
 
 	err := cmd.Execute()
 	if err == nil || !strings.Contains(err.Error(), "JPY") {
@@ -292,7 +329,7 @@ func TestRefund_RejectsInvalidAmount(t *testing.T) {
 		}))
 
 	cmd := testutil.Command(newRefundCmd(), testutil.Yes(true))
-	cmd.SetArgs([]string{"123", "--email", "buyer@example.com", "--amount", "abc"})
+	cmd.SetArgs([]string{"123", "--email", "buyer@example.com", "--amount", "abc", "--reason", "Partial refund agreed with buyer"})
 
 	err := cmd.Execute()
 	if err == nil || !strings.Contains(err.Error(), "not a valid amount") {
@@ -308,7 +345,7 @@ func TestRefund_RejectsZeroAmount(t *testing.T) {
 		}))
 
 	cmd := testutil.Command(newRefundCmd(), testutil.Yes(true))
-	cmd.SetArgs([]string{"123", "--email", "buyer@example.com", "--amount", "0"})
+	cmd.SetArgs([]string{"123", "--email", "buyer@example.com", "--amount", "0", "--reason", "Partial refund agreed with buyer"})
 
 	err := cmd.Execute()
 	if err == nil || !strings.Contains(err.Error(), "--amount must be greater than 0") {
@@ -331,7 +368,7 @@ func TestRefund_ForwardsForceAndCancelSubscription(t *testing.T) {
 	}))
 
 	cmd := testutil.Command(newRefundCmd(), testutil.Yes(true), testutil.Quiet(false))
-	cmd.SetArgs([]string{"123", "--email", "buyer@example.com", "--force", "--cancel-subscription"})
+	cmd.SetArgs([]string{"123", "--email", "buyer@example.com", "--force", "--cancel-subscription", "--reason", "Product not delivered"})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
 	if !body.Force {
@@ -356,7 +393,7 @@ func TestRefund_ShowsSubscriptionCancelError(t *testing.T) {
 	}))
 
 	cmd := testutil.Command(newRefundCmd(), testutil.Yes(true), testutil.Quiet(false))
-	cmd.SetArgs([]string{"123", "--email", "buyer@example.com", "--cancel-subscription"})
+	cmd.SetArgs([]string{"123", "--email", "buyer@example.com", "--cancel-subscription", "--reason", "Buyer requested cancellation"})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
 	if !strings.Contains(out, "Subscription cancel failed: stripe blew up") {
@@ -370,7 +407,7 @@ func TestRefund_DryRunDoesNotContactRefundEndpoint(t *testing.T) {
 	}))
 
 	cmd := testutil.Command(newRefundCmd(), testutil.DryRun(true), testutil.NoInput(true))
-	cmd.SetArgs([]string{"123", "--email", "buyer@example.com"})
+	cmd.SetArgs([]string{"123", "--email", "buyer@example.com", "--reason", "Buyer reported being charged twice"})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
 	if !strings.Contains(out, "POST") || !strings.Contains(out, "/internal/admin/purchases/123/refund") {
@@ -378,6 +415,32 @@ func TestRefund_DryRunDoesNotContactRefundEndpoint(t *testing.T) {
 	}
 	if !strings.Contains(out, "email: buyer@example.com") {
 		t.Errorf("expected dry-run preview to include email, got: %q", out)
+	}
+	if !strings.Contains(out, "reason: Buyer reported being charged twice") {
+		t.Errorf("expected dry-run preview to include the reason, got: %q", out)
+	}
+}
+
+func TestRefund_TrimsReasonBeforeSending(t *testing.T) {
+	var body refundRequest
+
+	testutil.SetupAdmin(t, adminRefundHandler(t, nil, func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode body: %v", err)
+		}
+		testutil.JSON(t, w, map[string]any{
+			"message":                "Successfully refunded purchase number 123",
+			"purchase":               map[string]any{"id": "123"},
+			"subscription_cancelled": false,
+		})
+	}))
+
+	cmd := testutil.Command(newRefundCmd(), testutil.Yes(true))
+	cmd.SetArgs([]string{"123", "--email", "buyer@example.com", "--reason", "  Buyer reported being charged twice  "})
+	testutil.MustExecute(t, cmd)
+
+	if body.Reason != "Buyer reported being charged twice" {
+		t.Errorf("got reason %q, want it trimmed of surrounding whitespace", body.Reason)
 	}
 }
 
@@ -394,7 +457,7 @@ func TestRefund_DryRunWithPartialAmountLooksUpButDoesNotRefund(t *testing.T) {
 		}))
 
 	cmd := testutil.Command(newRefundCmd(), testutil.DryRun(true), testutil.NoInput(true))
-	cmd.SetArgs([]string{"123", "--email", "buyer@example.com", "--amount", "500"})
+	cmd.SetArgs([]string{"123", "--email", "buyer@example.com", "--amount", "500", "--reason", "Partial refund agreed with buyer"})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
 	if lookupHits != 1 {
@@ -411,7 +474,7 @@ func TestRefund_CancelledByPromptDeclineNotReached(t *testing.T) {
 	}))
 
 	cmd := testutil.Command(newRefundCmd(), testutil.NoInput(true))
-	cmd.SetArgs([]string{"123", "--email", "buyer@example.com"})
+	cmd.SetArgs([]string{"123", "--email", "buyer@example.com", "--reason", "Buyer reported being charged twice"})
 
 	if err := cmd.Execute(); err == nil {
 		t.Fatal("expected confirmation error")
@@ -428,7 +491,7 @@ func TestRefund_JSONPreservesResponse(t *testing.T) {
 	}))
 
 	cmd := testutil.Command(newRefundCmd(), testutil.Yes(true), testutil.JSONOutput())
-	cmd.SetArgs([]string{"123", "--email", "buyer@example.com", "--cancel-subscription"})
+	cmd.SetArgs([]string{"123", "--email", "buyer@example.com", "--cancel-subscription", "--reason", "Buyer requested cancellation"})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
 	var resp struct {
@@ -455,7 +518,7 @@ func TestRefund_PlainOutput(t *testing.T) {
 	}))
 
 	cmd := testutil.Command(newRefundCmd(), testutil.Yes(true), testutil.PlainOutput())
-	cmd.SetArgs([]string{"123", "--email", "buyer@example.com", "--cancel-subscription"})
+	cmd.SetArgs([]string{"123", "--email", "buyer@example.com", "--cancel-subscription", "--reason", "Buyer requested cancellation"})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
 	want := "true\tSuccessfully refunded purchase number 123\t123\tcancelled\t"
@@ -472,7 +535,7 @@ func TestRefund_RejectsAmountAboveRefundableBalance(t *testing.T) {
 		}))
 
 	cmd := testutil.Command(newRefundCmd(), testutil.Yes(true))
-	cmd.SetArgs([]string{"123", "--email", "buyer@example.com", "--amount", "10.00"})
+	cmd.SetArgs([]string{"123", "--email", "buyer@example.com", "--amount", "10.00", "--reason", "Partial refund agreed with buyer"})
 
 	err := cmd.Execute()
 	if err == nil || !strings.Contains(err.Error(), "exceeds the refundable balance") {
@@ -496,7 +559,7 @@ func TestRefund_AcceptsAmountAtRefundableBalance(t *testing.T) {
 		}))
 
 	cmd := testutil.Command(newRefundCmd(), testutil.Yes(true))
-	cmd.SetArgs([]string{"123", "--email", "buyer@example.com", "--amount", "5.00"})
+	cmd.SetArgs([]string{"123", "--email", "buyer@example.com", "--amount", "5.00", "--reason", "Partial refund agreed with buyer"})
 	testutil.MustExecute(t, cmd)
 
 	if body.AmountCents != 500 {
@@ -514,7 +577,7 @@ func TestRefund_PurchaseHasNoChargeSurfacesMessage(t *testing.T) {
 	}))
 
 	cmd := testutil.Command(newRefundCmd(), testutil.Yes(true))
-	cmd.SetArgs([]string{"123", "--email", "buyer@example.com"})
+	cmd.SetArgs([]string{"123", "--email", "buyer@example.com", "--reason", "Buyer reported being charged twice"})
 
 	err := cmd.Execute()
 	if err == nil {
@@ -538,7 +601,7 @@ func TestRefund_JSONIncludesVerifyStateHint(t *testing.T) {
 	}))
 
 	cmd := testutil.Command(newRefundCmd(), testutil.Yes(true), testutil.JSONOutput())
-	cmd.SetArgs([]string{"123", "--email", "buyer@example.com"})
+	cmd.SetArgs([]string{"123", "--email", "buyer@example.com", "--reason", "Buyer reported being charged twice"})
 
 	err := cmd.Execute()
 	if err == nil {
@@ -567,7 +630,7 @@ func TestRefund_MalformedSuccessResponseIsNotWrappedAsRequestFailed(t *testing.T
 	}))
 
 	cmd := testutil.Command(newRefundCmd(), testutil.Yes(true))
-	cmd.SetArgs([]string{"123", "--email", "buyer@example.com"})
+	cmd.SetArgs([]string{"123", "--email", "buyer@example.com", "--reason", "Buyer reported being charged twice"})
 
 	err := cmd.Execute()
 	if err == nil {
@@ -599,7 +662,7 @@ func TestRefund_FullyRefundedPurchaseDefersToServer(t *testing.T) {
 		}))
 
 	cmd := testutil.Command(newRefundCmd(), testutil.Yes(true))
-	cmd.SetArgs([]string{"123", "--email", "buyer@example.com", "--amount", "5.00"})
+	cmd.SetArgs([]string{"123", "--email", "buyer@example.com", "--amount", "5.00", "--reason", "Partial refund agreed with buyer"})
 
 	err := cmd.Execute()
 	if err == nil {
@@ -625,7 +688,7 @@ func TestRefund_APIErrorSurfacesMessage(t *testing.T) {
 		}))
 
 	cmd := testutil.Command(newRefundCmd(), testutil.Yes(true))
-	cmd.SetArgs([]string{"123", "--email", "buyer@example.com", "--amount", "50.00"})
+	cmd.SetArgs([]string{"123", "--email", "buyer@example.com", "--amount", "50.00", "--reason", "Partial refund agreed with buyer"})
 
 	err := cmd.Execute()
 	if err == nil {
