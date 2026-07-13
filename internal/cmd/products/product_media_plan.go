@@ -182,15 +182,32 @@ func detectProductVideoContentType(path string, file *os.File) (string, error) {
 		return "", err
 	}
 
-	detected := normalizeVideoContentType(http.DetectContentType(sample[:n]))
+	rawDetected := strings.ToLower(strings.TrimSpace(strings.Split(http.DetectContentType(sample[:n]), ";")[0]))
+	detected := normalizeVideoContentType(rawDetected)
 	if detected != "" {
 		return detected, nil
 	}
-	if fromExtension := videoContentTypeForExtension(strings.ToLower(filepath.Ext(path))); fromExtension != "" {
-		return fromExtension, nil
+	// The extension only decides the content type when sniffing the file's
+	// bytes was inconclusive. If the bytes positively identify something that
+	// is not a video (an image, an archive, ...), a video extension on the
+	// filename must not override that: the server trusts the content type the
+	// CLI declares, so a mislabeled file would become a broken cover.
+	if sniffWasInconclusive(rawDetected) {
+		if fromExtension := videoContentTypeForExtension(strings.ToLower(filepath.Ext(path))); fromExtension != "" {
+			return fromExtension, nil
+		}
 	}
 
 	return "", fmt.Errorf("unsupported preview video type for %s; use an MP4, MOV, M4V, MPEG, WMV, or WebM video", path)
+}
+
+func sniffWasInconclusive(rawDetected string) bool {
+	// http.DetectContentType answers application/octet-stream when it cannot
+	// identify the bytes at all, and it only knows a few video containers, so
+	// an unrecognized video/* answer is also inconclusive. Anything else
+	// (image/*, application/zip, text/plain, ...) is a positive match for a
+	// non-video file and must not be overridden by the filename's extension.
+	return rawDetected == "application/octet-stream" || strings.HasPrefix(rawDetected, "video/")
 }
 
 func normalizeVideoContentType(contentType string) string {

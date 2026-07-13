@@ -354,7 +354,7 @@ In custom HTML, use Gumroad data attributes for live product values and checkout
 
 Use `products update --file` for shared product Content. It replaces existing rich content file embeds in place when they exist, or creates file embeds when the document has none; pass one `--file` per existing file embed and use `products content get/set` for structural content edits. For products with per-variant Content, use `variants update ... --file` for the specific variant you want to change.
 
-Use `--cover-image` for the primary cover, repeat `--preview-image` for additional gallery/preview images, repeat `--preview-video` for video previews (MP4, MOV, M4V, MPEG, WMV, or WebM), and `--thumbnail` for the card/library thumbnail. These media flags run the required two-step API flow: direct upload first, then attach by signed blob ID. For an existing product, `products thumbnail set --url` asks Gumroad to download and attach a public HTTP(S) image directly.
+Use `--cover-image` for the primary cover, repeat `--preview-image` for additional gallery/preview images, repeat `--preview-video` for video previews (MP4, MOV, M4V, MPEG, WMV, or WebM), and `--thumbnail` for the card/library thumbnail. When multiple media flags are combined, covers attach in a fixed order: cover image first, then preview images (in flag order), then preview videos (in flag order) — images and videos cannot be interleaved in a single command. These media flags run the required two-step API flow: direct upload first, then attach by signed blob ID. For an existing product, `products thumbnail set --url` asks Gumroad to download and attach a public HTTP(S) image directly.
 
 ### files — Upload and recover file attachments
 

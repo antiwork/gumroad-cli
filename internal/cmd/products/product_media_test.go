@@ -1188,7 +1188,11 @@ func TestDetectProductVideoContentTypeFallsBackToExtension(t *testing.T) {
 		"demo.webm": "video/webm",
 	}
 	for name, want := range tests {
-		path := writeMediaFixture(t, name, "0000000000000000")
+		// Binary bytes the sniffer cannot identify, so detection has to rely
+		// on the file extension. Real video containers sniff as unknown
+		// binary too, unlike printable text which is positively identified
+		// as text/plain and rejected.
+		path := writeMediaFixture(t, name, "\x00\x01\x02\x03\x04\x05\x06\x07\x08\x0b\x0c\x0e\x0f\x10")
 		file, err := os.Open(path)
 		if err != nil {
 			t.Fatalf("open fixture: %v", err)
@@ -1200,6 +1204,35 @@ func TestDetectProductVideoContentTypeFallsBackToExtension(t *testing.T) {
 		}
 		if got != want {
 			t.Fatalf("content type for %s = %q, want %q", name, got, want)
+		}
+	}
+}
+
+func TestDetectProductVideoContentTypeRejectsMislabeledNonVideos(t *testing.T) {
+	// Files whose bytes positively identify a non-video type must be rejected
+	// even when the filename carries a video extension: the server trusts the
+	// content type the CLI declares, so letting these through would publish a
+	// broken product cover.
+	pngBytes := "\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"
+	zipBytes := "PK\x03\x04\x14\x00\x00\x00\x08\x00"
+	tests := map[string]string{
+		"png-renamed.mp4":  pngBytes,
+		"zip-renamed.mov":  zipBytes,
+		"text-renamed.mp4": "just some plain text pretending to be a video",
+	}
+	for name, content := range tests {
+		path := writeMediaFixture(t, name, content)
+		file, err := os.Open(path)
+		if err != nil {
+			t.Fatalf("open fixture: %v", err)
+		}
+		got, err := detectProductVideoContentType(path, file)
+		_ = file.Close()
+		if err == nil {
+			t.Fatalf("detect %s = %q, want rejection", name, got)
+		}
+		if !strings.Contains(err.Error(), "unsupported preview video type") {
+			t.Fatalf("unexpected error for %s: %v", name, err)
 		}
 	}
 }
