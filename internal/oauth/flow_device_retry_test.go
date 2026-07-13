@@ -156,12 +156,12 @@ func TestDeviceFlow_PermanentResponseErrorFailsFast(t *testing.T) {
 	}
 }
 
-func TestDeviceFlow_ApprovedResponseReadErrorDoesNotRetry(t *testing.T) {
+func TestDeviceFlow_ApprovedResponseReadErrorFailsFast(t *testing.T) {
 	polls := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/oauth/device/code":
-			w.Header().Set("Content-Type", "application/json")
 			mustEncode(t, w, DeviceCodeResponse{
 				DeviceCode:      "device-code-123",
 				UserCode:        "GRD-ABCD-1234",
@@ -171,20 +171,23 @@ func TestDeviceFlow_ApprovedResponseReadErrorDoesNotRetry(t *testing.T) {
 			})
 		case "/oauth/token":
 			polls++
-			// Send a 200 approval whose body is cut off mid-read: the
-			// declared Content-Length is larger than what we write, then
-			// the connection closes. The server has consumed the device
-			// code at this point, so retrying the poll cannot succeed.
+			// Promise a 200 body, then cut the connection before delivering
+			// it. The server may already have consumed the device code, so
+			// the flow must fail with guidance instead of retrying the poll.
+			w.Header().Set("Content-Length", "512")
+			w.WriteHeader(http.StatusOK)
+			if _, err := w.Write([]byte(`{"access_`)); err != nil {
+				t.Fatalf("write partial body: %v", err)
+			}
+			w.(http.Flusher).Flush()
 			hj, ok := w.(http.Hijacker)
 			if !ok {
 				t.Fatal("response writer does not support hijacking")
 			}
-			conn, bufrw, err := hj.Hijack()
+			conn, _, err := hj.Hijack()
 			if err != nil {
 				t.Fatalf("hijack: %v", err)
 			}
-			_, _ = bufrw.WriteString("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 500\r\n\r\n{\"access_token\":")
-			_ = bufrw.Flush()
 			_ = conn.Close()
 		default:
 			t.Fatalf("unexpected path %s", r.URL.Path)
@@ -194,13 +197,13 @@ func TestDeviceFlow_ApprovedResponseReadErrorDoesNotRetry(t *testing.T) {
 
 	_, err := DeviceFlowResult(context.Background(), deviceFlowConfig(srv), &strings.Builder{})
 	if err == nil {
-		t.Fatal("expected error when the approval response body cannot be read")
+		t.Fatal("expected error when the approved token response cannot be read")
 	}
-	if !strings.Contains(err.Error(), "run the login again") {
-		t.Fatalf("got error %q, want guidance to rerun the login", err)
+	if !strings.Contains(err.Error(), "run the login command again") {
+		t.Fatalf("got error %q, want guidance to run the login command again", err)
 	}
 	if polls != 1 {
-		t.Fatalf("got %d polls, want 1 (a dropped approval response must not retry)", polls)
+		t.Fatalf("got %d polls, want 1 (read errors on an approved response must not retry)", polls)
 	}
 }
 
