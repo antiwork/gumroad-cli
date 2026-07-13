@@ -43,7 +43,7 @@ func directUploadProductMedia(opts cmdutil.Options, client *api.Client, media pl
 func putDirectUpload(opts cmdutil.Options, media plannedProductMedia, uploadURL string, headers map[string]string) error {
 	file, err := os.Open(media.Path)
 	if err != nil {
-		return fmt.Errorf("could not open %s image: %w", media.Kind, err)
+		return fmt.Errorf("could not open %s: %w", productMediaNoun(media.requestedProductMedia), err)
 	}
 	defer func() { _ = file.Close() }()
 

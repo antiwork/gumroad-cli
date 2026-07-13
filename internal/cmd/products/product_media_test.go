@@ -683,9 +683,12 @@ func TestProductMediaRejectsOversizedImagesClientSide(t *testing.T) {
 }
 
 func TestProductMediaPlanningAndRetryHelpers(t *testing.T) {
-	collected := collectProductMedia("cover.jpg", []string{"preview-a.jpg", "preview-b.jpg"}, "thumb.jpg")
-	if len(collected) != 4 || collected[0].Kind != productMediaCover || collected[3].Kind != productMediaThumbnail {
+	collected := collectProductMedia("cover.jpg", []string{"preview-a.jpg", "preview-b.jpg"}, []string{"demo.mp4"}, "thumb.jpg")
+	if len(collected) != 5 || collected[0].Kind != productMediaCover || collected[4].Kind != productMediaThumbnail {
 		t.Fatalf("unexpected collected media: %+v", collected)
+	}
+	if collected[3].Kind != productMediaPreview || !collected[3].IsVideo {
+		t.Fatalf("unexpected collected video media: %+v", collected[3])
 	}
 
 	cmd := newCreateCmd()
@@ -693,8 +696,11 @@ func TestProductMediaPlanningAndRetryHelpers(t *testing.T) {
 	if err := cmd.ParseFlags([]string{"--preview-image", ""}); err != nil {
 		t.Fatalf("ParseFlags: %v", err)
 	}
-	if err := validateProductMediaFlagPaths(cmd, "", []string{""}, ""); err == nil || !strings.Contains(err.Error(), "--preview-image cannot be empty") {
+	if err := validateProductMediaFlagPaths(cmd, "", []string{""}, nil, ""); err == nil || !strings.Contains(err.Error(), "--preview-image cannot be empty") {
 		t.Fatalf("expected empty preview-image error, got %v", err)
+	}
+	if err := validateProductMediaFlagPaths(cmd, "", nil, []string{""}, ""); err == nil || !strings.Contains(err.Error(), "--preview-video cannot be empty") {
+		t.Fatalf("expected empty preview-video error, got %v", err)
 	}
 
 	if got := productMediaRetryCommand("prod1", plannedProductMedia{requestedProductMedia: requestedProductMedia{Kind: productMediaThumbnail, Path: "thumb one.jpg"}}); got != "gumroad products thumbnail set prod1 --image 'thumb one.jpg'" {
@@ -702,6 +708,9 @@ func TestProductMediaPlanningAndRetryHelpers(t *testing.T) {
 	}
 	if got := productMediaRetryCommand("prod1", plannedProductMedia{requestedProductMedia: requestedProductMedia{Kind: productMediaCover, Path: "cover.jpg"}}); got != "gumroad products covers add prod1 --image cover.jpg" {
 		t.Fatalf("cover retry command = %q", got)
+	}
+	if got := productMediaRetryCommand("prod1", plannedProductMedia{requestedProductMedia: requestedProductMedia{Kind: productMediaPreview, Path: "demo.mp4", IsVideo: true}}); got != "gumroad products update prod1 --preview-video demo.mp4" {
+		t.Fatalf("preview video retry command = %q", got)
 	}
 	wrapped := wrapProductMediaAttachError(fmt.Errorf("upload failed"), "prod1", "product create", false, []plannedProductMedia{
 		{requestedProductMedia: requestedProductMedia{Kind: productMediaCover, Path: "cover.jpg"}},
@@ -1044,4 +1053,208 @@ func testutilClient(t *testing.T) *api.Client {
 		t.Fatalf("Token: %v", err)
 	}
 	return cmdutil.NewAPIClient(testutil.TestOptions(), token)
+}
+
+func mp4FixtureContents() string {
+	return string([]byte{0x00, 0x00, 0x00, 0x18, 'f', 't', 'y', 'p', 'm', 'p', '4', '2', 0x00, 0x00, 0x00, 0x00, 'm', 'p', '4', '2', 'i', 's', 'o', 'm'})
+}
+
+func TestUpdate_WithPreviewVideo_UploadsAndAttachesAsCover(t *testing.T) {
+	srv := newProductMediaServers(t)
+	testutil.Setup(t, srv.dispatch(t))
+
+	videoPath := writeMediaFixture(t, "demo.mp4", mp4FixtureContents())
+	cmd := testutil.Command(newUpdateCmd(), testutil.JSONOutput())
+	cmd.SetArgs([]string{"prod1", "--preview-video", videoPath})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	sequence, forms, puts, signedIDs, productPUTCalls, _ := srv.snapshot()
+	wantSequence := []string{
+		"POST /direct_uploads",
+		"POST /products/prod1/covers",
+	}
+	if !reflect.DeepEqual(sequence, wantSequence) {
+		t.Fatalf("API sequence = %#v, want %#v", sequence, wantSequence)
+	}
+	if productPUTCalls != 0 {
+		t.Fatalf("product PUT calls = %d, want 0", productPUTCalls)
+	}
+	if len(forms) != 1 || forms[0]["filename"] != "demo.mp4" || forms[0]["content_type"] != "video/mp4" {
+		t.Fatalf("direct upload form = %#v", forms)
+	}
+	if len(puts) != 1 || puts[0].Get("Content-Type") != "video/mp4" {
+		t.Fatalf("direct upload PUT headers = %#v", puts)
+	}
+	if !reflect.DeepEqual(signedIDs, []string{"signed-1"}) {
+		t.Fatalf("attached signed IDs = %#v", signedIDs)
+	}
+	var payload struct {
+		Success bool `json:"success"`
+		Product struct {
+			ID string `json:"id"`
+		} `json:"product"`
+		Media []productMediaAttachmentResult `json:"media"`
+	}
+	if err := json.Unmarshal([]byte(out), &payload); err != nil {
+		t.Fatalf("parse JSON output: %v\n%s", err, out)
+	}
+	if !payload.Success || payload.Product.ID != "prod1" || len(payload.Media) != 1 || payload.Media[0].Kind != "preview" {
+		t.Fatalf("unexpected JSON output: %+v", payload)
+	}
+}
+
+func TestCreate_WithPreviewVideo_CreatesThenUploadsAndAttachesVideo(t *testing.T) {
+	srv := newProductMediaServers(t)
+	testutil.Setup(t, srv.dispatch(t))
+
+	videoPath := writeMediaFixture(t, "demo.mp4", mp4FixtureContents())
+	cmd := testutil.Command(newCreateCmd(), testutil.JSONOutput())
+	cmd.SetArgs([]string{"--name", "Art Pack", "--preview-video", videoPath})
+	testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	sequence, forms, _, signedIDs, _, _ := srv.snapshot()
+	wantSequence := []string{
+		"POST /products",
+		"POST /direct_uploads",
+		"POST /products/prod-media/covers",
+	}
+	if !reflect.DeepEqual(sequence, wantSequence) {
+		t.Fatalf("API sequence = %#v, want %#v", sequence, wantSequence)
+	}
+	if len(forms) != 1 || forms[0]["content_type"] != "video/mp4" {
+		t.Fatalf("direct upload form = %#v", forms)
+	}
+	if !reflect.DeepEqual(signedIDs, []string{"signed-1"}) {
+		t.Fatalf("attached signed IDs = %#v", signedIDs)
+	}
+}
+
+func TestUpdate_WithPreviewVideoDryRunJSONShowsDirectUploadAndAttachRequests(t *testing.T) {
+	testutil.Setup(t, func(http.ResponseWriter, *http.Request) {
+		t.Fatal("dry run must not reach the API")
+	})
+
+	videoPath := writeMediaFixture(t, "demo.mp4", mp4FixtureContents())
+	cmd := testutil.Command(newUpdateCmd(), testutil.DryRun(true), testutil.JSONOutput())
+	cmd.SetArgs([]string{"prod1", "--preview-video", videoPath})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	var payload dryRunUpdateBody
+	if err := json.Unmarshal([]byte(out), &payload); err != nil {
+		t.Fatalf("parse JSON dry-run output: %v\n%s", err, out)
+	}
+	if len(payload.Uploads) != 1 {
+		t.Fatalf("uploads = %d, want 1", len(payload.Uploads))
+	}
+	if payload.Uploads[0].Action != "direct_upload" || payload.Uploads[0].Kind != "preview" || payload.Uploads[0].ContentType != "video/mp4" {
+		t.Fatalf("unexpected upload plan: %+v", payload.Uploads[0])
+	}
+	requests := append([]dryRunCreateRequest{payload.Request}, payload.FollowUpRequests...)
+	if len(requests) != 2 {
+		t.Fatalf("requests = %d, want 2", len(requests))
+	}
+	if requests[0].Path != "/direct_uploads" || requests[1].Path != "/products/prod1/covers" {
+		t.Fatalf("unexpected requests: %+v", requests)
+	}
+	blob, ok := requests[0].Body["blob"].(map[string]any)
+	if !ok || blob["filename"] != "demo.mp4" || blob["content_type"] != "video/mp4" {
+		t.Fatalf("unexpected direct upload body: %+v", requests[0].Body)
+	}
+}
+
+func TestProductMediaRejectsUnsupportedPreviewVideoClientSide(t *testing.T) {
+	testutil.Setup(t, func(http.ResponseWriter, *http.Request) {
+		t.Fatal("unsupported video must not reach the API")
+	})
+
+	path := writeMediaFixture(t, "demo.avi", "RIFF\x00\x00\x00\x00AVI LIST")
+	cmd := testutil.Command(newUpdateCmd())
+	cmd.SetArgs([]string{"prod1", "--preview-video", path})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected unsupported video error")
+	}
+	if !strings.Contains(err.Error(), "unsupported preview video type") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestDetectProductVideoContentTypeFallsBackToExtension(t *testing.T) {
+	tests := map[string]string{
+		"demo.mov":  "video/quicktime",
+		"demo.m4v":  "video/x-m4v",
+		"demo.mpg":  "video/mpeg",
+		"demo.wmv":  "video/x-ms-wmv",
+		"demo.webm": "video/webm",
+	}
+	for name, want := range tests {
+		// Binary bytes the sniffer cannot identify, so detection has to rely
+		// on the file extension. Real video containers sniff as unknown
+		// binary too, unlike printable text which is positively identified
+		// as text/plain and rejected.
+		path := writeMediaFixture(t, name, "\x00\x01\x02\x03\x04\x05\x06\x07\x08\x0b\x0c\x0e\x0f\x10")
+		file, err := os.Open(path)
+		if err != nil {
+			t.Fatalf("open fixture: %v", err)
+		}
+		got, err := detectProductVideoContentType(path, file)
+		_ = file.Close()
+		if err != nil {
+			t.Fatalf("detect %s: %v", name, err)
+		}
+		if got != want {
+			t.Fatalf("content type for %s = %q, want %q", name, got, want)
+		}
+	}
+}
+
+func TestDetectProductVideoContentTypeRejectsMislabeledNonVideos(t *testing.T) {
+	// Files whose bytes positively identify a non-video type must be rejected
+	// even when the filename carries a video extension: the server trusts the
+	// content type the CLI declares, so letting these through would publish a
+	// broken product cover.
+	pngBytes := "\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"
+	zipBytes := "PK\x03\x04\x14\x00\x00\x00\x08\x00"
+	tests := map[string]string{
+		"png-renamed.mp4":  pngBytes,
+		"zip-renamed.mov":  zipBytes,
+		"text-renamed.mp4": "just some plain text pretending to be a video",
+	}
+	for name, content := range tests {
+		path := writeMediaFixture(t, name, content)
+		file, err := os.Open(path)
+		if err != nil {
+			t.Fatalf("open fixture: %v", err)
+		}
+		got, err := detectProductVideoContentType(path, file)
+		_ = file.Close()
+		if err == nil {
+			t.Fatalf("detect %s = %q, want rejection", name, got)
+		}
+		if !strings.Contains(err.Error(), "unsupported preview video type") {
+			t.Fatalf("unexpected error for %s: %v", name, err)
+		}
+	}
+}
+
+func TestProductMediaRejectsOversizedVideosClientSide(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "huge.mp4")
+	file, err := os.Create(path)
+	if err != nil {
+		t.Fatalf("create fixture: %v", err)
+	}
+	if err := file.Truncate(uploadMaxProductVideoFileSize() + 1); err != nil {
+		t.Fatalf("truncate fixture: %v", err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatalf("close fixture: %v", err)
+	}
+
+	_, err = describeSingleProductMedia(requestedProductMedia{Kind: productMediaPreview, Path: path, IsVideo: true})
+	if err == nil {
+		t.Fatal("expected video size validation error")
+	}
+	if !strings.Contains(err.Error(), "500 MB") {
+		t.Fatalf("unexpected error: %v", err)
+	}
 }

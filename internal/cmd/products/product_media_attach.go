@@ -97,9 +97,11 @@ func productMediaAttachPath(productID string, kind productMediaKind) string {
 
 func productMediaRetryCommand(productID string, media plannedProductMedia) string {
 	quotedPath := shellQuote(media.Path)
-	switch media.Kind {
-	case productMediaThumbnail:
+	switch {
+	case media.Kind == productMediaThumbnail:
 		return fmt.Sprintf("gumroad products thumbnail set %s --image %s", productID, quotedPath)
+	case media.IsVideo:
+		return fmt.Sprintf("gumroad products update %s --preview-video %s", productID, quotedPath)
 	default:
 		return fmt.Sprintf("gumroad products covers add %s --image %s", productID, quotedPath)
 	}

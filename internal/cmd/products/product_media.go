@@ -15,8 +15,9 @@ const (
 )
 
 type requestedProductMedia struct {
-	Kind productMediaKind
-	Path string
+	Kind    productMediaKind
+	Path    string
+	IsVideo bool
 }
 
 type plannedProductMedia struct {
