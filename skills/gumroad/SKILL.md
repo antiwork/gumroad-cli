@@ -287,6 +287,7 @@ gumroad products update <id> --category design/ui-and-web/figma --json --no-inpu
 gumroad products update <id> --file ./pack.zip --json --no-input
 gumroad products update <id> --cover-image ./cover.jpg --json --no-input
 gumroad products update <id> --preview-image ./gallery-1.jpg --preview-image ./gallery-2.jpg --json --no-input
+gumroad products update <id> --preview-video ./demo.mp4 --json --no-input
 gumroad products update <id> --thumbnail ./thumb.jpg --json --no-input
 gumroad products page preview <id> ./landing.html --json --no-input
 gumroad products page publish <id> ./landing.html --json --no-input
@@ -347,13 +348,13 @@ In custom HTML, use Gumroad data attributes for live product values and checkout
 
 **Categories:** `products categories [--search <term>]` returns label, path, and numeric ID. Prefer `--category <path>` for product create/update. `--taxonomy-id` remains supported when you already have the numeric ID, but it cannot be combined with `--category`.
 
-**Create flags:** `--name` (required), `--price`, `--type` (digital|course|ebook|membership|bundle|coffee|call|commission), `--currency`, `--pay-what-you-want`, `--suggested-price`, `--description`, `--custom-summary`, `--custom-permalink`, `--custom-receipt`, `--max-purchase-count`, `--category`, `--taxonomy-id`, `--tag` (repeatable), `--file` (repeatable), `--file-name` (repeatable, aligned to `--file`), `--file-description` (repeatable, aligned to `--file`), `--cover-image`, `--preview-image` (repeatable), `--thumbnail`.
+**Create flags:** `--name` (required), `--price`, `--type` (digital|course|ebook|membership|bundle|coffee|call|commission), `--currency`, `--pay-what-you-want`, `--suggested-price`, `--description`, `--custom-summary`, `--custom-permalink`, `--custom-receipt`, `--max-purchase-count`, `--category`, `--taxonomy-id`, `--tag` (repeatable), `--file` (repeatable), `--file-name` (repeatable, aligned to `--file`), `--file-description` (repeatable, aligned to `--file`), `--cover-image`, `--preview-image` (repeatable), `--preview-video` (repeatable), `--thumbnail`.
 
-**Update flags:** `--name`, `--price`, `--currency`, `--description`, `--custom-summary`, `--custom-permalink`, `--custom-receipt`, `--max-purchase-count`, `--category`, `--taxonomy-id`, `--tag` (repeatable), `--custom-html`, `--file` (repeatable), `--file-name`, `--file-description`, `--cover-image`, `--preview-image` (repeatable), `--thumbnail`. Prefer `products page preview/publish/clear/url` for custom HTML page workflows; `products update --custom-html` remains supported as a low-level product update flag.
+**Update flags:** `--name`, `--price`, `--currency`, `--description`, `--custom-summary`, `--custom-permalink`, `--custom-receipt`, `--max-purchase-count`, `--category`, `--taxonomy-id`, `--tag` (repeatable), `--custom-html`, `--file` (repeatable), `--file-name`, `--file-description`, `--cover-image`, `--preview-image` (repeatable), `--preview-video` (repeatable), `--thumbnail`. Prefer `products page preview/publish/clear/url` for custom HTML page workflows; `products update --custom-html` remains supported as a low-level product update flag.
 
 Use `products update --file` for shared product Content. It replaces existing rich content file embeds in place when they exist, or creates file embeds when the document has none; pass one `--file` per existing file embed and use `products content get/set` for structural content edits. For products with per-variant Content, use `variants update ... --file` for the specific variant you want to change.
 
-Use `--cover-image` for the primary cover, repeat `--preview-image` for additional gallery/preview images, and `--thumbnail` for the card/library thumbnail. These media flags run the required two-step API flow: direct upload first, then attach by signed blob ID. For an existing product, `products thumbnail set --url` asks Gumroad to download and attach a public HTTP(S) image directly.
+Use `--cover-image` for the primary cover, repeat `--preview-image` for additional gallery/preview images, repeat `--preview-video` for video previews (MP4, MOV, M4V, MPEG, WMV, or WebM), and `--thumbnail` for the card/library thumbnail. These media flags run the required two-step API flow: direct upload first, then attach by signed blob ID. For an existing product, `products thumbnail set --url` asks Gumroad to download and attach a public HTTP(S) image directly.
 
 ### files — Upload and recover file attachments
 

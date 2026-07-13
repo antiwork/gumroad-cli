@@ -87,6 +87,7 @@ func newCreateCmd() *cobra.Command {
 	var files, fileNames, fileDescriptions []string
 	var coverImage, thumbnail string
 	var previewImages []string
+	var previewVideos []string
 
 	cmd := &cobra.Command{
 		Use:   "create",
@@ -130,10 +131,10 @@ func newCreateCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if err := validateProductMediaFlagPaths(c, coverImage, previewImages, thumbnail); err != nil {
+			if err := validateProductMediaFlagPaths(c, coverImage, previewImages, previewVideos, thumbnail); err != nil {
 				return err
 			}
-			media, err := describeProductMedia(collectProductMedia(coverImage, previewImages, thumbnail))
+			media, err := describeProductMedia(collectProductMedia(coverImage, previewImages, previewVideos, thumbnail))
 			if err != nil {
 				return err
 			}
@@ -295,6 +296,7 @@ func newCreateCmd() *cobra.Command {
 	cmd.Flags().StringArrayVar(&fileDescriptions, "file-description", nil, "Description for the matching --file upload (repeatable; use an empty string to skip a slot)")
 	cmd.Flags().StringVar(&coverImage, "cover-image", "", "Local JPEG, PNG, or GIF cover image to upload after creating the product")
 	cmd.Flags().StringArrayVar(&previewImages, "preview-image", nil, "Additional local JPEG, PNG, or GIF preview image to upload as a product cover (repeatable)")
+	cmd.Flags().StringArrayVar(&previewVideos, "preview-video", nil, "Local MP4, MOV, M4V, MPEG, WMV, or WebM preview video to upload as a product cover (repeatable)")
 	cmd.Flags().StringVar(&thumbnail, "thumbnail", "", "Local JPEG, PNG, or GIF thumbnail image to upload after creating the product")
 
 	return cmd

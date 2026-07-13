@@ -23,6 +23,7 @@ func newUpdateCmd() *cobra.Command {
 	var fileDescriptions []string
 	var coverImage, thumbnail string
 	var previewImages []string
+	var previewVideos []string
 	var customHTML string
 
 	cmd := &cobra.Command{
@@ -34,6 +35,7 @@ func newUpdateCmd() *cobra.Command {
   gumroad products update <id> --tag art --tag digital
   gumroad products update <id> --cover-image ./cover.jpg
   gumroad products update <id> --preview-image ./gallery-1.jpg --preview-image ./gallery-2.jpg
+  gumroad products update <id> --preview-video ./demo.mp4
   gumroad products update <id> --file ./pack.zip
   gumroad products update <id> --custom-html ./landing.html
   gumroad products update <id> --custom-html ''`,
@@ -48,7 +50,7 @@ func newUpdateCmd() *cobra.Command {
 				"pay-what-you-want", "suggested-price", "max-purchase-count",
 				"category", "taxonomy-id", "tag",
 				"file", "file-name", "file-description",
-				"cover-image", "preview-image", "thumbnail",
+				"cover-image", "preview-image", "preview-video", "thumbnail",
 				"custom-html",
 			); err != nil {
 				return err
@@ -67,10 +69,10 @@ func newUpdateCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if err := validateProductMediaFlagPaths(c, coverImage, previewImages, thumbnail); err != nil {
+			if err := validateProductMediaFlagPaths(c, coverImage, previewImages, previewVideos, thumbnail); err != nil {
 				return err
 			}
-			media, err := describeProductMedia(collectProductMedia(coverImage, previewImages, thumbnail))
+			media, err := describeProductMedia(collectProductMedia(coverImage, previewImages, previewVideos, thumbnail))
 			if err != nil {
 				return err
 			}
@@ -277,6 +279,7 @@ func newUpdateCmd() *cobra.Command {
 	cmd.Flags().StringArrayVar(&fileDescriptions, "file-description", nil, "Description for the matching --file (repeatable)")
 	cmd.Flags().StringVar(&coverImage, "cover-image", "", "Local JPEG, PNG, or GIF cover image to upload")
 	cmd.Flags().StringArrayVar(&previewImages, "preview-image", nil, "Additional local JPEG, PNG, or GIF preview image to upload as a product cover (repeatable)")
+	cmd.Flags().StringArrayVar(&previewVideos, "preview-video", nil, "Local MP4, MOV, M4V, MPEG, WMV, or WebM preview video to upload as a product cover (repeatable)")
 	cmd.Flags().StringVar(&thumbnail, "thumbnail", "", "Local JPEG, PNG, or GIF thumbnail image to upload")
 	cmd.Flags().StringVar(&customHTML, "custom-html", "", "Path to an HTML file for the product's custom landing page (empty string clears it)")
 
