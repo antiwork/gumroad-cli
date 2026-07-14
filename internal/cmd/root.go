@@ -17,6 +17,7 @@ import (
 	"github.com/antiwork/gumroad-cli/internal/cmd/files"
 	"github.com/antiwork/gumroad-cli/internal/cmd/licenses"
 	"github.com/antiwork/gumroad-cli/internal/cmd/offercodes"
+	"github.com/antiwork/gumroad-cli/internal/cmd/pages"
 	"github.com/antiwork/gumroad-cli/internal/cmd/payouts"
 	"github.com/antiwork/gumroad-cli/internal/cmd/products"
 	"github.com/antiwork/gumroad-cli/internal/cmd/refundpolicy"
@@ -117,6 +118,7 @@ func NewRootCmd() *cobra.Command {
 	cmd.AddCommand(admin.NewAdminCmd())
 	cmd.AddCommand(auth.NewAuthCmd())
 	cmd.AddCommand(user.NewUserCmd())
+	cmd.AddCommand(pages.NewPagesCmd())
 	cmd.AddCommand(refundpolicy.NewRefundPolicyCmd())
 	cmd.AddCommand(products.NewProductsCmd())
 	cmd.AddCommand(sales.NewSalesCmd())

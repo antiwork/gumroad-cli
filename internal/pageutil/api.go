@@ -18,6 +18,9 @@ const (
 	ProfilePublishRateLimitMessage = "Hit Gumroad's rate limit (30 PUTs/min). Use `gumroad user page preview` to iterate without burning your publish budget."
 	ProfilePreviewRateLimitMessage = "Hit Gumroad's rate limit (60 previews/min). Wait a moment before previewing again."
 	ProfileClearRateLimitMessage   = "Hit Gumroad's rate limit (30 PUTs/min). Wait a moment before trying again."
+
+	PagesPublishRateLimitMessage = "Hit Gumroad's rate limit (30 PUTs/min). Use `gumroad pages preview` to iterate without burning your publish budget."
+	PagesPreviewRateLimitMessage = "Hit Gumroad's rate limit (60 previews/min). Wait a moment before previewing again."
 )
 
 type Target struct {
