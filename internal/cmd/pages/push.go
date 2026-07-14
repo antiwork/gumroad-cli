@@ -10,7 +10,7 @@ import (
 
 func newPushCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "push <slug> [path]",
+		Use:   "push <slug> <path>",
 		Short: "Publish custom HTML to a storefront page",
 		Long:  "Publish custom HTML to a storefront page, replacing whatever the page had before.\n\nUse the slug \"profile\" to replace your profile landing page (your store's home page) — that goes through the profile endpoints, same as `gumroad user page publish`.",
 		Args:  pushArgs,
@@ -20,11 +20,7 @@ func newPushCmd() *cobra.Command {
 		RunE: func(c *cobra.Command, args []string) error {
 			opts := cmdutil.OptionsFrom(c)
 			slug := args[0]
-			path := ""
-			if len(args) > 1 {
-				path = args[1]
-			}
-			input, err := pageutil.ReadHTML(opts.In(), path)
+			input, err := pageutil.ReadHTML(opts.In(), args[1])
 			if err != nil {
 				return cmdutil.UsageErrorf(c, "%s", err)
 			}
@@ -72,6 +68,9 @@ func newPushCmd() *cobra.Command {
 func pushArgs(cmd *cobra.Command, args []string) error {
 	if len(args) < 1 {
 		return cmdutil.UsageErrorf(cmd, "missing page slug")
+	}
+	if len(args) < 2 {
+		return cmdutil.UsageErrorf(cmd, "missing HTML path (use - for stdin)")
 	}
 	if len(args) > 2 {
 		return cmdutil.UsageErrorf(cmd, "unexpected argument: %s", args[2])

@@ -291,6 +291,19 @@ func TestPush_MissingSlug(t *testing.T) {
 	}
 }
 
+func TestPush_MissingPathIsUsageError(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Error("should not reach API")
+	})
+
+	cmd := testutil.Command(newPushCmd(), testutil.Quiet(false), testutil.NoColor(true))
+	cmd.SetArgs([]string{"about"})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "missing HTML path") {
+		t.Fatalf("expected missing-path error, got: %v", err)
+	}
+}
+
 func TestPush_MissingFileIsUsageError(t *testing.T) {
 	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
 		t.Error("should not reach API")
