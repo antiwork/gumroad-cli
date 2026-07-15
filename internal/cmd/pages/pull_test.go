@@ -250,6 +250,48 @@ func TestPull_Plain(t *testing.T) {
 	}
 }
 
+func TestPull_PathSlugRequiresOutputFlag(t *testing.T) {
+	t.Chdir(t.TempDir())
+
+	reached := false
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		reached = true
+		testutil.JSON(t, w, pullJSON("about", "About", "<h1>About</h1>"))
+	})
+
+	cmd := testutil.Command(newPullCmd(), testutil.Quiet(false), testutil.NoColor(true))
+	cmd.SetArgs([]string{"../backup/about", "--force"})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "looks like a path") {
+		t.Fatalf("want path-slug error, got %v", err)
+	}
+	if reached {
+		t.Error("path-slug refusal must happen before the API request")
+	}
+	if _, statErr := os.Stat(filepath.Join("..", "backup", "about.html")); !os.IsNotExist(statErr) {
+		t.Error("path slug must not write outside the cwd")
+	}
+}
+
+func TestPull_PathSlugAllowedWithExplicitOutput(t *testing.T) {
+	dest := filepath.Join(t.TempDir(), "custom.html")
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, pullJSON("about", "About", "<h1>About</h1>"))
+	})
+
+	cmd := testutil.Command(newPullCmd(), testutil.Quiet(false), testutil.NoColor(true))
+	cmd.SetArgs([]string{"weird/slug", "-o", dest})
+	testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	data, err := os.ReadFile(dest)
+	if err != nil {
+		t.Fatalf("read pulled file: %v", err)
+	}
+	if string(data) != "<h1>About</h1>" {
+		t.Errorf("pulled file wrong: %q", data)
+	}
+}
+
 func TestPull_ArgErrors(t *testing.T) {
 	cases := []struct {
 		name string

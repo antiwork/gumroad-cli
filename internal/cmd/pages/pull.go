@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 
 	"github.com/antiwork/gumroad-cli/internal/api"
 	"github.com/antiwork/gumroad-cli/internal/cmdutil"
@@ -50,6 +51,14 @@ func newPullCmd() *cobra.Command {
 			slug := args[0]
 			dest := outputPath
 			if dest == "" {
+				// The implicit destination must stay a plain filename in the
+				// current directory. Real slugs never contain path separators,
+				// so a slug like "../backup/about" would silently write
+				// outside the cwd — writing anywhere else requires an
+				// explicit -o path.
+				if filepath.Base(slug) != slug {
+					return cmdutil.InvalidInputErrorf("slug %q looks like a path — use -o to choose where the file goes", slug)
+				}
 				dest = slug + ".html"
 			}
 			// Refuse to clobber an existing file before the request so the
