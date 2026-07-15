@@ -33,6 +33,7 @@ func NewPagesCmd() *cobra.Command {
 		Example: `  gumroad pages list
   gumroad pages create --title "About" --slug about
   gumroad pages create --title "About" ./about.html
+  gumroad pages pull about
   gumroad pages push about ./about.html
   gumroad pages push profile ./landing.html
   gumroad pages preview ./about.html`,
@@ -40,6 +41,7 @@ func NewPagesCmd() *cobra.Command {
 
 	cmd.AddCommand(newListCmd())
 	cmd.AddCommand(newCreateCmd())
+	cmd.AddCommand(newPullCmd())
 	cmd.AddCommand(newPushCmd())
 	cmd.AddCommand(newPreviewCmd())
 	return cmd
