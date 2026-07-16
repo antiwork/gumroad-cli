@@ -155,3 +155,24 @@ func TranslateRateLimitError(err error, message string) error {
 	}
 	return err
 }
+
+// TranslateMissingScopeError rewrites the pages endpoints' scope rejection into
+// a re-authentication hint. Tokens minted before the CLI requested the
+// edit_profile scope can never pass the pages write gate, and re-running
+// `gumroad auth login` is the only fix — without this hint the raw scope error
+// reads like an account or product problem.
+func TranslateMissingScopeError(err error) error {
+	if err == nil {
+		return nil
+	}
+
+	var apiErr *api.APIError
+	if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusForbidden && strings.Contains(apiErr.Message, "edit_profile") {
+		return &api.APIError{
+			StatusCode: apiErr.StatusCode,
+			Message:    "Your access token doesn't have the edit_profile scope, which writing storefront pages requires.",
+			Hint:       "Run: gumroad auth login to re-authenticate with the updated scopes.",
+		}
+	}
+	return err
+}

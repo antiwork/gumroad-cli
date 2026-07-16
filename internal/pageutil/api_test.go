@@ -3,6 +3,7 @@ package pageutil
 import (
 	"errors"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/antiwork/gumroad-cli/internal/api"
@@ -46,5 +47,45 @@ func TestTranslateRateLimitErrorPreservesAPIError(t *testing.T) {
 	}
 	if apiErr.Hint != "Wait a moment and retry." {
 		t.Fatalf("got hint %q", apiErr.Hint)
+	}
+}
+
+func TestTranslateMissingScopeErrorRewritesEditProfile403(t *testing.T) {
+	err := TranslateMissingScopeError(&api.APIError{
+		StatusCode: http.StatusForbidden,
+		Message:    "Access denied: This endpoint requires the edit_profile scope.",
+		Hint:       "Check that your token has the required scope.",
+	})
+
+	var apiErr *api.APIError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("translated error should preserve *api.APIError, got %T", err)
+	}
+	if apiErr.StatusCode != http.StatusForbidden {
+		t.Fatalf("got status %d, want 403", apiErr.StatusCode)
+	}
+	if !strings.Contains(apiErr.Message, "edit_profile scope") {
+		t.Fatalf("message should name the missing scope, got %q", apiErr.Message)
+	}
+	if !strings.Contains(apiErr.Hint, "gumroad auth login") {
+		t.Fatalf("hint should tell the user to re-authenticate, got %q", apiErr.Hint)
+	}
+}
+
+func TestTranslateMissingScopeErrorLeavesOtherErrorsAlone(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		err  error
+	}{
+		{"nil", nil},
+		{"unrelated 403", &api.APIError{StatusCode: http.StatusForbidden, Message: "Access denied."}},
+		{"401", &api.APIError{StatusCode: http.StatusUnauthorized, Message: "Not authenticated."}},
+		{"non-API error", errors.New("network down")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := TranslateMissingScopeError(tc.err); got != tc.err {
+				t.Fatalf("error should pass through unchanged, got %v", got)
+			}
+		})
 	}
 }

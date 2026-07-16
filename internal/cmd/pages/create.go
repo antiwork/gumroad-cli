@@ -47,7 +47,7 @@ func newCreateCmd() *cobra.Command {
 			err := cmdutil.RunRequestDecoded[pageResponse](opts, "Creating page...", http.MethodPost, pagesPath, params, func(resp pageResponse) error {
 				return renderPageResult(opts, resp.Page, "Created page")
 			})
-			return pageutil.TranslateRateLimitError(err, pageutil.PagesPublishRateLimitMessage)
+			return pageutil.TranslateMissingScopeError(pageutil.TranslateRateLimitError(err, pageutil.PagesPublishRateLimitMessage))
 		},
 	}
 
