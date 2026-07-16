@@ -101,6 +101,30 @@ func TestTranslateMissingScopeErrorPointsAtEnvToken(t *testing.T) {
 	}
 }
 
+func TestTranslateMissingScopeErrorIgnoresWhitespaceOnlyEnvToken(t *testing.T) {
+	// config.ResolveToken trims the environment value before deciding it
+	// overrides the saved login, so a whitespace-only value means the
+	// request actually used the config token — the hint must not blame
+	// the environment variable.
+	t.Setenv(config.EnvAccessToken, "   \t\n")
+
+	err := TranslateMissingScopeError(&api.APIError{
+		StatusCode: http.StatusForbidden,
+		Message:    "Access denied: This endpoint requires the edit_profile scope.",
+	})
+
+	var apiErr *api.APIError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("translated error should preserve *api.APIError, got %T", err)
+	}
+	if !strings.Contains(apiErr.Hint, "gumroad auth login") {
+		t.Fatalf("hint should tell the user to re-authenticate, got %q", apiErr.Hint)
+	}
+	if strings.Contains(apiErr.Hint, config.EnvAccessToken) {
+		t.Fatalf("whitespace-only env token should not get the env-var hint, got %q", apiErr.Hint)
+	}
+}
+
 func TestTranslateMissingScopeErrorLeavesOtherErrorsAlone(t *testing.T) {
 	for _, tc := range []struct {
 		name string

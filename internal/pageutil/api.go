@@ -173,7 +173,10 @@ func TranslateMissingScopeError(err error) error {
 	var apiErr *api.APIError
 	if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusForbidden && strings.Contains(apiErr.Message, "requires the edit_profile scope") {
 		hint := "Run: gumroad auth login to re-authenticate with the updated scopes."
-		if os.Getenv(config.EnvAccessToken) != "" {
+		// Match config.ResolveToken's normalization: a whitespace-only
+		// environment value does not override the saved login, so it must
+		// not flip the hint either.
+		if strings.TrimSpace(os.Getenv(config.EnvAccessToken)) != "" {
 			hint = "Your token comes from " + config.EnvAccessToken + ", which overrides any saved login. Update it to a token that has the edit_profile scope, or unset it and run: gumroad auth login"
 		}
 		return &api.APIError{
