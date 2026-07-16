@@ -322,10 +322,7 @@ func TestPush_MissingScopeGetsReauthHint(t *testing.T) {
 
 	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
-		testutil.JSON(t, w, map[string]any{
-			"success": false,
-			"message": "This endpoint requires the edit_profile scope.",
-		})
+		testutil.RawJSON(t, w, `{"success": false, "message": "This endpoint requires the edit_profile scope."}`)
 	})
 
 	cmd := testutil.Command(newPushCmd(), testutil.Quiet(false), testutil.NoColor(true))

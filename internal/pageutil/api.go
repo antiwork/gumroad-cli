@@ -167,7 +167,7 @@ func TranslateMissingScopeError(err error) error {
 	}
 
 	var apiErr *api.APIError
-	if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusForbidden && strings.Contains(apiErr.Message, "edit_profile") {
+	if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusForbidden && strings.Contains(apiErr.Message, "requires the edit_profile scope") {
 		return &api.APIError{
 			StatusCode: apiErr.StatusCode,
 			Message:    "Your access token doesn't have the edit_profile scope, which writing storefront pages requires.",
