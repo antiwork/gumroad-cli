@@ -337,6 +337,24 @@ func TestPush_MissingScopeGetsReauthHint(t *testing.T) {
 	}
 }
 
+func TestCreate_MissingScopeGetsReauthHint(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		testutil.RawJSON(t, w, `{"success": false, "message": "This endpoint requires the edit_profile scope."}`)
+	})
+
+	cmd := testutil.Command(newCreateCmd(), testutil.Quiet(false), testutil.NoColor(true))
+	cmd.SetArgs([]string{"--title", "About"})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "edit_profile scope") {
+		t.Fatalf("expected missing-scope error, got: %v", err)
+	}
+	hinted, ok := err.(interface{ GetHint() string })
+	if !ok || !strings.Contains(hinted.GetHint(), "gumroad auth login") {
+		t.Fatalf("expected re-auth hint, got: %v", err)
+	}
+}
+
 // --- Preview ---
 
 func TestPreview_PostsToDryRunEndpoint(t *testing.T) {

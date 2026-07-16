@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/antiwork/gumroad-cli/internal/api"
+	"github.com/antiwork/gumroad-cli/internal/config"
 )
 
 func TestShareURLPrecedence(t *testing.T) {
@@ -51,6 +52,8 @@ func TestTranslateRateLimitErrorPreservesAPIError(t *testing.T) {
 }
 
 func TestTranslateMissingScopeErrorRewritesEditProfile403(t *testing.T) {
+	t.Setenv(config.EnvAccessToken, "")
+
 	err := TranslateMissingScopeError(&api.APIError{
 		StatusCode: http.StatusForbidden,
 		Message:    "Access denied: This endpoint requires the edit_profile scope.",
@@ -69,6 +72,32 @@ func TestTranslateMissingScopeErrorRewritesEditProfile403(t *testing.T) {
 	}
 	if !strings.Contains(apiErr.Hint, "gumroad auth login") {
 		t.Fatalf("hint should tell the user to re-authenticate, got %q", apiErr.Hint)
+	}
+	if strings.Contains(apiErr.Hint, config.EnvAccessToken) {
+		t.Fatalf("config-sourced token should not get the env-var hint, got %q", apiErr.Hint)
+	}
+}
+
+func TestTranslateMissingScopeErrorPointsAtEnvToken(t *testing.T) {
+	t.Setenv(config.EnvAccessToken, "old-account-only-token")
+
+	err := TranslateMissingScopeError(&api.APIError{
+		StatusCode: http.StatusForbidden,
+		Message:    "Access denied: This endpoint requires the edit_profile scope.",
+	})
+
+	var apiErr *api.APIError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("translated error should preserve *api.APIError, got %T", err)
+	}
+	if !strings.Contains(apiErr.Hint, config.EnvAccessToken) {
+		t.Fatalf("hint should name the environment variable, got %q", apiErr.Hint)
+	}
+	if !strings.Contains(apiErr.Hint, "overrides any saved login") {
+		t.Fatalf("hint should explain the env token takes precedence over login, got %q", apiErr.Hint)
+	}
+	if !strings.Contains(apiErr.Hint, "unset it and run: gumroad auth login") {
+		t.Fatalf("hint should offer the unset-and-relogin path, got %q", apiErr.Hint)
 	}
 }
 
