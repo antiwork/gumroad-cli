@@ -83,8 +83,16 @@ func TestTranslateMissingScopeErrorLeavesOtherErrorsAlone(t *testing.T) {
 		{"non-API error", errors.New("network down")},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := TranslateMissingScopeError(tc.err); got != tc.err {
+			got := TranslateMissingScopeError(tc.err)
+			if !errors.Is(got, tc.err) {
 				t.Fatalf("error should pass through unchanged, got %v", got)
+			}
+			var wantAPIErr *api.APIError
+			if errors.As(tc.err, &wantAPIErr) {
+				var gotAPIErr *api.APIError
+				if !errors.As(got, &gotAPIErr) || gotAPIErr.Message != wantAPIErr.Message {
+					t.Fatalf("message should be untouched, got %v", got)
+				}
 			}
 		})
 	}
