@@ -60,7 +60,7 @@ func newPushCmd() *cobra.Command {
 					return renderPageResult(opts, resp.Page, "Published page")
 				},
 			)
-			return pageutil.TranslateRateLimitError(err, pageutil.PagesPublishRateLimitMessage)
+			return pageutil.TranslateMissingScopeError(pageutil.TranslateRateLimitError(err, pageutil.PagesPublishRateLimitMessage))
 		},
 	}
 }

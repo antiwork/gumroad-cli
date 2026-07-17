@@ -4,10 +4,12 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 
 	"github.com/antiwork/gumroad-cli/internal/api"
 	"github.com/antiwork/gumroad-cli/internal/cmdutil"
+	"github.com/antiwork/gumroad-cli/internal/config"
 )
 
 const (
@@ -151,6 +153,36 @@ func TranslateRateLimitError(err error, message string) error {
 			StatusCode: apiErr.StatusCode,
 			Message:    message,
 			Hint:       apiErr.Hint,
+		}
+	}
+	return err
+}
+
+// TranslateMissingScopeError rewrites the pages endpoints' scope rejection into
+// a re-authentication hint. Tokens minted before the CLI requested the
+// edit_profile scope can never pass the pages write gate — without this hint
+// the raw scope error reads like an account or product problem. The recovery
+// depends on where the token came from: `gumroad auth login` only rewrites the
+// config file, so when GUMROAD_ACCESS_TOKEN is set (it takes precedence over
+// the saved login) the user has to fix the environment variable instead.
+func TranslateMissingScopeError(err error) error {
+	if err == nil {
+		return nil
+	}
+
+	var apiErr *api.APIError
+	if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusForbidden && strings.Contains(apiErr.Message, "requires the edit_profile scope") {
+		hint := "Run: gumroad auth login to re-authenticate with the updated scopes."
+		// Match config.ResolveToken's normalization: a whitespace-only
+		// environment value does not override the saved login, so it must
+		// not flip the hint either.
+		if strings.TrimSpace(os.Getenv(config.EnvAccessToken)) != "" {
+			hint = "Your token comes from " + config.EnvAccessToken + ", which overrides any saved login. Update it to a token that has the edit_profile scope, or unset it and run: gumroad auth login"
+		}
+		return &api.APIError{
+			StatusCode: apiErr.StatusCode,
+			Message:    "Your access token doesn't have the edit_profile scope, which writing storefront pages requires.",
+			Hint:       hint,
 		}
 	}
 	return err

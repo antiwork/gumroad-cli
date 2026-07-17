@@ -717,9 +717,9 @@ func TestDefaultFlowConfig(t *testing.T) {
 	}
 }
 
-func TestDefaultScopesRequestAccountOnly(t *testing.T) {
-	if Scopes != "account" {
-		t.Fatalf("Scopes = %q, want account only", Scopes)
+func TestDefaultScopesRequestAccountAndEditProfile(t *testing.T) {
+	if Scopes != "account edit_profile" {
+		t.Fatalf("Scopes = %q, want account edit_profile", Scopes)
 	}
 }
 
