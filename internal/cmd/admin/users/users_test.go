@@ -193,6 +193,7 @@ func TestNewUsersCmdWiresSubcommands(t *testing.T) {
 		"suspend",
 		"suspend-for-tos-violation",
 		"refund-balance",
+		"refund-all-for-fraud",
 		"reset-password",
 		"update-email",
 		"two-factor",

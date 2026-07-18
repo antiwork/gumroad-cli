@@ -104,6 +104,7 @@ Most responses are wrapped in `{"success": true, ...}` with resource-specific ke
 - `admin payouts list` → `.recent_payouts[]`, `.pagination.next`. Each payout carries `stripe_transfer_id` (a `po_…` payout or `py_…` destination payment, or null), `bank_account` (null for PayPal and debit-card payouts; otherwise `bank_number` routing/BIC, `account_holder_full_name`, `account_type`, `currency`), and `trace_id` (currently always null).
 - `admin payouts scheduled create` → `.message`, `.user_id`, `.scheduled_payout`
 - `admin users refund-balance` → `.status`, `.message`, `.user_id`, `.count`, `.total_amount_cents`, `.currency`
+- `admin users refund-all-for-fraud` → `.success`, `.user_id`, `.refunded_count`, `.skipped_count`, `.failed[]` (each failure: `.purchase_external_id_numeric`, `.error`)
 - `admin purchases view` → `.purchase`
 - `admin purchases search` → `.purchases[]`, `.has_more`, `.limit`
 - `admin purchases lookup` → `.purchases[]`
@@ -240,6 +241,12 @@ gumroad admin payouts list --user-id 2245593582708 --limit 25 --json --jq '.rece
 # Refund-balance dry-run still calls the preview GET, but skips the guarded POST.
 gumroad admin users refund-balance --user-id 2245593582708 --expected-email seller@example.com --dry-run --json --non-interactive --no-input
 gumroad admin users refund-balance --user-id 2245593582708 --expected-email seller@example.com --yes --json --non-interactive --no-input
+
+# Refund every remaining successful purchase of a fraudulent seller in one call.
+# The seller must already be suspended or flagged; --force overrides that guard.
+# Exits non-zero if any purchase failed; re-running retries only what is left.
+gumroad admin users refund-all-for-fraud --user-id 2245593582708 --yes --json --non-interactive --no-input
+gumroad admin users refund-all-for-fraud --user-id 2245593582708 --force --yes --json --non-interactive --no-input
 
 # Inspect purchase and product fraud context
 gumroad admin purchases view <purchase-id> --with-clusters --json --non-interactive --no-input
