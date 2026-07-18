@@ -1,7 +1,7 @@
 package users
 
 import (
-	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -9,54 +9,59 @@ import (
 
 	"github.com/antiwork/gumroad-cli/internal/adminapi"
 	"github.com/antiwork/gumroad-cli/internal/admincmd"
+	"github.com/antiwork/gumroad-cli/internal/api"
 	"github.com/antiwork/gumroad-cli/internal/cmdutil"
 	"github.com/antiwork/gumroad-cli/internal/output"
 	"github.com/spf13/cobra"
 )
 
-const refundAllForFraudConfirmationMessage = "Refund ALL successful purchases of user_id %s for fraud and block every buyer? This refunds every remaining sale, cancels linked subscriptions, and cannot be undone."
+const refundAllForFraudConfirmationMessage = "Queue fraud refunds for %d purchase(s) of user_id %s%s? This refunds every remaining sale, cancels linked subscriptions, and cannot be undone once queued."
 
 type refundAllForFraudRequest struct {
-	UserID        string `json:"user_id"`
-	ExpectedEmail string `json:"expected_email,omitempty"`
-	Force         bool   `json:"force,omitempty"`
-}
-
-type refundAllForFraudFailure struct {
-	PurchaseExternalIDNumeric int64  `json:"purchase_external_id_numeric"`
-	Error                     string `json:"error"`
+	UserID                string `json:"user_id"`
+	ExpectedEmail         string `json:"expected_email"`
+	ExpectedPurchaseCount int    `json:"expected_purchase_count"`
+	BlockBuyers           bool   `json:"block_buyers,omitempty"`
 }
 
 type refundAllForFraudResponse struct {
-	Success       bool                       `json:"success"`
-	UserID        string                     `json:"user_id"`
-	Message       string                     `json:"message"`
-	RefundedCount int                        `json:"refunded_count"`
-	SkippedCount  int                        `json:"skipped_count"`
-	Failed        []refundAllForFraudFailure `json:"failed"`
+	Success           bool   `json:"success"`
+	UserID            string `json:"user_id"`
+	Status            string `json:"status"`
+	Message           string `json:"message"`
+	PurchasesToRefund int    `json:"purchases_to_refund"`
+	BlockBuyers       bool   `json:"block_buyers"`
 }
 
 func newRefundAllForFraudCmd() *cobra.Command {
 	var (
-		targetFlags userMutationFlags
-		force       bool
+		targetFlags   userMutationFlags
+		expectedCount int
+		blockBuyers   bool
 	)
 
 	cmd := &cobra.Command{
 		Use:   "refund-all-for-fraud",
-		Short: "Refund every successful purchase of a fraudulent seller",
-		Long: `Refund all successful, non-refunded, non-charged-back purchases of a seller as
-fraud in one call, blocking each buyer and cancelling linked subscriptions.
+		Short: "Queue fraud refunds for every remaining purchase of a suspended seller",
+		Long: `Queue refunds for all successful, non-refunded purchases of a suspended seller
+as fraud. The server validates and enqueues a background job; refunds are
+processed asynchronously with per-purchase retries. Completion is recorded as a
+comment on the seller account and in the admin audit log.
 
-The seller must already be suspended or flagged; pass --force to override that
-guard for a seller in good standing. Already-refunded purchases are skipped, so
-re-running the command after a partial failure only retries what is left.
+By default buyers are NOT blocked (seller-fraud case: the buyers are victims).
+Pass --block-buyers only when the buyers themselves are fraudulent (self-purchase
+or card-testing ring); that variant also blocks each buyer's email, card
+fingerprint, browser, and IP platform-wide.
+
+--expected-email and --expected-count are required stale-state guards: the server
+responds 409 if either does not match the current account state. The seller must
+already be suspended; suspend first with 'gumroad admin users suspend'.
 
 Requires the bulk endpoint POST /internal/admin/users/refund_all_for_fraud on
 the Gumroad API.`,
-		Example: `  gumroad admin users refund-all-for-fraud --user-id 2245593582708 --dry-run
-  gumroad admin users refund-all-for-fraud --user-id 2245593582708 --yes
-  gumroad admin users refund-all-for-fraud --user-id 2245593582708 --force --yes`,
+		Example: `  gumroad admin users refund-all-for-fraud --user-id 2245593582708 --expected-email seller@example.com --expected-count 18 --dry-run
+  gumroad admin users refund-all-for-fraud --user-id 2245593582708 --expected-email seller@example.com --expected-count 18 --yes
+  gumroad admin users refund-all-for-fraud --user-id 2245593582708 --expected-email seller@example.com --expected-count 18 --block-buyers --yes`,
 		Args: cmdutil.ExactArgs(0),
 		RunE: func(c *cobra.Command, args []string) error {
 			opts := cmdutil.OptionsFrom(c)
@@ -65,11 +70,21 @@ the Gumroad API.`,
 			if err != nil {
 				return err
 			}
+			if target.ExpectedEmail == "" {
+				return cmdutil.MissingFlagError(c, "--expected-email")
+			}
+			if !c.Flags().Changed("expected-count") {
+				return cmdutil.MissingFlagError(c, "--expected-count")
+			}
+			if expectedCount < 0 {
+				return cmdutil.UsageErrorf(c, "--expected-count must be a non-negative integer")
+			}
 
 			req := refundAllForFraudRequest{
-				UserID:        target.UserID,
-				ExpectedEmail: target.ExpectedEmail,
-				Force:         force,
+				UserID:                target.UserID,
+				ExpectedEmail:         target.ExpectedEmail,
+				ExpectedPurchaseCount: expectedCount,
+				BlockBuyers:           blockBuyers,
 			}
 			path := "users/refund_all_for_fraud"
 
@@ -77,7 +92,11 @@ the Gumroad API.`,
 				return cmdutil.PrintDryRunRequest(opts, http.MethodPost, adminapi.AdminPath(path), refundAllForFraudDryRunParams(req))
 			}
 
-			ok, err := cmdutil.ConfirmAction(opts, fmt.Sprintf(refundAllForFraudConfirmationMessage, target.UserID))
+			blockingNote := ""
+			if blockBuyers {
+				blockingNote = ", blocking every buyer platform-wide"
+			}
+			ok, err := cmdutil.ConfirmAction(opts, fmt.Sprintf(refundAllForFraudConfirmationMessage, expectedCount, target.UserID, blockingNote))
 			if err != nil {
 				return err
 			}
@@ -85,81 +104,64 @@ the Gumroad API.`,
 				return cmdutil.PrintCancelledAction(opts, "refund all purchases of user_id "+target.UserID+" for fraud", target.UserID)
 			}
 
-			data, err := admincmd.FetchPostJSON(opts, "Refunding all purchases for fraud...", path, req)
+			data, err := admincmd.FetchPostJSON(opts, "Queueing bulk fraud refund...", path, req)
 			if err != nil {
-				return err
+				return refundAllForFraudConflictError(err)
 			}
 			if opts.UsesJSONOutput() {
-				if err := cmdutil.PrintJSONResponse(opts, data); err != nil {
-					return err
-				}
-				return refundAllForFraudExitError(data)
+				return cmdutil.PrintJSONResponse(opts, data)
 			}
 
 			decoded, err := cmdutil.DecodeJSON[refundAllForFraudResponse](data)
 			if err != nil {
 				return err
 			}
-			if err := renderRefundAllForFraud(opts, fallback(decoded.UserID, target.UserID), decoded); err != nil {
-				return err
-			}
-			if len(decoded.Failed) > 0 {
-				return fmt.Errorf("%d purchase(s) failed to refund; re-run the command to retry only the remaining purchases", len(decoded.Failed))
-			}
-			return nil
+			return renderRefundAllForFraud(opts, fallback(decoded.UserID, target.UserID), decoded)
 		},
 	}
 
 	addUserMutationFlags(cmd, &targetFlags)
-	cmd.Flags().BoolVar(&force, "force", false, "Refund even when the seller is not suspended or flagged")
+	cmd.Flags().IntVar(&expectedCount, "expected-count", 0, "Expected number of refundable purchases (required; the server rejects a mismatch)")
+	cmd.Flags().BoolVar(&blockBuyers, "block-buyers", false, "Also block every buyer platform-wide (only for buyer-fraud cases like card-testing rings)")
 
 	return cmd
 }
 
-// In JSON output mode the raw response is printed as-is, but the process must
-// still exit non-zero when any purchase failed so scripts can detect partial
-// failures without parsing the payload.
-func refundAllForFraudExitError(data json.RawMessage) error {
-	decoded, err := cmdutil.DecodeJSON[refundAllForFraudResponse](data)
-	if err != nil {
-		return nil //nolint:nilerr // Output already printed; an unparseable body should not fail the command.
+func refundAllForFraudConflictError(err error) error {
+	var apiErr *api.APIError
+	if !errors.As(err, &apiErr) || apiErr.StatusCode != http.StatusConflict {
+		return err
 	}
-	if len(decoded.Failed) > 0 {
-		return fmt.Errorf("%d purchase(s) failed to refund; re-run the command to retry only the remaining purchases", len(decoded.Failed))
-	}
-	return nil
+	return fmt.Errorf("%s — re-check the account with 'gumroad admin users info' and retry with current values; a 409 also means a bulk refund run may already be queued", apiErr.Message)
 }
 
 func refundAllForFraudDryRunParams(req refundAllForFraudRequest) url.Values {
 	params := url.Values{}
 	params.Set("user_id", req.UserID)
-	if req.ExpectedEmail != "" {
-		params.Set("expected_email", req.ExpectedEmail)
-	}
-	if req.Force {
-		params.Set("force", "true")
+	params.Set("expected_email", req.ExpectedEmail)
+	params.Set("expected_purchase_count", strconv.Itoa(req.ExpectedPurchaseCount))
+	if req.BlockBuyers {
+		params.Set("block_buyers", "true")
 	}
 	return params
 }
 
 func renderRefundAllForFraud(opts cmdutil.Options, userID string, resp refundAllForFraudResponse) error {
-	summary := fmt.Sprintf("Refunded %d, skipped %d already-refunded, %d failed", resp.RefundedCount, resp.SkippedCount, len(resp.Failed))
+	blocking := "buyers will not be blocked"
+	if resp.BlockBuyers {
+		blocking = "buyers will be blocked"
+	}
+	summary := fmt.Sprintf("Queued fraud refunds for %d purchase(s); %s", resp.PurchasesToRefund, blocking)
 
 	if opts.PlainOutput {
-		rows := [][]string{{
-			// The API always reports success once the batch runs; whether
-			// every purchase actually refunded is what callers care about.
-			strconv.FormatBool(len(resp.Failed) == 0),
-			summary,
+		return output.PrintPlain(opts.Out(), [][]string{{
+			strconv.FormatBool(resp.Success),
+			fallback(resp.Message, resp.Status),
 			userID,
-			strconv.Itoa(resp.RefundedCount),
-			strconv.Itoa(resp.SkippedCount),
-			strconv.Itoa(len(resp.Failed)),
-		}}
-		for _, failure := range resp.Failed {
-			rows = append(rows, []string{"failed", strconv.FormatInt(failure.PurchaseExternalIDNumeric, 10), failure.Error})
-		}
-		return output.PrintPlain(opts.Out(), rows)
+			resp.Status,
+			strconv.Itoa(resp.PurchasesToRefund),
+			strconv.FormatBool(resp.BlockBuyers),
+		}})
 	}
 
 	if opts.Quiet {
@@ -167,33 +169,16 @@ func renderRefundAllForFraud(opts cmdutil.Options, userID string, resp refundAll
 	}
 
 	style := opts.Style()
-	headline := "Refunded all remaining purchases for fraud and blocked the buyers"
-	if len(resp.Failed) > 0 {
-		headline = "Bulk fraud refund finished with failures"
-	}
-	styledHeadline := style.Green(headline)
-	if len(resp.Failed) > 0 {
-		styledHeadline = style.Red(headline)
-	}
-	if err := output.Writeln(opts.Out(), styledHeadline); err != nil {
+	if err := output.Writeln(opts.Out(), style.Green(summary)); err != nil {
 		return err
 	}
 	if err := output.Writef(opts.Out(), "User ID: %s\n", userID); err != nil {
 		return err
 	}
-	if err := output.Writef(opts.Out(), "%s\n", summary); err != nil {
-		return err
+	if resp.Status != "" {
+		if err := output.Writef(opts.Out(), "Status: %s\n", resp.Status); err != nil {
+			return err
+		}
 	}
-	if len(resp.Failed) == 0 {
-		return nil
-	}
-
-	if err := output.Writeln(opts.Out(), ""); err != nil {
-		return err
-	}
-	tbl := output.NewStyledTable(style, "PURCHASE ID", "ERROR")
-	for _, failure := range resp.Failed {
-		tbl.AddRow(strconv.FormatInt(failure.PurchaseExternalIDNumeric, 10), failure.Error)
-	}
-	return tbl.Render(opts.Out())
+	return output.Writeln(opts.Out(), "Refunds run in the background with per-purchase retries; check the seller's comments and the admin audit log for completion.")
 }
