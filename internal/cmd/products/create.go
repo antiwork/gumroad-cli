@@ -88,6 +88,7 @@ func newCreateCmd() *cobra.Command {
 	var coverImage, thumbnail string
 	var previewImages []string
 	var previewVideos []string
+	var refundPeriod, refundFinePrint string
 
 	cmd := &cobra.Command{
 		Use:   "create",
@@ -97,7 +98,8 @@ func newCreateCmd() *cobra.Command {
   gumroad products create --name "Art Pack" --cover-image ./cover.jpg --thumbnail ./thumb.jpg
   gumroad products create --name "Figma Kit" --category design/ui-and-web/figma
   gumroad products create --name "Newsletter" --type membership --subscription-duration monthly
-  gumroad products create --name "E-Book" --type ebook --price 5 --tag art --tag digital`,
+  gumroad products create --name "E-Book" --type ebook --price 5 --tag art --tag digital
+  gumroad products create --name "Art Pack" --price 10 --refund-period none --refund-fine-print "No refunds once downloaded."`,
 		Args: cmdutil.ExactArgs(0),
 		RunE: func(c *cobra.Command, args []string) error {
 			opts := cmdutil.OptionsFrom(c)
@@ -124,6 +126,9 @@ func newCreateCmd() *cobra.Command {
 				return err
 			}
 			if err := validateProductCategoryFlags(c); err != nil {
+				return err
+			}
+			if err := validateProductRefundPolicyFlags(c, refundPeriod); err != nil {
 				return err
 			}
 
@@ -190,6 +195,7 @@ func newCreateCmd() *cobra.Command {
 			for _, t := range tags {
 				params.Add("tags[]", t)
 			}
+			setProductRefundPolicyParams(c, params, refundPeriod, refundFinePrint)
 
 			if len(plannedUploads) > 0 || len(media) > 0 {
 				fileRefs, err := newRichContentFileRefs(len(plannedUploads))
@@ -298,6 +304,7 @@ func newCreateCmd() *cobra.Command {
 	cmd.Flags().StringArrayVar(&previewImages, "preview-image", nil, "Additional local JPEG, PNG, or GIF preview image to upload as a product cover (repeatable)")
 	cmd.Flags().StringArrayVar(&previewVideos, "preview-video", nil, "Local MP4, MOV, M4V, MPEG, WMV, or WebM preview video to upload as a product cover (repeatable)")
 	cmd.Flags().StringVar(&thumbnail, "thumbnail", "", "Local JPEG, PNG, or GIF thumbnail image to upload after creating the product")
+	registerProductRefundPolicyFlags(cmd, &refundPeriod, &refundFinePrint)
 
 	return cmd
 }

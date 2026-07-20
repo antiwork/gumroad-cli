@@ -25,6 +25,7 @@ func newUpdateCmd() *cobra.Command {
 	var previewImages []string
 	var previewVideos []string
 	var customHTML string
+	var refundPeriod, refundFinePrint string
 
 	cmd := &cobra.Command{
 		Use:   "update <product_id>",
@@ -38,7 +39,9 @@ func newUpdateCmd() *cobra.Command {
   gumroad products update <id> --preview-video ./demo.mp4
   gumroad products update <id> --file ./pack.zip
   gumroad products update <id> --custom-html ./landing.html
-  gumroad products update <id> --custom-html ''`,
+  gumroad products update <id> --custom-html ''
+  gumroad products update <id> --refund-period none --refund-fine-print "No refunds once downloaded."
+  gumroad products update <id> --refund-period inherit`,
 		Args: cmdutil.ExactArgs(1),
 		RunE: func(c *cobra.Command, args []string) error {
 			opts := cmdutil.OptionsFrom(c)
@@ -52,7 +55,12 @@ func newUpdateCmd() *cobra.Command {
 				"file", "file-name", "file-description",
 				"cover-image", "preview-image", "preview-video", "thumbnail",
 				"custom-html",
+				"refund-period", "refund-fine-print",
 			); err != nil {
+				return err
+			}
+
+			if err := validateProductRefundPolicyFlags(c, refundPeriod); err != nil {
 				return err
 			}
 
@@ -137,6 +145,7 @@ func newUpdateCmd() *cobra.Command {
 			for _, t := range tags {
 				params.Add("tags[]", t)
 			}
+			setProductRefundPolicyParams(c, params, refundPeriod, refundFinePrint)
 
 			path := cmdutil.JoinPath("products", args[0])
 			productFieldsChanged := productUpdateFieldFlagsChanged(c)
@@ -282,6 +291,7 @@ func newUpdateCmd() *cobra.Command {
 	cmd.Flags().StringArrayVar(&previewVideos, "preview-video", nil, "Local MP4, MOV, M4V, MPEG, WMV, or WebM preview video to upload as a product cover (repeatable)")
 	cmd.Flags().StringVar(&thumbnail, "thumbnail", "", "Local JPEG, PNG, or GIF thumbnail image to upload")
 	cmd.Flags().StringVar(&customHTML, "custom-html", "", "Path to an HTML file for the product's custom landing page (empty string clears it)")
+	registerProductRefundPolicyFlags(cmd, &refundPeriod, &refundFinePrint)
 
 	return cmd
 }
@@ -292,6 +302,7 @@ func productUpdateFieldFlagsChanged(cmd *cobra.Command) bool {
 		"custom-permalink", "custom-summary", "custom-receipt",
 		"pay-what-you-want", "suggested-price", "max-purchase-count",
 		"category", "taxonomy-id", "tag", "custom-html",
+		"refund-period", "refund-fine-print",
 	} {
 		if cmd.Flags().Changed(flag) {
 			return true

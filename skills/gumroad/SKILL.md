@@ -87,6 +87,7 @@ Most responses are wrapped in `{"success": true, ...}` with resource-specific ke
 - `products page preview` → `.custom_html`, `.sanitization_report`
 - `products page publish` / `products page clear` → `.product.custom_html`, `.product.landing_url`, `.previous_custom_html`, `.sanitization_report`
 - `products update --custom-html` → `.product.custom_html`, `.product.landing_url`, `.previous_custom_html`, `.sanitization_report`
+- `products create/update --refund-period/--refund-fine-print` and `products view` → `.product.refund_policy` (`.refund_period` is `inherit` or `none/7/14/30/183`, plus `.title`, `.fine_print`, `.inherited`)
 - Not every `products` write verb is flat: `create`, `update`, `unpublish`, and `delete` return top-level fields, but `covers add`, `thumbnail set`, and `content set` still wrap their payload in the `{success, …, result}` envelope — read those under `.result`
 - `webhooks list` → `.resource_subscriptions[]`
 - `admin users info` → `.user` (includes `.user.stripe` Stripe Connect state — `connected`, and when connected `stripe_connect_account_id`, `stripe_dashboard_url`, and a `verification` block of flags/counts or an `error` subfield when the live Stripe lookup failed — and `.user.admin_links` impersonate/user/purchases/stripe-dashboard URLs)
@@ -300,6 +301,12 @@ gumroad products update <id> --cover-image ./cover.jpg --json --no-input
 gumroad products update <id> --preview-image ./gallery-1.jpg --preview-image ./gallery-2.jpg --json --no-input
 gumroad products update <id> --preview-video ./demo.mp4 --json --no-input
 gumroad products update <id> --thumbnail ./thumb.jpg --json --no-input
+
+# Product-level refund policy override (only when the account-level policy is off).
+# Allowed periods: inherit, none, 7, 14, 30, 183. "inherit" returns to the account default.
+gumroad products update <id> --refund-period none --refund-fine-print "No refunds once downloaded." --json --no-input
+gumroad products update <id> --refund-period inherit --json --no-input
+gumroad products create --name "Art Pack" --price 10 --refund-period none --json --no-input
 gumroad products page preview <id> ./landing.html --json --no-input
 gumroad products page publish <id> ./landing.html --json --no-input
 gumroad products page publish <id> - --json --no-input < landing.html
