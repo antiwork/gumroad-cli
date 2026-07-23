@@ -3,6 +3,7 @@ package sales
 import (
 	"bytes"
 	"encoding/csv"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/url"
@@ -21,13 +22,37 @@ type buyerPresentment struct {
 	TotalCents    *nullableInt `json:"total_cents"`
 	RefundedCents *nullableInt `json:"refunded_cents"`
 	FxRate        string       `json:"fx_rate"`
+
+	// raw keeps the exact API object so JSON output round-trips every field,
+	// not just the ones this struct names (the API also sends price_cents,
+	// tip_cents, tax and shipping amounts).
+	raw json.RawMessage
+}
+
+func (p *buyerPresentment) UnmarshalJSON(data []byte) error {
+	type plain buyerPresentment
+	var decoded plain
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	*p = buyerPresentment(decoded)
+	p.raw = append(json.RawMessage(nil), data...)
+	return nil
+}
+
+func (p buyerPresentment) MarshalJSON() ([]byte, error) {
+	if len(p.raw) > 0 {
+		return p.raw, nil
+	}
+	type plain buyerPresentment
+	return json.Marshal(plain(p))
 }
 
 func (p *buyerPresentment) formattedTotal() string {
 	if p == nil || p.TotalCents == nil || !p.TotalCents.valid {
 		return ""
 	}
-	return fmt.Sprintf("%.2f %s", float64(p.TotalCents.value)/100, strings.ToUpper(p.Currency))
+	return fmt.Sprintf("%s %s", cmdutil.FormatMoney(int(p.TotalCents.value), p.Currency), strings.ToUpper(p.Currency))
 }
 
 type saleListItem struct {

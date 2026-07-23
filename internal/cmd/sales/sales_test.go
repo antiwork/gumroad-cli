@@ -225,6 +225,78 @@ func TestList_TableShowsBuyerPresentmentTotal(t *testing.T) {
 	}
 }
 
+func TestList_TableShowsBuyerPresentmentTotalZeroDecimalCurrency(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{
+			"sales": []map[string]any{
+				{
+					"id":                    "s1",
+					"email":                 "a@b.com",
+					"product_name":          "Art",
+					"formatted_total_price": "$15",
+					"created_at":            "2026-07-20",
+					"buyer_presentment": map[string]any{
+						"currency":    "jpy",
+						"total_cents": 2101,
+						"fx_rate":     "140.05",
+					},
+				},
+			},
+		})
+	})
+
+	cmd := testutil.Command(newListCmd())
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	if !strings.Contains(out, "(buyer: 2101 JPY)") {
+		t.Fatalf("JPY has no minor unit so 2101 must render as 2101 JPY, got %q", out)
+	}
+}
+
+func TestList_AllJSONRoundTripsFullBuyerPresentment(t *testing.T) {
+	presentment := map[string]any{
+		"currency":          "cad",
+		"price_cents":       float64(1401),
+		"tip_cents":         float64(280),
+		"seller_tax_cents":  float64(175),
+		"gumroad_tax_cents": float64(0),
+		"shipping_cents":    float64(0),
+		"total_cents":       float64(1856),
+		"fx_rate":           "1.4005",
+		"refunded_cents":    float64(0),
+	}
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{
+			"sales": []map[string]any{
+				{
+					"id": "s1", "email": "a@b.com", "product_name": "Art",
+					"formatted_total_price": "$14.01", "created_at": "2026-07-20",
+					"buyer_presentment": presentment,
+				},
+			},
+		})
+	})
+
+	cmd := testutil.Command(newListCmd(), testutil.JSONOutput())
+	cmd.SetArgs([]string{"--all"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	var resp struct {
+		Sales []struct {
+			BuyerPresentment map[string]any `json:"buyer_presentment"`
+		} `json:"sales"`
+	}
+	if err := json.Unmarshal([]byte(out), &resp); err != nil {
+		t.Fatalf("not valid JSON: %v\n%s", err, out)
+	}
+	if len(resp.Sales) != 1 {
+		t.Fatalf("got %d sales, want 1", len(resp.Sales))
+	}
+	if !reflect.DeepEqual(resp.Sales[0].BuyerPresentment, presentment) {
+		t.Fatalf("--all --json must round-trip every buyer_presentment field:\ngot  %#v\nwant %#v", resp.Sales[0].BuyerPresentment, presentment)
+	}
+}
+
 func TestList_CSVOutputWarnsWhenMorePagesExist(t *testing.T) {
 	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
 		testutil.JSON(t, w, map[string]any{
@@ -1421,14 +1493,44 @@ func TestView_Plain(t *testing.T) {
 		t.Fatalf("RunE failed: %v", execErr)
 	}
 	cols := strings.Split(strings.TrimRight(out, "\n"), "\t")
-	if len(cols) != 8 {
-		t.Fatalf("expected 8 tab-separated columns, got %d: %q", len(cols), out)
+	if len(cols) != 7 {
+		t.Fatalf("expected 7 tab-separated columns, got %d: %q", len(cols), out)
 	}
 	if cols[0] != "s1" || cols[2] != "Art" || cols[3] != "$10" {
 		t.Errorf("plain view data mismatch: %q", cols)
 	}
 	if cols[6] != "" {
 		t.Errorf("order_id column should be empty when absent, got %q", cols[6])
+	}
+}
+
+func TestView_PlainWithBuyerPresentmentAppendsColumn(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{
+			"sale": map[string]any{
+				"id": "s1", "email": "a@example.com", "product_name": "Art",
+				"formatted_total_price": "$15", "created_at": "2026-07-20",
+				"buyer_presentment": map[string]any{
+					"currency":    "cad",
+					"total_cents": 2101,
+					"fx_rate":     "1.4005",
+				},
+			},
+		})
+	})
+
+	cmd := testutil.Command(newViewCmd(), testutil.PlainOutput())
+	var execErr error
+	out := testutil.CaptureStdout(func() { execErr = cmd.RunE(cmd, []string{"s1"}) })
+	if execErr != nil {
+		t.Fatalf("RunE failed: %v", execErr)
+	}
+	cols := strings.Split(strings.TrimRight(out, "\n"), "\t")
+	if len(cols) != 8 {
+		t.Fatalf("expected 8 tab-separated columns, got %d: %q", len(cols), out)
+	}
+	if cols[7] != "21.01 CAD" {
+		t.Errorf("buyer-charged column mismatch, got %q", cols[7])
 	}
 }
 
@@ -1450,8 +1552,8 @@ func TestView_PlainWithOrderID(t *testing.T) {
 		t.Fatalf("RunE failed: %v", execErr)
 	}
 	cols := strings.Split(strings.TrimRight(out, "\n"), "\t")
-	if len(cols) != 8 {
-		t.Fatalf("expected 8 tab-separated columns, got %d: %q", len(cols), out)
+	if len(cols) != 7 {
+		t.Fatalf("expected 7 tab-separated columns, got %d: %q", len(cols), out)
 	}
 	if cols[0] != "s1" || cols[2] != "Art" || cols[3] != "$10" {
 		t.Errorf("plain view data mismatch: %q", cols)
