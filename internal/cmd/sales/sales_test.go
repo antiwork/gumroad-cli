@@ -150,6 +150,53 @@ func TestList_CSVOutputIncludesBuyerPresentment(t *testing.T) {
 	assertCSVRecords(t, records, want)
 }
 
+func TestList_CSVOutputLeavesNullBuyerAmountsEmpty(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{
+			"sales": []map[string]any{
+				{
+					"id":           "s1",
+					"email":        "a@b.com",
+					"product_name": "Art",
+					"total_cents":  1500,
+					"currency":     "usd",
+					"created_at":   "2026-07-20T10:00:00Z",
+					"buyer_presentment": map[string]any{
+						"currency":       "cad",
+						"total_cents":    nil,
+						"refunded_cents": nil,
+						"fx_rate":        "1.4005",
+					},
+				},
+				{
+					"id":           "s2",
+					"email":        "c@d.com",
+					"product_name": "Pack",
+					"total_cents":  2000,
+					"currency":     "usd",
+					"created_at":   "2026-07-21T10:00:00Z",
+					"buyer_presentment": map[string]any{
+						"currency": "eur",
+						"fx_rate":  "0.9",
+					},
+				},
+			},
+		})
+	})
+
+	cmd := testutil.Command(newListCmd())
+	cmd.SetArgs([]string{"--csv"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	records := readCSVRecords(t, out)
+	want := [][]string{
+		{"id", "email", "product_name", "total_cents", "currency", "refunded", "refunded_cents", "created_at", "buyer_currency", "buyer_total_cents", "buyer_refunded_cents", "buyer_fx_rate"},
+		{"s1", "a@b.com", "Art", "1500", "usd", "false", "0", "2026-07-20T10:00:00Z", "cad", "", "", "1.4005"},
+		{"s2", "c@d.com", "Pack", "2000", "usd", "false", "0", "2026-07-21T10:00:00Z", "eur", "", "", "0.9"},
+	}
+	assertCSVRecords(t, records, want)
+}
+
 func TestList_TableShowsBuyerPresentmentTotal(t *testing.T) {
 	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
 		testutil.JSON(t, w, map[string]any{

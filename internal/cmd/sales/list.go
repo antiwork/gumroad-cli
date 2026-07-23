@@ -324,7 +324,11 @@ func (s saleListItem) buyerCSVCents(field func(*buyerPresentment) *nullableInt) 
 	if s.BuyerPresentment == nil {
 		return ""
 	}
-	return formatNullableInt(field(s.BuyerPresentment))
+	value := field(s.BuyerPresentment)
+	if value == nil || !value.valid {
+		return ""
+	}
+	return strconv.Itoa(int(value.value))
 }
 
 func (s saleListItem) buyerCSVFxRate() string {
