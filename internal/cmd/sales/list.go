@@ -3,6 +3,8 @@ package sales
 import (
 	"bytes"
 	"encoding/csv"
+	"encoding/json"
+	"fmt"
 	"io"
 	"net/url"
 	"strconv"
@@ -15,20 +17,59 @@ import (
 	"github.com/spf13/cobra"
 )
 
+type buyerPresentment struct {
+	Currency      string       `json:"currency"`
+	TotalCents    *nullableInt `json:"total_cents"`
+	RefundedCents *nullableInt `json:"refunded_cents"`
+	FxRate        string       `json:"fx_rate"`
+
+	// raw keeps the exact API object so JSON output round-trips every field,
+	// not just the ones this struct names (the API also sends price_cents,
+	// tip_cents, tax and shipping amounts).
+	raw json.RawMessage
+}
+
+func (p *buyerPresentment) UnmarshalJSON(data []byte) error {
+	type plain buyerPresentment
+	var decoded plain
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	*p = buyerPresentment(decoded)
+	p.raw = append(json.RawMessage(nil), data...)
+	return nil
+}
+
+func (p buyerPresentment) MarshalJSON() ([]byte, error) {
+	if len(p.raw) > 0 {
+		return p.raw, nil
+	}
+	type plain buyerPresentment
+	return json.Marshal(plain(p))
+}
+
+func (p *buyerPresentment) formattedTotal() string {
+	if p == nil || p.TotalCents == nil || !p.TotalCents.valid {
+		return ""
+	}
+	return fmt.Sprintf("%s %s", cmdutil.FormatMoney(int(p.TotalCents.value), p.Currency), strings.ToUpper(p.Currency))
+}
+
 type saleListItem struct {
-	ID                  string       `json:"id"`
-	Email               string       `json:"email"`
-	ProductName         string       `json:"product_name"`
-	FormattedTotal      string       `json:"formatted_total_price"`
-	CreatedAt           string       `json:"created_at"`
-	Refunded            bool         `json:"refunded"`
-	TotalCents          *nullableInt `json:"total_cents"`
-	Price               *nullableInt `json:"price"`
-	Currency            string       `json:"currency"`
-	CurrencyType        string       `json:"currency_type"`
-	PriceCurrencyType   string       `json:"price_currency_type"`
-	RefundedCents       *nullableInt `json:"refunded_cents"`
-	AmountRefundedCents *nullableInt `json:"amount_refunded_cents"`
+	ID                  string            `json:"id"`
+	Email               string            `json:"email"`
+	ProductName         string            `json:"product_name"`
+	FormattedTotal      string            `json:"formatted_total_price"`
+	CreatedAt           string            `json:"created_at"`
+	Refunded            bool              `json:"refunded"`
+	TotalCents          *nullableInt      `json:"total_cents"`
+	Price               *nullableInt      `json:"price"`
+	Currency            string            `json:"currency"`
+	CurrencyType        string            `json:"currency_type"`
+	PriceCurrencyType   string            `json:"price_currency_type"`
+	RefundedCents       *nullableInt      `json:"refunded_cents"`
+	AmountRefundedCents *nullableInt      `json:"amount_refunded_cents"`
+	BuyerPresentment    *buyerPresentment `json:"buyer_presentment,omitempty"`
 }
 
 type salesListResponse struct {
@@ -242,7 +283,7 @@ func writeSalesPlain(w io.Writer, sales []saleListItem) error {
 	return output.PrintPlain(w, rows)
 }
 
-var salesCSVHeader = []string{"id", "email", "product_name", "total_cents", "currency", "refunded", "refunded_cents", "created_at"}
+var salesCSVHeader = []string{"id", "email", "product_name", "total_cents", "currency", "refunded", "refunded_cents", "created_at", "buyer_currency", "buyer_total_cents", "buyer_refunded_cents", "buyer_fx_rate"}
 
 func writeSalesCSV(w io.Writer, sales []saleListItem) error {
 	cw := csv.NewWriter(w)
@@ -286,11 +327,40 @@ func writeSalesCSVRows(cw *csv.Writer, sales []saleListItem) error {
 			strconv.FormatBool(s.Refunded),
 			formatNullableInt(firstNullableInt(s.RefundedCents, s.AmountRefundedCents)),
 			s.CreatedAt,
+			s.buyerCSVCurrency(),
+			s.buyerCSVCents(func(p *buyerPresentment) *nullableInt { return p.TotalCents }),
+			s.buyerCSVCents(func(p *buyerPresentment) *nullableInt { return p.RefundedCents }),
+			s.buyerCSVFxRate(),
 		}); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func (s saleListItem) buyerCSVCurrency() string {
+	if s.BuyerPresentment == nil {
+		return ""
+	}
+	return s.BuyerPresentment.Currency
+}
+
+func (s saleListItem) buyerCSVCents(field func(*buyerPresentment) *nullableInt) string {
+	if s.BuyerPresentment == nil {
+		return ""
+	}
+	value := field(s.BuyerPresentment)
+	if value == nil || !value.valid {
+		return ""
+	}
+	return strconv.Itoa(int(value.value))
+}
+
+func (s saleListItem) buyerCSVFxRate() string {
+	if s.BuyerPresentment == nil {
+		return ""
+	}
+	return s.BuyerPresentment.FxRate
 }
 
 func (s saleListItem) csvCurrency() string {
@@ -325,7 +395,11 @@ func writeSalesTable(w io.Writer, style output.Styler, sales []saleListItem) err
 		if s.Refunded {
 			id = s.ID + " " + style.Red("(refunded)")
 		}
-		tbl.AddRow(id, s.Email, s.ProductName, s.FormattedTotal, s.CreatedAt)
+		total := s.FormattedTotal
+		if buyerTotal := s.BuyerPresentment.formattedTotal(); buyerTotal != "" {
+			total = total + " " + style.Dim("(buyer: "+buyerTotal+")")
+		}
+		tbl.AddRow(id, s.Email, s.ProductName, total, s.CreatedAt)
 	}
 	return tbl.Render(w)
 }

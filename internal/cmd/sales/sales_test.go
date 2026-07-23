@@ -110,10 +110,191 @@ func TestList_CSVOutput(t *testing.T) {
 
 	records := readCSVRecords(t, out)
 	want := [][]string{
-		{"id", "email", "product_name", "total_cents", "currency", "refunded", "refunded_cents", "created_at"},
-		{"s1", "a@b.com", "Art, Pack", "1000", "usd", "true", "250", "2024-01-15T10:00:00Z"},
+		{"id", "email", "product_name", "total_cents", "currency", "refunded", "refunded_cents", "created_at", "buyer_currency", "buyer_total_cents", "buyer_refunded_cents", "buyer_fx_rate"},
+		{"s1", "a@b.com", "Art, Pack", "1000", "usd", "true", "250", "2024-01-15T10:00:00Z", "", "", "", ""},
 	}
 	assertCSVRecords(t, records, want)
+}
+
+func TestList_CSVOutputIncludesBuyerPresentment(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{
+			"sales": []map[string]any{
+				{
+					"id":           "s1",
+					"email":        "a@b.com",
+					"product_name": "Art",
+					"total_cents":  1500,
+					"currency":     "usd",
+					"created_at":   "2026-07-20T10:00:00Z",
+					"buyer_presentment": map[string]any{
+						"currency":       "cad",
+						"total_cents":    2101,
+						"refunded_cents": 700,
+						"fx_rate":        "1.4005",
+					},
+				},
+			},
+		})
+	})
+
+	cmd := testutil.Command(newListCmd())
+	cmd.SetArgs([]string{"--csv"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	records := readCSVRecords(t, out)
+	want := [][]string{
+		{"id", "email", "product_name", "total_cents", "currency", "refunded", "refunded_cents", "created_at", "buyer_currency", "buyer_total_cents", "buyer_refunded_cents", "buyer_fx_rate"},
+		{"s1", "a@b.com", "Art", "1500", "usd", "false", "0", "2026-07-20T10:00:00Z", "cad", "2101", "700", "1.4005"},
+	}
+	assertCSVRecords(t, records, want)
+}
+
+func TestList_CSVOutputLeavesNullBuyerAmountsEmpty(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{
+			"sales": []map[string]any{
+				{
+					"id":           "s1",
+					"email":        "a@b.com",
+					"product_name": "Art",
+					"total_cents":  1500,
+					"currency":     "usd",
+					"created_at":   "2026-07-20T10:00:00Z",
+					"buyer_presentment": map[string]any{
+						"currency":       "cad",
+						"total_cents":    nil,
+						"refunded_cents": nil,
+						"fx_rate":        "1.4005",
+					},
+				},
+				{
+					"id":           "s2",
+					"email":        "c@d.com",
+					"product_name": "Pack",
+					"total_cents":  2000,
+					"currency":     "usd",
+					"created_at":   "2026-07-21T10:00:00Z",
+					"buyer_presentment": map[string]any{
+						"currency": "eur",
+						"fx_rate":  "0.9",
+					},
+				},
+			},
+		})
+	})
+
+	cmd := testutil.Command(newListCmd())
+	cmd.SetArgs([]string{"--csv"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	records := readCSVRecords(t, out)
+	want := [][]string{
+		{"id", "email", "product_name", "total_cents", "currency", "refunded", "refunded_cents", "created_at", "buyer_currency", "buyer_total_cents", "buyer_refunded_cents", "buyer_fx_rate"},
+		{"s1", "a@b.com", "Art", "1500", "usd", "false", "0", "2026-07-20T10:00:00Z", "cad", "", "", "1.4005"},
+		{"s2", "c@d.com", "Pack", "2000", "usd", "false", "0", "2026-07-21T10:00:00Z", "eur", "", "", "0.9"},
+	}
+	assertCSVRecords(t, records, want)
+}
+
+func TestList_TableShowsBuyerPresentmentTotal(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{
+			"sales": []map[string]any{
+				{
+					"id":                    "s1",
+					"email":                 "a@b.com",
+					"product_name":          "Art",
+					"formatted_total_price": "$15",
+					"created_at":            "2026-07-20",
+					"buyer_presentment": map[string]any{
+						"currency":    "cad",
+						"total_cents": 2101,
+						"fx_rate":     "1.4005",
+					},
+				},
+			},
+		})
+	})
+
+	cmd := testutil.Command(newListCmd())
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	if !strings.Contains(out, "(buyer: 21.01 CAD)") {
+		t.Fatalf("table output missing buyer presentment total, got %q", out)
+	}
+}
+
+func TestList_TableShowsBuyerPresentmentTotalZeroDecimalCurrency(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{
+			"sales": []map[string]any{
+				{
+					"id":                    "s1",
+					"email":                 "a@b.com",
+					"product_name":          "Art",
+					"formatted_total_price": "$15",
+					"created_at":            "2026-07-20",
+					"buyer_presentment": map[string]any{
+						"currency":    "jpy",
+						"total_cents": 2101,
+						"fx_rate":     "140.05",
+					},
+				},
+			},
+		})
+	})
+
+	cmd := testutil.Command(newListCmd())
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	if !strings.Contains(out, "(buyer: 2101 JPY)") {
+		t.Fatalf("JPY has no minor unit so 2101 must render as 2101 JPY, got %q", out)
+	}
+}
+
+func TestList_AllJSONRoundTripsFullBuyerPresentment(t *testing.T) {
+	presentment := map[string]any{
+		"currency":          "cad",
+		"price_cents":       float64(1401),
+		"tip_cents":         float64(280),
+		"seller_tax_cents":  float64(175),
+		"gumroad_tax_cents": float64(0),
+		"shipping_cents":    float64(0),
+		"total_cents":       float64(1856),
+		"fx_rate":           "1.4005",
+		"refunded_cents":    float64(0),
+	}
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{
+			"sales": []map[string]any{
+				{
+					"id": "s1", "email": "a@b.com", "product_name": "Art",
+					"formatted_total_price": "$14.01", "created_at": "2026-07-20",
+					"buyer_presentment": presentment,
+				},
+			},
+		})
+	})
+
+	cmd := testutil.Command(newListCmd(), testutil.JSONOutput())
+	cmd.SetArgs([]string{"--all"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	var resp struct {
+		Sales []struct {
+			BuyerPresentment map[string]any `json:"buyer_presentment"`
+		} `json:"sales"`
+	}
+	if err := json.Unmarshal([]byte(out), &resp); err != nil {
+		t.Fatalf("not valid JSON: %v\n%s", err, out)
+	}
+	if len(resp.Sales) != 1 {
+		t.Fatalf("got %d sales, want 1", len(resp.Sales))
+	}
+	if !reflect.DeepEqual(resp.Sales[0].BuyerPresentment, presentment) {
+		t.Fatalf("--all --json must round-trip every buyer_presentment field:\ngot  %#v\nwant %#v", resp.Sales[0].BuyerPresentment, presentment)
+	}
 }
 
 func TestList_CSVOutputWarnsWhenMorePagesExist(t *testing.T) {
@@ -132,8 +313,8 @@ func TestList_CSVOutputWarnsWhenMorePagesExist(t *testing.T) {
 
 	records := readCSVRecords(t, stdout)
 	want := [][]string{
-		{"id", "email", "product_name", "total_cents", "currency", "refunded", "refunded_cents", "created_at"},
-		{"s1", "a@b.com", "Art", "1000", "usd", "false", "0", "2024-01-15"},
+		{"id", "email", "product_name", "total_cents", "currency", "refunded", "refunded_cents", "created_at", "buyer_currency", "buyer_total_cents", "buyer_refunded_cents", "buyer_fx_rate"},
+		{"s1", "a@b.com", "Art", "1000", "usd", "false", "0", "2024-01-15", "", "", "", ""},
 	}
 	assertCSVRecords(t, records, want)
 	if strings.Contains(stdout, "More results available") {
@@ -206,8 +387,8 @@ func TestList_CSVOutputSkipsNullPrimaryNumericFields(t *testing.T) {
 
 	records := readCSVRecords(t, out)
 	want := [][]string{
-		{"id", "email", "product_name", "total_cents", "currency", "refunded", "refunded_cents", "created_at"},
-		{"s1", "a@b.com", "Art", "1000", "usd", "true", "250", "2024-01-15T10:00:00Z"},
+		{"id", "email", "product_name", "total_cents", "currency", "refunded", "refunded_cents", "created_at", "buyer_currency", "buyer_total_cents", "buyer_refunded_cents", "buyer_fx_rate"},
+		{"s1", "a@b.com", "Art", "1000", "usd", "true", "250", "2024-01-15T10:00:00Z", "", "", "", ""},
 	}
 	assertCSVRecords(t, records, want)
 }
@@ -222,7 +403,7 @@ func TestList_EmptyCSVOutputWritesHeader(t *testing.T) {
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
 	records := readCSVRecords(t, out)
-	want := [][]string{{"id", "email", "product_name", "total_cents", "currency", "refunded", "refunded_cents", "created_at"}}
+	want := [][]string{{"id", "email", "product_name", "total_cents", "currency", "refunded", "refunded_cents", "created_at", "buyer_currency", "buyer_total_cents", "buyer_refunded_cents", "buyer_fx_rate"}}
 	assertCSVRecords(t, records, want)
 }
 
@@ -718,9 +899,9 @@ func TestList_AllCSVOutputStreamsAllPages(t *testing.T) {
 
 	records := readCSVRecords(t, out)
 	want := [][]string{
-		{"id", "email", "product_name", "total_cents", "currency", "refunded", "refunded_cents", "created_at"},
-		{"s1", "a@b.com", "Art", "1000", "usd", "false", "0", "2024-01-15"},
-		{"s2", "b@c.com", "Book", "1200", "usd", "true", "1200", "2024-01-16"},
+		{"id", "email", "product_name", "total_cents", "currency", "refunded", "refunded_cents", "created_at", "buyer_currency", "buyer_total_cents", "buyer_refunded_cents", "buyer_fx_rate"},
+		{"s1", "a@b.com", "Art", "1000", "usd", "false", "0", "2024-01-15", "", "", "", ""},
+		{"s2", "b@c.com", "Book", "1200", "usd", "true", "1200", "2024-01-16", "", "", "", ""},
 	}
 	assertCSVRecords(t, records, want)
 	if requests != 2 {
@@ -970,6 +1151,49 @@ func TestView_RefundedStatus(t *testing.T) {
 	out := testutil.CaptureStdout(func() { _ = cmd.RunE(cmd, []string{"s1"}) })
 	if !strings.Contains(out, "refunded") {
 		t.Errorf("output should show refunded status: %q", out)
+	}
+}
+
+func TestView_BuyerPresentment(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{
+			"sale": map[string]any{
+				"id": "s1", "email": "a@b.com", "product_name": "Art",
+				"formatted_total_price": "$15", "created_at": "2026-07-20",
+				"buyer_presentment": map[string]any{
+					"currency":       "cad",
+					"total_cents":    2101,
+					"refunded_cents": 0,
+					"fx_rate":        "1.4005",
+				},
+			},
+		})
+	})
+
+	cmd := newViewCmd()
+	out := testutil.CaptureStdout(func() { _ = cmd.RunE(cmd, []string{"s1"}) })
+	if !strings.Contains(out, "Buyer charged: 21.01 CAD") {
+		t.Errorf("output should show buyer-charged amount: %q", out)
+	}
+	if !strings.Contains(out, "FX rate: 1.4005") {
+		t.Errorf("output should show FX rate: %q", out)
+	}
+}
+
+func TestView_NoBuyerPresentmentLinesForCanonicalSale(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{
+			"sale": map[string]any{
+				"id": "s1", "email": "a@b.com", "product_name": "Art",
+				"formatted_total_price": "$10", "created_at": "2024-01-15",
+			},
+		})
+	})
+
+	cmd := newViewCmd()
+	out := testutil.CaptureStdout(func() { _ = cmd.RunE(cmd, []string{"s1"}) })
+	if strings.Contains(out, "Buyer charged") || strings.Contains(out, "FX rate") {
+		t.Errorf("canonical sale must not show buyer presentment lines: %q", out)
 	}
 }
 
@@ -1277,6 +1501,36 @@ func TestView_Plain(t *testing.T) {
 	}
 	if cols[6] != "" {
 		t.Errorf("order_id column should be empty when absent, got %q", cols[6])
+	}
+}
+
+func TestView_PlainWithBuyerPresentmentAppendsColumn(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{
+			"sale": map[string]any{
+				"id": "s1", "email": "a@example.com", "product_name": "Art",
+				"formatted_total_price": "$15", "created_at": "2026-07-20",
+				"buyer_presentment": map[string]any{
+					"currency":    "cad",
+					"total_cents": 2101,
+					"fx_rate":     "1.4005",
+				},
+			},
+		})
+	})
+
+	cmd := testutil.Command(newViewCmd(), testutil.PlainOutput())
+	var execErr error
+	out := testutil.CaptureStdout(func() { execErr = cmd.RunE(cmd, []string{"s1"}) })
+	if execErr != nil {
+		t.Fatalf("RunE failed: %v", execErr)
+	}
+	cols := strings.Split(strings.TrimRight(out, "\n"), "\t")
+	if len(cols) != 8 {
+		t.Fatalf("expected 8 tab-separated columns, got %d: %q", len(cols), out)
+	}
+	if cols[7] != "21.01 CAD" {
+		t.Errorf("buyer-charged column mismatch, got %q", cols[7])
 	}
 }
 

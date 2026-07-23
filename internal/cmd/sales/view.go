@@ -21,14 +21,15 @@ func newViewCmd() *cobra.Command {
 			return cmdutil.RunRequest(opts, "Fetching sale...", "GET", cmdutil.JoinPath("sales", args[0]), url.Values{}, func(data json.RawMessage) error {
 				var resp struct {
 					Sale struct {
-						ID             string      `json:"id"`
-						Email          string      `json:"email"`
-						ProductName    string      `json:"product_name"`
-						FormattedTotal string      `json:"formatted_total_price"`
-						CreatedAt      string      `json:"created_at"`
-						Refunded       bool        `json:"refunded"`
-						Shipped        bool        `json:"shipped"`
-						OrderID        api.JSONInt `json:"order_id"`
+						ID               string            `json:"id"`
+						Email            string            `json:"email"`
+						ProductName      string            `json:"product_name"`
+						FormattedTotal   string            `json:"formatted_total_price"`
+						CreatedAt        string            `json:"created_at"`
+						Refunded         bool              `json:"refunded"`
+						Shipped          bool              `json:"shipped"`
+						OrderID          api.JSONInt       `json:"order_id"`
+						BuyerPresentment *buyerPresentment `json:"buyer_presentment"`
 					} `json:"sale"`
 				}
 				if err := json.Unmarshal(data, &resp); err != nil {
@@ -37,15 +38,21 @@ func newViewCmd() *cobra.Command {
 
 				s := resp.Sale
 				style := opts.Style()
+				buyerTotal := s.BuyerPresentment.formattedTotal()
 
 				if opts.PlainOutput {
 					orderID := ""
 					if s.OrderID > 0 {
 						orderID = fmt.Sprintf("%d", s.OrderID)
 					}
-					return output.PrintPlain(opts.Out(), [][]string{
-						{s.ID, s.Email, s.ProductName, s.FormattedTotal, s.CreatedAt, fmt.Sprintf("refunded=%v", s.Refunded), orderID},
-					})
+					// Canonical sales keep the pre-existing seven-column schema;
+					// the buyer-charged column is appended only when present so
+					// scripts parsing the original layout keep working.
+					row := []string{s.ID, s.Email, s.ProductName, s.FormattedTotal, s.CreatedAt, fmt.Sprintf("refunded=%v", s.Refunded), orderID}
+					if buyerTotal != "" {
+						row = append(row, buyerTotal)
+					}
+					return output.PrintPlain(opts.Out(), [][]string{row})
 				}
 
 				if err := output.Writef(opts.Out(), "%s  %s\n", style.Bold(s.ProductName), s.FormattedTotal); err != nil {
@@ -61,6 +68,16 @@ func newViewCmd() *cobra.Command {
 				}
 				if err := output.Writef(opts.Out(), "Buyer: %s\n", s.Email); err != nil {
 					return err
+				}
+				if buyerTotal != "" {
+					if err := output.Writef(opts.Out(), "Buyer charged: %s\n", buyerTotal); err != nil {
+						return err
+					}
+					if s.BuyerPresentment.FxRate != "" {
+						if err := output.Writef(opts.Out(), "FX rate: %s\n", s.BuyerPresentment.FxRate); err != nil {
+							return err
+						}
+					}
 				}
 				if err := output.Writef(opts.Out(), "Date: %s\n", s.CreatedAt); err != nil {
 					return err

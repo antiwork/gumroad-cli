@@ -460,6 +460,7 @@ gumroad sales resend-receipt <id> --json --no-input
 ```
 
 **List filters/output:** `--product`, `--order`, `--email`, `--after` (YYYY-MM-DD), `--before` (YYYY-MM-DD), `--all`, `--page-key`, `--csv`.
+**Buyer-currency amounts:** sales charged in the buyer's local currency carry a `buyer_presentment` object in JSON output (`currency`, `price_cents`, `tip_cents`, tax fields, `shipping_cents`, `total_cents`, `fx_rate`, `refunded_cents`); it is omitted for canonical (USD-charged) sales. The list table appends `(buyer: 21.01 CAD)` to TOTAL, `sales list --csv` has four trailing columns (`buyer_currency`, `buyer_total_cents`, `buyer_refunded_cents`, `buyer_fx_rate` — empty for canonical sales), `sales view` prints `Buyer charged:` and `FX rate:` lines, and `sales view --plain` appends one extra column ONLY for presentment sales (canonical sales keep the seven-column schema).
 **Summary filters:** `--from` (YYYY-MM-DD), `--to` (YYYY-MM-DD), `--group-by` (product|day|week|month).
 **Export filters:** `--from`/`--after` (YYYY-MM-DD), `--to`/`--before` (YYYY-MM-DD), `--product`.
 
