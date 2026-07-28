@@ -228,8 +228,15 @@ gumroad admin users related --email seller@example.com --signal ip --signal paym
 gumroad admin users related --username sellerone --signal ip --json --non-interactive --no-input
 gumroad admin users related --email seller@example.com --json --jq '{related_users, truncated, per_signal_limit}' --non-interactive --no-input
 
-# Mutate user compliance and suspension state
+# Mutate user compliance and suspension state.
+# mark-compliant never lifts a suspension unless you ask for it. On a suspended
+# account a plain mark-compliant is refused with a 422: the server assumes a
+# caller that only reviewed the account's finances did not mean to reverse an
+# enforcement decision it never looked at. To intentionally restore a suspended
+# account, pass --clear-suspension, which is the only thing that sends
+# clear_suspension: true.
 gumroad admin users mark-compliant --user-id 2245593582708 --expected-email seller@example.com --note "Cleared after review" --yes --json --non-interactive --no-input
+gumroad admin users mark-compliant --user-id 2245593582708 --expected-email seller@example.com --note "Suspension lifted after appeal review" --clear-suspension --yes --json --non-interactive --no-input
 gumroad admin users suspend --user-id 2245593582708 --expected-email seller@example.com --note "Chargeback risk confirmed" --yes --json --non-interactive --no-input
 gumroad admin users suspend-for-tos-violation --user-id 2245593582708 --expected-email seller@example.com --note "DMCA takedown notice confirmed" --yes --json --non-interactive --no-input
 gumroad admin products flag-for-tos-violation <product-id> --user-id 2245593582708 --expected-email seller@example.com --yes --json --non-interactive --no-input
