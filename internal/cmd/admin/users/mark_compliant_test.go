@@ -145,6 +145,58 @@ func TestMarkCompliantSendsUserIDExpectedEmailAndNote(t *testing.T) {
 	}
 }
 
+func TestMarkCompliantSendsClearSuspension(t *testing.T) {
+	var body markCompliantRequest
+
+	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
+		raw, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("read body: %v", err)
+		}
+		if err := json.Unmarshal(raw, &body); err != nil {
+			t.Fatalf("decode body: %v", err)
+		}
+		testutil.JSON(t, w, map[string]any{
+			"success": true,
+			"status":  "marked_compliant",
+			"message": "User marked compliant",
+		})
+	})
+
+	cmd := testutil.Command(newMarkCompliantCmd(), testutil.Yes(true), testutil.Quiet(false))
+	cmd.SetArgs([]string{"--user-id", "2245593582708", "--clear-suspension"})
+	testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	if !body.ClearSuspension {
+		t.Fatalf("expected clear_suspension to be sent, got %#v", body)
+	}
+}
+
+func TestMarkCompliantOmitsClearSuspensionByDefault(t *testing.T) {
+	var raw []byte
+
+	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
+		var err error
+		raw, err = io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("read body: %v", err)
+		}
+		testutil.JSON(t, w, map[string]any{
+			"success": true,
+			"status":  "marked_compliant",
+			"message": "User marked compliant",
+		})
+	})
+
+	cmd := testutil.Command(newMarkCompliantCmd(), testutil.Yes(true), testutil.Quiet(false))
+	cmd.SetArgs([]string{"--user-id", "2245593582708"})
+	testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	if strings.Contains(string(raw), "clear_suspension") {
+		t.Fatalf("clear_suspension must be omitted unless asked for, got %q", string(raw))
+	}
+}
+
 func TestMarkCompliantDryRunDoesNotContactEndpoint(t *testing.T) {
 	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
 		t.Error("dry-run must not POST to the mark_compliant endpoint")
