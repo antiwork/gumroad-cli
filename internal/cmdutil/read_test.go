@@ -199,6 +199,33 @@ func TestFetchRequestDecoded_PropagatesRequestErrors(t *testing.T) {
 	}
 }
 
+func TestFetchRequestDecoded_RefusesDryRunForMutatingMethods(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Error("a dry run must not make a real PUT/POST/DELETE request")
+	})
+
+	_, err := cmdutil.FetchRequestDecoded[map[string]any](testutil.TestOptions(testutil.DryRun(true)), "Refunding...", "PUT", "/sales/s1/refund", url.Values{})
+	if err == nil {
+		t.Fatal("expected a refusal: there is no response to preview for a chained mutating request")
+	}
+}
+
+func TestFetchRequestDecoded_DryRunStillAllowsGET(t *testing.T) {
+	var reached bool
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		reached = true
+		testutil.JSON(t, w, map[string]any{"sale": map[string]any{"id": "s1"}})
+	})
+
+	_, err := cmdutil.FetchRequestDecoded[map[string]any](testutil.TestOptions(testutil.DryRun(true)), "Fetching sale...", "GET", "/sales/s1", url.Values{})
+	if err != nil {
+		t.Fatalf("GET lookups must still run under --dry-run so a chained mutating dry run can preview correctly, got: %v", err)
+	}
+	if !reached {
+		t.Fatal("expected the GET to reach the server")
+	}
+}
+
 func TestDecodeJSON_WrapsParseErrors(t *testing.T) {
 	type payload struct {
 		User struct {

@@ -1211,15 +1211,17 @@ func TestView_RawFixture(t *testing.T) {
 
 // salesRefundHandler routes the sale lookup and the refund PUT to separate
 // handlers so a test can assert the lookup fired before the money moved.
+// Routed on method rather than the "/refund" path suffix, so a sale id that
+// happens to end in "refund" still reaches the lookup handler on its GET.
 func salesRefundHandler(t *testing.T, lookup, refund http.HandlerFunc) http.HandlerFunc {
 	t.Helper()
 
 	return func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasSuffix(r.URL.Path, "/refund") {
-			refund(w, r)
+		if r.Method == http.MethodGet {
+			lookup(w, r)
 			return
 		}
-		lookup(w, r)
+		refund(w, r)
 	}
 }
 
@@ -1329,6 +1331,34 @@ func TestRefund_PartialLooksUpCurrencyAndScalesUSD(t *testing.T) {
 	if !strings.Contains(out, "Refunded 5.00 USD on sale s1.") {
 		t.Errorf("expected partial refund message naming the currency, got %q", out)
 	}
+}
+
+func TestRefund_PartialJSONOutputIsOnlyTheMutationEnvelope(t *testing.T) {
+	testutil.Setup(t, salesRefundHandler(t,
+		saleLookupResponder(t, "usd"),
+		func(w http.ResponseWriter, r *http.Request) {
+			testutil.JSON(t, w, map[string]any{"sale": map[string]any{"id": "s1"}})
+		}))
+
+	cmd := testutil.Command(newRefundCmd(), testutil.Yes(true), testutil.JSONOutput())
+	cmd.SetArgs([]string{"s1", "--amount", "5.00"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(out), &payload); err != nil {
+		t.Fatalf("expected exactly one JSON mutation envelope, got %q: %v", out, err)
+	}
+	if payload["success"] != true {
+		t.Errorf("expected success: true, got %v", payload["success"])
+	}
+	if msg, _ := payload["message"].(string); msg != "Refunded 5.00 USD on sale s1." {
+		t.Errorf("got message %q, want the labelled refund message", msg)
+	}
+	if _, ok := payload["result"].(map[string]any); !ok {
+		t.Errorf("expected a result object carrying the refund response, got %#v", payload["result"])
+	}
+	// json.Unmarshal above already rejects trailing data, so a leaked second
+	// JSON value (e.g. the sale lookup's own body) would have failed there.
 }
 
 // A JPY sale is the case the ×100 default got wrong: yen has no minor unit, so

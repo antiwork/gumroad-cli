@@ -103,8 +103,15 @@ func RunRequestDecoded[T any](opts Options, spinnerMessage, method, path string,
 // response without rendering it. Use it when one command chains requests and
 // only needs the data from the first (e.g. reading a resource's currency before
 // it can interpret a user-supplied amount).
+//
+// Unlike the other Run*/RunRequest* helpers, a mutating method has nothing
+// sensible to print under --dry-run (there is no response to decode), so this
+// refuses outright rather than silently making the real request.
 func FetchRequestDecoded[T any](opts Options, spinnerMessage, method, path string, params url.Values) (T, error) {
 	var zero T
+	if opts.DryRun && method != http.MethodGet {
+		return zero, fmt.Errorf("cannot dry-run a chained %s request to %s: FetchRequestDecoded has no response to preview", method, path)
+	}
 	data, err := runAuthenticatedData(opts, spinnerMessage, requestRunner(method, path, params))
 	if err != nil {
 		return zero, err
