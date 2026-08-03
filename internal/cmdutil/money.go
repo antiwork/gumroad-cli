@@ -12,10 +12,28 @@ var singleUnitCurrencies = map[string]bool{
 	"jpy": true,
 }
 
+// supportedCurrencies are the ISO codes Gumroad prices and pays out in.
+// Source: config/currencies.json in the Gumroad codebase.
+var supportedCurrencies = map[string]bool{
+	"usd": true, "gbp": true, "eur": true, "jpy": true, "inr": true,
+	"aud": true, "cad": true, "hkd": true, "sgd": true, "twd": true,
+	"nzd": true, "brl": true, "zar": true, "chf": true, "ils": true,
+	"php": true, "krw": true, "pln": true, "czk": true,
+}
+
 // IsSingleUnitCurrency reports whether the given currency code has no
 // minor unit (e.g. JPY where ¥1 = 1 minor unit).
 func IsSingleUnitCurrency(currency string) bool {
 	return singleUnitCurrencies[strings.ToLower(currency)]
+}
+
+// IsSupportedCurrency reports whether the given code is a currency Gumroad
+// prices in. Use this to validate any currency taken as a trusted CLI input
+// rather than read back from the API, where a typo would otherwise scale a
+// refund by the wrong factor silently (e.g. "jpyy" scaling ×100 like a
+// two-decimal currency instead of being rejected).
+func IsSupportedCurrency(currency string) bool {
+	return supportedCurrencies[strings.ToLower(currency)]
 }
 
 // scalingFactor returns the multiplier to convert user-facing amounts to

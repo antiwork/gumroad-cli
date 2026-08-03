@@ -1372,6 +1372,19 @@ func TestRefund_CurrencyRequiresAmount(t *testing.T) {
 	}
 }
 
+func TestRefund_CurrencyRejectsUnsupportedCode(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Error("a misspelled --currency must be rejected locally, not sent as amount_cents at the wrong scale")
+	})
+
+	cmd := testutil.Command(newRefundCmd(), testutil.Yes(true))
+	cmd.SetArgs([]string{"s1", "--amount", "25", "--currency", "jpyy"})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "is not a currency Gumroad supports") {
+		t.Fatalf("expected an unsupported --currency to be refused, got %v", err)
+	}
+}
+
 func TestRefund_PartialJSONOutputIsOnlyTheMutationEnvelope(t *testing.T) {
 	testutil.Setup(t, salesRefundHandler(t,
 		saleLookupResponder(t, "usd"),

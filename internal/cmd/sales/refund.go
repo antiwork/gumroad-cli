@@ -73,6 +73,9 @@ server round trip.`,
 					if currency == "" {
 						return cmdutil.UsageErrorf(c, "--currency cannot be empty")
 					}
+					if !cmdutil.IsSupportedCurrency(currency) {
+						return cmdutil.UsageErrorf(c, "%q is not a currency Gumroad supports", currency)
+					}
 				} else {
 					lookup, err := cmdutil.FetchRequestDecoded[refundSaleLookup](opts, "Looking up sale...", "GET", cmdutil.JoinPath("sales", args[0]), url.Values{})
 					if err != nil {
