@@ -1457,6 +1457,23 @@ func TestRefund_AmountInvalidInput(t *testing.T) {
 	}
 }
 
+func TestRefund_MalformedAmountSkipsLookup(t *testing.T) {
+	testutil.Setup(t, salesRefundHandler(t,
+		func(w http.ResponseWriter, r *http.Request) {
+			t.Error("malformed --amount must be rejected before the sale lookup")
+		},
+		func(w http.ResponseWriter, r *http.Request) {
+			t.Error("should not reach the refund API")
+		}))
+
+	cmd := testutil.Command(newRefundCmd(), testutil.Yes(true))
+	cmd.SetArgs([]string{"s1", "--amount", "abc"})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "not a valid amount") {
+		t.Fatalf("expected validation error, got: %v", err)
+	}
+}
+
 func TestRefund_AmountWholeNumberMessage(t *testing.T) {
 	testutil.Setup(t, salesRefundHandler(t,
 		saleLookupResponder(t, "usd"),

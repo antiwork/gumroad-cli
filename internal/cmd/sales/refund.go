@@ -50,6 +50,15 @@ amount on a yen-priced sale.`,
 				currency string
 			)
 			if c.Flags().Changed("amount") {
+				// Check syntax and sign before the sale lookup, so a malformed
+				// --amount fails locally instead of spending a request and
+				// surfacing an unrelated lookup/auth error.
+				if generic, err := cmdutil.ParseMoney("amount", amount, "amount", ""); err != nil {
+					return cmdutil.UsageErrorf(c, "%s", err.Error())
+				} else if generic <= 0 {
+					return cmdutil.UsageErrorf(c, "--amount must be greater than 0")
+				}
+
 				lookup, err := cmdutil.FetchRequestDecoded[refundSaleLookup](opts, "Looking up sale...", "GET", cmdutil.JoinPath("sales", args[0]), url.Values{})
 				if err != nil {
 					return err
@@ -62,9 +71,6 @@ amount on a yen-priced sale.`,
 				parsed, err := cmdutil.ParseMoney("amount", amount, "amount", currency)
 				if err != nil {
 					return cmdutil.UsageErrorf(c, "%s", err.Error())
-				}
-				if parsed <= 0 {
-					return cmdutil.UsageErrorf(c, "--amount must be greater than 0")
 				}
 				cents = parsed
 			}
