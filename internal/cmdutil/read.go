@@ -99,6 +99,19 @@ func RunRequestDecoded[T any](opts Options, spinnerMessage, method, path string,
 	return RunDecoded[T](opts, spinnerMessage, requestRunner(method, path, params), render)
 }
 
+// FetchRequestDecoded executes an authenticated API request and decodes the
+// response without rendering it. Use it when one command chains requests and
+// only needs the data from the first (e.g. reading a resource's currency before
+// it can interpret a user-supplied amount).
+func FetchRequestDecoded[T any](opts Options, spinnerMessage, method, path string, params url.Values) (T, error) {
+	var zero T
+	data, err := runAuthenticatedData(opts, spinnerMessage, requestRunner(method, path, params))
+	if err != nil {
+		return zero, err
+	}
+	return DecodeJSON[T](data)
+}
+
 // RunRequestWithSuccess executes a mutating API request and prints a success
 // message in human mode. The id identifies the affected resource in JSON output.
 func RunRequestWithSuccess(opts Options, spinnerMessage, method, path string, params url.Values, id, successMessage string) error {

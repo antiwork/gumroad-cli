@@ -1209,6 +1209,33 @@ func TestView_RawFixture(t *testing.T) {
 	}
 }
 
+// salesRefundHandler routes the sale lookup and the refund PUT to separate
+// handlers so a test can assert the lookup fired before the money moved.
+func salesRefundHandler(t *testing.T, lookup, refund http.HandlerFunc) http.HandlerFunc {
+	t.Helper()
+
+	return func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/refund") {
+			refund(w, r)
+			return
+		}
+		lookup(w, r)
+	}
+}
+
+func saleLookupResponder(t *testing.T, currency string) http.HandlerFunc {
+	t.Helper()
+
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Errorf("sale lookup must be a GET, got %s", r.Method)
+		}
+		testutil.JSON(t, w, map[string]any{
+			"sale": map[string]any{"id": "s1", "currency": currency},
+		})
+	}
+}
+
 func TestRefund_RequiresConfirmation(t *testing.T) {
 	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
 		t.Error("should not reach API without confirmation")
@@ -1223,9 +1250,11 @@ func TestRefund_RequiresConfirmation(t *testing.T) {
 }
 
 func TestRefund_DryRunSkipsConfirmationAndNetwork(t *testing.T) {
-	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
-		t.Error("dry-run should not reach API")
-	})
+	testutil.Setup(t, salesRefundHandler(t,
+		saleLookupResponder(t, "usd"),
+		func(w http.ResponseWriter, r *http.Request) {
+			t.Error("dry-run should not reach the refund API")
+		}))
 
 	cmd := testutil.Command(newRefundCmd(), testutil.DryRun(true), testutil.NoInput(true))
 	cmd.SetArgs([]string{"s1", "--amount", "5.00"})
@@ -1238,19 +1267,23 @@ func TestRefund_DryRunSkipsConfirmationAndNetwork(t *testing.T) {
 	}
 }
 
-func TestRefund_FullRefund(t *testing.T) {
+func TestRefund_FullRefundSkipsLookup(t *testing.T) {
 	var gotMethod, gotPath string
-	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
-		gotMethod = r.Method
-		gotPath = r.URL.Path
-		if err := r.ParseForm(); err != nil {
-			t.Fatalf("ParseForm failed: %v", err)
-		}
-		if r.PostForm.Get("amount_cents") != "" {
-			t.Error("full refund should not send amount_cents")
-		}
-		testutil.JSON(t, w, map[string]any{})
-	})
+	testutil.Setup(t, salesRefundHandler(t,
+		func(w http.ResponseWriter, r *http.Request) {
+			t.Error("a full refund needs no currency, so it must not spend a lookup request")
+		},
+		func(w http.ResponseWriter, r *http.Request) {
+			gotMethod = r.Method
+			gotPath = r.URL.Path
+			if err := r.ParseForm(); err != nil {
+				t.Fatalf("ParseForm failed: %v", err)
+			}
+			if r.PostForm.Get("amount_cents") != "" {
+				t.Error("full refund should not send amount_cents")
+			}
+			testutil.JSON(t, w, map[string]any{})
+		}))
 
 	cmd := testutil.Command(newRefundCmd(), testutil.Yes(true), testutil.Quiet(false))
 	cmd.SetArgs([]string{"s1"})
@@ -1263,31 +1296,154 @@ func TestRefund_FullRefund(t *testing.T) {
 	}
 }
 
-func TestRefund_Partial(t *testing.T) {
-	var gotAmountCents string
-	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
-		if err := r.ParseForm(); err != nil {
-			t.Fatalf("ParseForm failed: %v", err)
-		}
-		gotAmountCents = r.PostForm.Get("amount_cents")
-		testutil.JSON(t, w, map[string]any{})
-	})
+func TestRefund_PartialLooksUpCurrencyAndScalesUSD(t *testing.T) {
+	var lookupHits int
+	var lookupPath, gotAmountCents string
+	testutil.Setup(t, salesRefundHandler(t,
+		func(w http.ResponseWriter, r *http.Request) {
+			lookupHits++
+			lookupPath = r.URL.Path
+			saleLookupResponder(t, "usd")(w, r)
+		},
+		func(w http.ResponseWriter, r *http.Request) {
+			if err := r.ParseForm(); err != nil {
+				t.Fatalf("ParseForm failed: %v", err)
+			}
+			gotAmountCents = r.PostForm.Get("amount_cents")
+			testutil.JSON(t, w, map[string]any{})
+		}))
 
 	cmd := testutil.Command(newRefundCmd(), testutil.Yes(true), testutil.Quiet(false))
 	cmd.SetArgs([]string{"s1", "--amount", "5.00"})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
-	if gotAmountCents != "500" {
-		t.Errorf("got amount_cents=%q, want 500", gotAmountCents)
+
+	if lookupHits != 1 {
+		t.Fatalf("expected exactly one sale lookup, got %d", lookupHits)
 	}
-	if !strings.Contains(out, "Refunded 5.00 on sale s1.") {
-		t.Errorf("expected partial refund message, got %q", out)
+	if lookupPath != "/sales/s1" {
+		t.Errorf("got lookup path %q, want /sales/s1", lookupPath)
+	}
+	if gotAmountCents != "500" {
+		t.Errorf("got amount_cents=%q, want 500 for $5.00 USD", gotAmountCents)
+	}
+	if !strings.Contains(out, "Refunded 5.00 USD on sale s1.") {
+		t.Errorf("expected partial refund message naming the currency, got %q", out)
+	}
+}
+
+// A JPY sale is the case the ×100 default got wrong: yen has no minor unit, so
+// --amount 25 must stay 25 on the wire instead of becoming ¥2500.
+func TestRefund_PartialUsesSaleCurrencyForJPY(t *testing.T) {
+	var gotAmountCents string
+	testutil.Setup(t, salesRefundHandler(t,
+		saleLookupResponder(t, "jpy"),
+		func(w http.ResponseWriter, r *http.Request) {
+			if err := r.ParseForm(); err != nil {
+				t.Fatalf("ParseForm failed: %v", err)
+			}
+			gotAmountCents = r.PostForm.Get("amount_cents")
+			testutil.JSON(t, w, map[string]any{})
+		}))
+
+	cmd := testutil.Command(newRefundCmd(), testutil.Yes(true), testutil.Quiet(false))
+	cmd.SetArgs([]string{"s1", "--amount", "25"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	if gotAmountCents != "25" {
+		t.Errorf("got amount_cents=%q, want 25 for ¥25 (JPY has no minor unit)", gotAmountCents)
+	}
+	if !strings.Contains(out, "Refunded 25 JPY on sale s1.") {
+		t.Errorf("expected the yen amount echoed unscaled and labelled, got %q", out)
+	}
+}
+
+func TestRefund_FallsBackToLegacyCurrencyFields(t *testing.T) {
+	var gotAmountCents string
+	testutil.Setup(t, salesRefundHandler(t,
+		func(w http.ResponseWriter, r *http.Request) {
+			testutil.JSON(t, w, map[string]any{
+				"sale": map[string]any{"id": "s1", "price_currency_type": "jpy"},
+			})
+		},
+		func(w http.ResponseWriter, r *http.Request) {
+			if err := r.ParseForm(); err != nil {
+				t.Fatalf("ParseForm failed: %v", err)
+			}
+			gotAmountCents = r.PostForm.Get("amount_cents")
+			testutil.JSON(t, w, map[string]any{})
+		}))
+
+	cmd := testutil.Command(newRefundCmd(), testutil.Yes(true), testutil.Quiet(false))
+	cmd.SetArgs([]string{"s1", "--amount", "25"})
+	testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	if gotAmountCents != "25" {
+		t.Errorf("got amount_cents=%q, want 25 — a server without the `currency` field still exposes price_currency_type", gotAmountCents)
+	}
+}
+
+func TestRefund_RefusesAmountWhenCurrencyUnknown(t *testing.T) {
+	testutil.Setup(t, salesRefundHandler(t,
+		func(w http.ResponseWriter, r *http.Request) {
+			testutil.JSON(t, w, map[string]any{
+				"sale": map[string]any{"id": "s1"},
+			})
+		},
+		func(w http.ResponseWriter, r *http.Request) {
+			t.Error("refund PUT must not fire when the currency cannot be determined")
+		}))
+
+	cmd := testutil.Command(newRefundCmd(), testutil.Yes(true))
+	cmd.SetArgs([]string{"s1", "--amount", "25"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected a refusal when the sale exposes no currency")
+	}
+	if !strings.Contains(err.Error(), "could not determine the currency") {
+		t.Errorf("expected the currency-unknown guard, got: %v", err)
+	}
+	var invalidInputErr *cmdutil.InvalidInputError
+	if !errors.As(err, &invalidInputErr) {
+		t.Errorf("guard must be a *cmdutil.InvalidInputError so --json classifies it as invalid input, got %T", err)
+	}
+}
+
+func TestRefund_RefusesAmountWhenCurrencyIsBlank(t *testing.T) {
+	testutil.Setup(t, salesRefundHandler(t,
+		saleLookupResponder(t, "   "),
+		func(w http.ResponseWriter, r *http.Request) {
+			t.Error("refund PUT must not fire when the currency is blank")
+		}))
+
+	cmd := testutil.Command(newRefundCmd(), testutil.Yes(true))
+	cmd.SetArgs([]string{"s1", "--amount", "25"})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "could not determine the currency") {
+		t.Fatalf("expected the currency-unknown guard for a whitespace-only currency, got: %v", err)
+	}
+}
+
+func TestRefund_RejectsDecimalAmountForJPY(t *testing.T) {
+	testutil.Setup(t, salesRefundHandler(t,
+		saleLookupResponder(t, "jpy"),
+		func(w http.ResponseWriter, r *http.Request) {
+			t.Error("should not reach the refund API for a fractional yen amount")
+		}))
+
+	cmd := testutil.Command(newRefundCmd(), testutil.Yes(true))
+	cmd.SetArgs([]string{"s1", "--amount", "5.00"})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "JPY") {
+		t.Fatalf("expected the JPY decimal rejection, got: %v", err)
 	}
 }
 
 func TestRefund_AmountInvalidInput(t *testing.T) {
-	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
-		t.Error("should not reach API")
-	})
+	testutil.Setup(t, salesRefundHandler(t,
+		saleLookupResponder(t, "usd"),
+		func(w http.ResponseWriter, r *http.Request) {
+			t.Error("should not reach the refund API")
+		}))
 
 	cmd := testutil.Command(newRefundCmd(), testutil.Yes(true))
 	cmd.SetArgs([]string{"s1", "--amount", "abc"})
@@ -1302,22 +1458,26 @@ func TestRefund_AmountInvalidInput(t *testing.T) {
 }
 
 func TestRefund_AmountWholeNumberMessage(t *testing.T) {
-	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
-		testutil.JSON(t, w, map[string]any{})
-	})
+	testutil.Setup(t, salesRefundHandler(t,
+		saleLookupResponder(t, "usd"),
+		func(w http.ResponseWriter, r *http.Request) {
+			testutil.JSON(t, w, map[string]any{})
+		}))
 
 	cmd := testutil.Command(newRefundCmd(), testutil.Yes(true), testutil.Quiet(false))
 	cmd.SetArgs([]string{"s1", "--amount", "5"})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
-	if !strings.Contains(out, "Refunded 5.00 on sale s1.") {
+	if !strings.Contains(out, "Refunded 5.00 USD on sale s1.") {
 		t.Errorf("expected normalized refund message, got %q", out)
 	}
 }
 
 func TestRefund_AmountNoInputShowsNormalized(t *testing.T) {
-	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
-		t.Error("should not reach API without confirmation")
-	})
+	testutil.Setup(t, salesRefundHandler(t,
+		saleLookupResponder(t, "usd"),
+		func(w http.ResponseWriter, r *http.Request) {
+			t.Error("should not reach the refund API without confirmation")
+		}))
 
 	cmd := testutil.Command(newRefundCmd(), testutil.NoInput(true))
 	cmd.SetArgs([]string{"s1", "--amount", "5"})
@@ -1325,16 +1485,17 @@ func TestRefund_AmountNoInputShowsNormalized(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error without confirmation")
 	}
-	// The error message should mention --yes (confirmation required), not raw "5"
 	if !strings.Contains(err.Error(), "--yes") {
 		t.Fatalf("expected confirmation error mentioning --yes, got: %v", err)
 	}
 }
 
 func TestRefund_AmountZeroRejected(t *testing.T) {
-	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
-		t.Error("should not reach API")
-	})
+	testutil.Setup(t, salesRefundHandler(t,
+		saleLookupResponder(t, "usd"),
+		func(w http.ResponseWriter, r *http.Request) {
+			t.Error("should not reach the refund API")
+		}))
 
 	cmd := testutil.Command(newRefundCmd(), testutil.Yes(true))
 	cmd.SetArgs([]string{"s1", "--amount", "0"})
@@ -1345,9 +1506,11 @@ func TestRefund_AmountZeroRejected(t *testing.T) {
 }
 
 func TestRefund_InvalidPartialAmount(t *testing.T) {
-	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
-		t.Error("should not reach API with invalid amount")
-	})
+	testutil.Setup(t, salesRefundHandler(t,
+		saleLookupResponder(t, "usd"),
+		func(w http.ResponseWriter, r *http.Request) {
+			t.Error("should not reach the refund API with an invalid amount")
+		}))
 
 	cmd := testutil.Command(newRefundCmd(), testutil.Yes(true))
 	cmd.SetArgs([]string{"s1", "--amount", "-1"})
