@@ -1333,6 +1333,45 @@ func TestRefund_PartialLooksUpCurrencyAndScalesUSD(t *testing.T) {
 	}
 }
 
+func TestRefund_CurrencyFlagSkipsLookupAndScalesJPY(t *testing.T) {
+	var gotAmountCents string
+	testutil.Setup(t, salesRefundHandler(t,
+		func(w http.ResponseWriter, r *http.Request) {
+			t.Error("--currency must preserve refund-only tokens by skipping the sale lookup")
+		},
+		func(w http.ResponseWriter, r *http.Request) {
+			if err := r.ParseForm(); err != nil {
+				t.Fatalf("ParseForm failed: %v", err)
+			}
+			gotAmountCents = r.PostForm.Get("amount_cents")
+			testutil.JSON(t, w, map[string]any{})
+		}))
+
+	cmd := testutil.Command(newRefundCmd(), testutil.Yes(true), testutil.Quiet(false))
+	cmd.SetArgs([]string{"s1", "--amount", "25", "--currency", "jpy"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	if gotAmountCents != "25" {
+		t.Errorf("got amount_cents=%q, want 25 when --currency jpy skips the lookup", gotAmountCents)
+	}
+	if !strings.Contains(out, "Refunded 25 JPY on sale s1.") {
+		t.Errorf("expected the yen amount echoed unscaled and labelled, got %q", out)
+	}
+}
+
+func TestRefund_CurrencyRequiresAmount(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Error("--currency without --amount is local flag misuse and must not reach the API")
+	})
+
+	cmd := testutil.Command(newRefundCmd(), testutil.Yes(true))
+	cmd.SetArgs([]string{"s1", "--currency", "jpy"})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "--currency requires --amount") {
+		t.Fatalf("expected --currency without --amount to be refused, got %v", err)
+	}
+}
+
 func TestRefund_PartialJSONOutputIsOnlyTheMutationEnvelope(t *testing.T) {
 	testutil.Setup(t, salesRefundHandler(t,
 		saleLookupResponder(t, "usd"),
