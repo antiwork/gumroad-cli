@@ -153,6 +153,79 @@ func TestRunRequestDecoded_RendersTypedResponse(t *testing.T) {
 	}
 }
 
+func TestFetchRequestDecoded_ReturnsDataWithoutRendering(t *testing.T) {
+	type userResponse struct {
+		User struct {
+			Email string `json:"email"`
+		} `json:"user"`
+	}
+
+	var gotPath string
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		testutil.JSON(t, w, map[string]any{
+			"user": map[string]any{"email": "fetched@example.com"},
+		})
+	})
+
+	// JSON output mode must not print the intermediate response: a chained
+	// command still owes its own output after this call.
+	out := testutil.CaptureStdout(func() {
+		resp, err := cmdutil.FetchRequestDecoded[userResponse](testutil.TestOptions(testutil.JSONOutput()), "Fetching user...", "GET", "/user", url.Values{})
+		if err != nil {
+			t.Fatalf("FetchRequestDecoded failed: %v", err)
+		}
+		if resp.User.Email != "fetched@example.com" {
+			t.Fatalf("got email %q, want fetched@example.com", resp.User.Email)
+		}
+	})
+	if gotPath != "/user" {
+		t.Fatalf("got path %q, want /user", gotPath)
+	}
+	if strings.TrimSpace(out) != "" {
+		t.Fatalf("expected no rendered output, got %q", out)
+	}
+}
+
+func TestFetchRequestDecoded_PropagatesRequestErrors(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		testutil.RawJSON(t, w, `{"success":false,"message":"The sale was not found."}`)
+	})
+
+	_, err := cmdutil.FetchRequestDecoded[map[string]any](testutil.TestOptions(), "Fetching sale...", "GET", "/sales/missing", url.Values{})
+	if err == nil {
+		t.Fatal("expected the lookup failure to propagate so the caller does not proceed on zero data")
+	}
+}
+
+func TestFetchRequestDecoded_RefusesDryRunForMutatingMethods(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Error("a dry run must not make a real PUT/POST/DELETE request")
+	})
+
+	_, err := cmdutil.FetchRequestDecoded[map[string]any](testutil.TestOptions(testutil.DryRun(true)), "Refunding...", "PUT", "/sales/s1/refund", url.Values{})
+	if err == nil {
+		t.Fatal("expected a refusal: there is no response to preview for a chained mutating request")
+	}
+}
+
+func TestFetchRequestDecoded_DryRunStillAllowsGET(t *testing.T) {
+	var reached bool
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		reached = true
+		testutil.JSON(t, w, map[string]any{"sale": map[string]any{"id": "s1"}})
+	})
+
+	_, err := cmdutil.FetchRequestDecoded[map[string]any](testutil.TestOptions(testutil.DryRun(true)), "Fetching sale...", "GET", "/sales/s1", url.Values{})
+	if err != nil {
+		t.Fatalf("GET lookups must still run under --dry-run so a chained mutating dry run can preview correctly, got: %v", err)
+	}
+	if !reached {
+		t.Fatal("expected the GET to reach the server")
+	}
+}
+
 func TestDecodeJSON_WrapsParseErrors(t *testing.T) {
 	type payload struct {
 		User struct {

@@ -66,7 +66,7 @@ Most responses are wrapped in `{"success": true, ...}` with resource-specific ke
 - `products content set` → mutation envelope with `.result`
 - `sales list` → `.sales[]`
 - `sales buyers` → `.buyers[]` (`email`, `name`, `purchase_count`, `last_purchase_date`, `utm_source`, `utm_medium`, `utm_campaign`, `utm_term`, `utm_content`)
-- `sales view` → `.sale`
+- `sales view` → `.sale` (includes `.currency`, the ISO code the sale is priced in — the same currency a refund amount is read in)
 - `sales export` → `.status`, `.recipient_email`
 - `sales summary` → `.gross_cents`, `.net_cents`, `.breakdown[]`
 - `emails list` → `.emails[]`, `emails view/create/send` → `.email`, `emails send-preview` → `.preview_url`, `emails delete` → `.message`
@@ -459,8 +459,14 @@ gumroad sales export --product <id> --json --no-input
 gumroad sales view <id> --json --no-input
 
 # Refund (destructive — needs --yes)
+# --amount is in the sale's OWN currency, so a partial refund fetches the sale
+# first to read that currency. That extra GET is why a yen-priced sale accepts
+# `--amount 25` as ¥25: without it, 25 would be scaled to ¥2500. A full refund
+# sends no amount and makes no lookup.
 gumroad sales refund <id> --yes --json --no-input
 gumroad sales refund <id> --amount 5.00 --yes --json --no-input
+# A sale whose currency cannot be read is refused rather than guessed:
+# re-run without --amount for a full refund.
 
 # Resend receipt
 gumroad sales resend-receipt <id> --json --no-input
