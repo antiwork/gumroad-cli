@@ -28,22 +28,31 @@ func (l refundSaleLookup) currency() string {
 }
 
 func newRefundCmd() *cobra.Command {
-	var amount string
+	var amount, currencyFlag string
 
 	cmd := &cobra.Command{
 		Use:   "refund <id>",
 		Short: "Refund a sale",
 		Long: `Refund a sale in full, or partially with --amount.
 
---amount is given in the sale's own currency, so the sale is looked up first to
-find out what that currency is. Without the lookup a value like 25 could mean
-either $25.00 or ¥25, and sending the wrong one refunds 100 times the intended
-amount on a yen-priced sale.`,
+--amount is given in the sale's own currency, so by default the sale is looked
+up first to find out what that currency is. Without the lookup a value like 25
+could mean either $25.00 or ¥25, and sending the wrong one refunds 100 times
+the intended amount on a yen-priced sale.
+
+The lookup needs the view_sales scope in addition to the scope that authorizes
+the refund itself. A token issued with only refund permission can skip the
+lookup by passing --currency, which is used as-is and trusted without a
+server round trip.`,
 		Example: `  gumroad sales refund A-m3CDDC5dlrSdKZp0RFhA==
-  gumroad sales refund A-m3CDDC5dlrSdKZp0RFhA== --amount 2.00`,
+  gumroad sales refund A-m3CDDC5dlrSdKZp0RFhA== --amount 2.00
+  gumroad sales refund A-m3CDDC5dlrSdKZp0RFhA== --amount 25 --currency jpy`,
 		Args: cmdutil.ExactArgs(1),
 		RunE: func(c *cobra.Command, args []string) error {
 			opts := cmdutil.OptionsFrom(c)
+			if c.Flags().Changed("currency") && !c.Flags().Changed("amount") {
+				return cmdutil.UsageErrorf(c, "--currency requires --amount")
+			}
 
 			var (
 				cents    int
@@ -59,13 +68,23 @@ amount on a yen-priced sale.`,
 					return cmdutil.UsageErrorf(c, "--amount must be greater than 0")
 				}
 
-				lookup, err := cmdutil.FetchRequestDecoded[refundSaleLookup](opts, "Looking up sale...", "GET", cmdutil.JoinPath("sales", args[0]), url.Values{})
-				if err != nil {
-					return err
-				}
-				currency = lookup.currency()
-				if currency == "" {
-					return cmdutil.InvalidInputErrorf("could not determine the currency of sale %s, so --amount cannot be scaled safely; re-run without --amount for a full refund", args[0])
+				if c.Flags().Changed("currency") {
+					currency = strings.TrimSpace(currencyFlag)
+					if currency == "" {
+						return cmdutil.UsageErrorf(c, "--currency cannot be empty")
+					}
+					if !cmdutil.IsSupportedCurrency(currency) {
+						return cmdutil.UsageErrorf(c, "%q is not a currency Gumroad supports", currency)
+					}
+				} else {
+					lookup, err := cmdutil.FetchRequestDecoded[refundSaleLookup](opts, "Looking up sale...", "GET", cmdutil.JoinPath("sales", args[0]), url.Values{})
+					if err != nil {
+						return err
+					}
+					currency = lookup.currency()
+					if currency == "" {
+						return cmdutil.InvalidInputErrorf("could not determine the currency of sale %s, so --amount cannot be scaled safely; re-run without --amount for a full refund, or pass --currency explicitly to skip the lookup", args[0])
+					}
 				}
 
 				parsed, err := cmdutil.ParseMoney("amount", amount, "amount", currency)
@@ -110,6 +129,7 @@ amount on a yen-priced sale.`,
 	}
 
 	cmd.Flags().StringVar(&amount, "amount", "", "Partial refund amount in the sale's currency (e.g. 5, 5.00)")
+	cmd.Flags().StringVar(&currencyFlag, "currency", "", "Sale's currency (e.g. usd, jpy); skips the sale lookup, for tokens without view_sales")
 
 	return cmd
 }

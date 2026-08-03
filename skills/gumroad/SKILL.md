@@ -462,11 +462,15 @@ gumroad sales view <id> --json --no-input
 # --amount is in the sale's OWN currency, so a partial refund fetches the sale
 # first to read that currency. That extra GET is why a yen-priced sale accepts
 # `--amount 25` as ¥25: without it, 25 would be scaled to ¥2500. A full refund
-# sends no amount and makes no lookup.
+# sends no amount and makes no lookup. If a token has refund permission but lacks
+# view_sales, pass --currency explicitly; the CLI then trusts that currency and
+# skips the lookup.
 gumroad sales refund <id> --yes --json --no-input
 gumroad sales refund <id> --amount 5.00 --yes --json --no-input
+gumroad sales refund <id> --amount 25 --currency jpy --yes --json --no-input
 # A sale whose currency cannot be read is refused rather than guessed:
-# re-run without --amount for a full refund.
+# re-run without --amount for a full refund, or pass --currency if you already
+# know the sale's listed currency.
 
 # Resend receipt
 gumroad sales resend-receipt <id> --json --no-input

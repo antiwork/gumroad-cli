@@ -164,3 +164,26 @@ func TestIsSingleUnitCurrency(t *testing.T) {
 		})
 	}
 }
+
+func TestIsSupportedCurrency(t *testing.T) {
+	tests := []struct {
+		currency string
+		want     bool
+	}{
+		{"usd", true},
+		{"USD", true},
+		{"jpy", true},
+		{"eur", true},
+		{"jpyy", false},
+		{"xyz", false},
+		{"", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.currency, func(t *testing.T) {
+			if got := IsSupportedCurrency(tt.currency); got != tt.want {
+				t.Fatalf("IsSupportedCurrency(%q) = %v, want %v", tt.currency, got, tt.want)
+			}
+		})
+	}
+}
