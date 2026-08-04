@@ -423,6 +423,21 @@ gumroad emails delete <id> --yes --json --no-input
 
 Use `--dry-run --json --no-input` to inspect create params without calling the API. Passing `--send` blasts the audience immediately; prefer the draft → `send-preview` URL → `send` workflow. `send-preview` emails a copy to the seller. Scheduled emails can only be created in the web UI; the CLI can list and view them (`--state scheduled`) but not create them.
 
+### workflows — Inspect email workflows
+
+```sh
+# List workflows with audience, state, and email step count.
+gumroad workflows list --json --no-input
+
+# View one workflow's email steps with per-step delay, sent, open, and click stats.
+gumroad workflows view <id> --json --no-input
+
+# Compare steps: pull subject and click rate for every step.
+gumroad workflows view <id> --json --jq '.workflow.emails[] | {subject, click_rate}' --no-input
+```
+
+Workflows are read-only in the CLI; create and edit them in the Gumroad dashboard. `view` returns steps ordered by delay, each with `delay` (`amount` + `unit`), `sent_count`, `open_count`, `open_rate`, `click_count`, `click_rate`. Rates are `null` for unsent steps. Plain output for `view` prints one row per email step.
+
 ### sales — Manage sales
 
 ```sh
