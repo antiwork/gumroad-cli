@@ -34,6 +34,10 @@ func newViewCmd() *cobra.Command {
 	}
 }
 
+// Steps render in response order. The server orders them by
+// delayed_delivery_time, a seconds value the API does not expose;
+// a client-side sort on the displayed delay units could only
+// approximate that order, so do not re-sort here.
 func renderWorkflowView(opts cmdutil.Options, item workflowRecord) error {
 	if opts.PlainOutput {
 		var rows [][]string
