@@ -7,40 +7,66 @@ import (
 	"github.com/antiwork/gumroad-cli/internal/api"
 )
 
-// UnknownMediaCommitError means the CLI cannot prove whether POST /media
-// committed. Callers must reconcile the media list before they retry.
-type UnknownMediaCommitError struct {
+type MediaUploadStage string
+
+const (
+	MediaUploadStageDirectUpload MediaUploadStage = "direct_upload"
+	MediaUploadStageCommit       MediaUploadStage = "commit"
+)
+
+// UnknownMediaUploadError means the CLI cannot prove whether an upload stage
+// completed. The signed blob ID and storage key identify the reserved blob.
+type UnknownMediaUploadError struct {
 	Cause        error
+	Stage        MediaUploadStage
 	SignedBlobID string
+	BlobKey      string
 	Name         string
 	Filename     string
 	FileSize     int64
 }
 
-func (e *UnknownMediaCommitError) Error() string {
-	return "media upload completion is unknown: " + e.Cause.Error()
+func (e *UnknownMediaUploadError) Error() string {
+	return fmt.Sprintf("media upload state is unknown after %s: %s", e.Stage, e.Cause)
 }
 
-func (e *UnknownMediaCommitError) Unwrap() error {
+func (e *UnknownMediaUploadError) Unwrap() error {
 	return e.Cause
 }
 
-func (e *UnknownMediaCommitError) RecoveryHint() string {
-	label := e.Name
-	if label == "" {
-		label = e.Filename
+func (e *UnknownMediaUploadError) RecoveryHint() string {
+	if e.Stage == MediaUploadStageCommit {
+		return fmt.Sprintf("Run `gumroad media list --json --no-input` and find the item whose URL contains storage key %q. If it exists, the upload completed. Do not retry automatically if it is absent because the first request can still finish. Keep the signed_blob_id and key for support.", e.BlobKey)
 	}
-	return fmt.Sprintf("Run `gumroad media list --json --no-input` and look for a file named %q with file_size %d before you retry. If it is absent, run the upload again.", label, e.FileSize)
+	return "Do not start a new upload. The direct upload result is unknown. Keep the signed_blob_id and key for support."
 }
 
-func mediaCommitError(err error, signedBlobID string, plan plannedMediaUpload, name string) error {
+func mediaDirectUploadError(err error, reservation directUploadResponse, plan plannedMediaUpload, name string) error {
+	var unknown *directUploadStateUnknownError
+	if !errors.As(err, &unknown) {
+		return err
+	}
+	return newUnknownMediaUploadError(err, MediaUploadStageDirectUpload, reservation, plan, name)
+}
+
+func mediaCommitError(err error, reservation directUploadResponse, plan plannedMediaUpload, name string) error {
 	var apiErr *api.APIError
 	if errors.As(err, &apiErr) && apiErr.StatusCode < 500 {
 		return err
 	}
-	return &UnknownMediaCommitError{
+	return newUnknownMediaUploadError(err, MediaUploadStageCommit, reservation, plan, name)
+}
+
+func mediaCommitResponseError(err error, reservation directUploadResponse, plan plannedMediaUpload, name string) error {
+	return newUnknownMediaUploadError(err, MediaUploadStageCommit, reservation, plan, name)
+}
+
+func newUnknownMediaUploadError(err error, stage MediaUploadStage, reservation directUploadResponse, plan plannedMediaUpload, name string) error {
+	return &UnknownMediaUploadError{
 		Cause:        err,
-		SignedBlobID: signedBlobID,
+		Stage:        stage,
+		SignedBlobID: reservation.SignedID,
+		BlobKey:      reservation.Key,
 		Name:         name,
 		Filename:     plan.Filename,
 		FileSize:     plan.Size,

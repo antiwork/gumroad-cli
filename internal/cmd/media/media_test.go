@@ -100,6 +100,7 @@ func (m *mediaServers) dispatch(t *testing.T) http.HandlerFunc {
 			m.mu.Unlock()
 			testutil.JSON(t, w, map[string]any{
 				"signed_id": "signed-1",
+				"key":       "abc123",
 				"direct_upload": map[string]any{
 					"url":     m.s3.URL + "/upload/1",
 					"headers": map[string]string{"Content-Type": "image/png"},
@@ -430,6 +431,23 @@ func TestMediaUpload_MissingUploadURL(t *testing.T) {
 	}
 }
 
+func TestMediaUpload_MissingStorageKey(t *testing.T) {
+	newMediaServers(t)
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{
+			"signed_id":     "signed-1",
+			"direct_upload": map[string]any{"url": "https://example.com/upload"},
+		})
+	})
+
+	cmd := testutil.Command(newUploadCmd())
+	cmd.SetArgs([]string{writePNGFixture(t)})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "storage key") {
+		t.Fatalf("err = %v, want storage key error", err)
+	}
+}
+
 func TestMediaUpload_S3FailureSurfacesBody(t *testing.T) {
 	var calls atomic.Int32
 	s3 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -448,6 +466,7 @@ func TestMediaUpload_S3FailureSurfacesBody(t *testing.T) {
 		}
 		testutil.JSON(t, w, map[string]any{
 			"signed_id":     "signed-1",
+			"key":           "abc123",
 			"direct_upload": map[string]any{"url": s3.URL + "/upload/1"},
 		})
 	})
@@ -534,6 +553,53 @@ func TestPutDirectUpload_TimesOutEachAttempt(t *testing.T) {
 		t.Fatalf("err = %v, want bounded retry failure", err)
 	}
 	if got := calls.Load(); got != directUploadMaxAttempts {
+		t.Fatalf("S3 calls = %d, want %d", got, directUploadMaxAttempts)
+	}
+}
+
+func TestMediaUpload_DirectStateUnknownCarriesRecovery(t *testing.T) {
+	var s3Calls atomic.Int32
+	s3 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		s3Calls.Add(1)
+		time.Sleep(200 * time.Millisecond)
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(s3.Close)
+	prevClient := s3HTTPClientForTesting
+	s3HTTPClientForTesting = s3.Client()
+	t.Cleanup(func() { s3HTTPClientForTesting = prevClient })
+	prevTimeout := directUploadAttemptTimeout
+	directUploadAttemptTimeout = 20 * time.Millisecond
+	t.Cleanup(func() { directUploadAttemptTimeout = prevTimeout })
+
+	mediaReached := false
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/media" {
+			mediaReached = true
+		}
+		testutil.JSON(t, w, map[string]any{
+			"signed_id": "signed-1",
+			"key":       "abc123",
+			"direct_upload": map[string]any{
+				"url": s3.URL + "/upload",
+			},
+		})
+	})
+
+	cmd := testutil.Command(newUploadCmd())
+	cmd.SetArgs([]string{writePNGFixture(t)})
+	err := cmd.Execute()
+	var unknown *UnknownMediaUploadError
+	if !errors.As(err, &unknown) {
+		t.Fatalf("err = %v, want UnknownMediaUploadError", err)
+	}
+	if unknown.Stage != MediaUploadStageDirectUpload || unknown.SignedBlobID != "signed-1" || unknown.BlobKey != "abc123" {
+		t.Fatalf("recovery = %#v", unknown)
+	}
+	if mediaReached {
+		t.Fatal("POST /media fired after an unknown direct upload result")
+	}
+	if got := s3Calls.Load(); got != directUploadMaxAttempts {
 		t.Fatalf("S3 calls = %d, want %d", got, directUploadMaxAttempts)
 	}
 }
@@ -626,11 +692,14 @@ func TestMediaUpload_FinalStateUnknownCarriesRecovery(t *testing.T) {
 	cmd := testutil.Command(newUploadCmd())
 	cmd.SetArgs([]string{writePNGFixture(t), "--name", "Store logo"})
 	err := cmd.Execute()
-	var unknown *UnknownMediaCommitError
+	var unknown *UnknownMediaUploadError
 	if !errors.As(err, &unknown) {
-		t.Fatalf("err = %v, want UnknownMediaCommitError", err)
+		t.Fatalf("err = %v, want UnknownMediaUploadError", err)
 	}
-	if unknown.SignedBlobID != "signed-1" || unknown.Name != "Store logo" || unknown.Filename != "logo.png" {
+	if unknown.Stage != MediaUploadStageCommit || unknown.SignedBlobID != "signed-1" || unknown.BlobKey != "abc123" {
+		t.Fatalf("recovery = %#v", unknown)
+	}
+	if unknown.Name != "Store logo" || unknown.Filename != "logo.png" {
 		t.Fatalf("recovery = %#v", unknown)
 	}
 	if unknown.FileSize != int64(len(pngBytes)) {
@@ -641,10 +710,50 @@ func TestMediaUpload_FinalStateUnknownCarriesRecovery(t *testing.T) {
 	}
 }
 
-func TestUnknownMediaCommitError_RecoveryHintUsesFilenameByDefault(t *testing.T) {
-	err := &UnknownMediaCommitError{Filename: "logo.png", FileSize: 1234}
+func TestMediaUpload_InvalidSuccessResponseIsUnknownInEveryOutputMode(t *testing.T) {
+	tests := []struct {
+		name     string
+		body     string
+		mutators []testutil.OptionsMutator
+	}{
+		{name: "human", body: `{"success":`},
+		{name: "plain", body: `{"success":true,"media":{"url":"https://public-files.gumroad.com/abc123.png"}}`, mutators: []testutil.OptionsMutator{testutil.PlainOutput()}},
+		{name: "json", body: `{"success":true,"media":{"id":"G_abc123"}}`, mutators: []testutil.OptionsMutator{testutil.JSONOutput()}},
+		{name: "jq", body: `{"success":true,"media":{}}`, mutators: []testutil.OptionsMutator{testutil.JQ(".media.url")}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := newMediaServers(t)
+			testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/media" {
+					testutil.RawJSON(t, w, tt.body)
+					return
+				}
+				srv.dispatch(t)(w, r)
+			})
+
+			var out bytes.Buffer
+			mutators := append([]testutil.OptionsMutator{}, tt.mutators...)
+			mutators = append(mutators, testutil.Stdout(&out))
+			cmd := testutil.Command(newUploadCmd(), mutators...)
+			cmd.SetArgs([]string{writePNGFixture(t)})
+			err := cmd.Execute()
+			var unknown *UnknownMediaUploadError
+			if !errors.As(err, &unknown) || unknown.Stage != MediaUploadStageCommit {
+				t.Fatalf("err = %v, want unknown commit state", err)
+			}
+			if strings.Contains(out.String(), `"success":true`) {
+				t.Fatalf("stdout includes the invalid response: %q", out.String())
+			}
+		})
+	}
+}
+
+func TestUnknownMediaUploadError_RecoveryHintUsesStorageKey(t *testing.T) {
+	err := &UnknownMediaUploadError{Stage: MediaUploadStageCommit, BlobKey: "abc123"}
 	hint := err.RecoveryHint()
-	if !strings.Contains(hint, `"logo.png"`) || !strings.Contains(hint, "1234") {
+	if !strings.Contains(hint, `"abc123"`) || !strings.Contains(hint, "Do not retry automatically") {
 		t.Fatalf("hint = %q", hint)
 	}
 }

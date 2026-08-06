@@ -29,6 +29,7 @@ var directUploadAttemptTimeout = 2 * time.Minute
 
 type directUploadResponse struct {
 	SignedID     string `json:"signed_id"`
+	Key          string `json:"key"`
 	DirectUpload struct {
 		URL     string            `json:"url"`
 		Headers map[string]string `json:"headers"`
@@ -42,6 +43,18 @@ type directUploadStatusError struct {
 
 type directUploadTransportError struct {
 	Cause error
+}
+
+type directUploadStateUnknownError struct {
+	Cause error
+}
+
+func (e *directUploadStateUnknownError) Error() string {
+	return "direct upload completion is unknown: " + e.Cause.Error()
+}
+
+func (e *directUploadStateUnknownError) Unwrap() error {
+	return e.Cause
 }
 
 func (e *directUploadTransportError) Error() string {
@@ -78,6 +91,9 @@ func reserveDirectUpload(client *api.Client, plan plannedMediaUpload) (directUpl
 	if resp.DirectUpload.URL == "" {
 		return directUploadResponse{}, fmt.Errorf("direct upload response did not include upload URL")
 	}
+	if resp.Key == "" {
+		return directUploadResponse{}, fmt.Errorf("direct upload response did not include storage key")
+	}
 	return resp, nil
 }
 
@@ -91,30 +107,41 @@ func putDirectUpload(opts cmdutil.Options, plan plannedMediaUpload, uploadURL st
 	}
 	client := directUploadHTTPClient()
 	var lastErr error
+	outcomeUnknown := false
 
 	for attempt := 0; attempt < directUploadMaxAttempts; attempt++ {
 		if err := ctx.Err(); err != nil {
-			return err
+			return directUploadResult(err, outcomeUnknown)
 		}
 		err := putDirectUploadAttempt(ctx, client, plan, uploadURL, headers)
 		if err == nil {
 			return nil
 		}
+		if isRetryableDirectUploadError(err) {
+			outcomeUnknown = true
+		}
 		if err := ctx.Err(); err != nil {
-			return err
+			return directUploadResult(err, outcomeUnknown)
 		}
 		if !isRetryableDirectUploadError(err) {
-			return err
+			return directUploadResult(err, outcomeUnknown)
 		}
 		lastErr = err
 		if attempt+1 < directUploadMaxAttempts {
 			if err := waitForDirectUploadRetry(ctx, attempt); err != nil {
-				return err
+				return directUploadResult(err, outcomeUnknown)
 			}
 		}
 	}
 
-	return fmt.Errorf("direct upload failed after %d attempts: %w", directUploadMaxAttempts, lastErr)
+	return directUploadResult(fmt.Errorf("direct upload failed after %d attempts: %w", directUploadMaxAttempts, lastErr), outcomeUnknown)
+}
+
+func directUploadResult(err error, outcomeUnknown bool) error {
+	if outcomeUnknown {
+		return &directUploadStateUnknownError{Cause: err}
+	}
+	return err
 }
 
 func directUploadHTTPClient() *http.Client {

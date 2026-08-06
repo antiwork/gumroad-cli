@@ -378,9 +378,11 @@ func TestClassifyCommandError_UploadUnknownState_CarriesRecovery(t *testing.T) {
 }
 
 func TestClassifyCommandError_MediaCommitStateUnknownCarriesRecovery(t *testing.T) {
-	state := &media.UnknownMediaCommitError{
+	state := &media.UnknownMediaUploadError{
 		Cause:        &api.APIError{StatusCode: 502, Message: "upstream failed"},
+		Stage:        media.MediaUploadStageCommit,
 		SignedBlobID: "signed-1",
+		BlobKey:      "abc123",
 		Name:         "Store logo",
 		Filename:     "logo.png",
 		FileSize:     1234,
@@ -392,7 +394,10 @@ func TestClassifyCommandError_MediaCommitStateUnknownCarriesRecovery(t *testing.
 	if detail.Recovery == nil {
 		t.Fatal("recovery is nil")
 	}
-	if detail.Recovery.SignedBlobID != "signed-1" || detail.Recovery.MediaName != "Store logo" {
+	if detail.Recovery.SignedBlobID != "signed-1" || detail.Recovery.Key != "abc123" {
+		t.Fatalf("recovery = %+v", detail.Recovery)
+	}
+	if detail.Recovery.Stage != "commit" || detail.Recovery.MediaName != "Store logo" {
 		t.Fatalf("recovery = %+v", detail.Recovery)
 	}
 	if detail.Recovery.Filename != "logo.png" || detail.Recovery.FileSize != 1234 {
@@ -400,6 +405,22 @@ func TestClassifyCommandError_MediaCommitStateUnknownCarriesRecovery(t *testing.
 	}
 	if !strings.Contains(detail.Hint, "gumroad media list") {
 		t.Fatalf("hint = %q", detail.Hint)
+	}
+}
+
+func TestPrintUploadRecovery_MediaStateUnknown(t *testing.T) {
+	state := &media.UnknownMediaUploadError{
+		Cause:        errors.New("connection lost"),
+		Stage:        media.MediaUploadStageDirectUpload,
+		SignedBlobID: "signed-1",
+		BlobKey:      "abc123",
+	}
+	var buf bytes.Buffer
+	printUploadRecovery(&buf, output.NewStyler(false), state)
+	for _, want := range []string{"stage:          direct_upload", "signed_blob_id: signed-1", "key:            abc123"} {
+		if !strings.Contains(buf.String(), want) {
+			t.Fatalf("recovery output missing %q: %q", want, buf.String())
+		}
 	}
 }
 

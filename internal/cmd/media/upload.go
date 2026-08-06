@@ -182,7 +182,7 @@ func runMediaUpload(opts cmdutil.Options, plan plannedMediaUpload, name string) 
 		sp.SetMessage("Uploading " + plan.Filename + " (" + uploadui.HumanBytes(plan.Size) + ")...")
 	}
 	if err := putDirectUpload(opts, plan, signedID.DirectUpload.URL, signedID.DirectUpload.Headers); err != nil {
-		return err
+		return mediaDirectUploadError(err, signedID, plan, name)
 	}
 
 	params := url.Values{}
@@ -195,18 +195,18 @@ func runMediaUpload(opts cmdutil.Options, plan plannedMediaUpload, name string) 
 	}
 	data, err := client.Post("/media", params)
 	if err != nil {
-		return mediaCommitError(err, signedID.SignedID, plan, name)
+		return mediaCommitError(err, signedID, plan, name)
 	}
 	if sp != nil {
 		sp.Stop()
 	}
+	resp, err := validateMediaUploadResponse(data)
+	if err != nil {
+		return mediaCommitResponseError(err, signedID, plan, name)
+	}
 
 	if opts.UsesJSONOutput() {
 		return cmdutil.PrintJSONResponse(opts, data)
-	}
-	resp, err := cmdutil.DecodeJSON[mediaUploadResponse](data)
-	if err != nil {
-		return err
 	}
 	if opts.PlainOutput {
 		return output.PrintPlain(opts.Out(), [][]string{{resp.Media.ID, resp.Media.URL}})
@@ -222,4 +222,18 @@ func runMediaUpload(opts cmdutil.Options, plan plannedMediaUpload, name string) 
 		return err
 	}
 	return output.Writeln(opts.Out(), "Embed this URL in your page HTML, then publish with `gumroad pages push`.")
+}
+
+func validateMediaUploadResponse(data []byte) (mediaUploadResponse, error) {
+	resp, err := cmdutil.DecodeJSON[mediaUploadResponse](data)
+	if err != nil {
+		return mediaUploadResponse{}, err
+	}
+	if resp.Media.ID == "" {
+		return mediaUploadResponse{}, fmt.Errorf("media response did not include media.id")
+	}
+	if resp.Media.URL == "" {
+		return mediaUploadResponse{}, fmt.Errorf("media response did not include media.url")
+	}
+	return resp, nil
 }

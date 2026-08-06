@@ -45,6 +45,7 @@ type commandRecoveryInfo struct {
 	Key            string                `json:"key,omitempty"`
 	CompletedParts []uploadCompletedPart `json:"completed_parts,omitempty"`
 	SignedBlobID   string                `json:"signed_blob_id,omitempty"`
+	Stage          string                `json:"stage,omitempty"`
 	MediaName      string                `json:"media_name,omitempty"`
 	Filename       string                `json:"filename,omitempty"`
 	FileSize       int64                 `json:"file_size,omitempty"`
@@ -139,7 +140,7 @@ func classifyPrimaryCause(err error) commandErrorDetail {
 	var usageErr *cmdutil.UsageError
 	var apiErr *api.APIError
 	var unknownState *upload.UnknownStateError
-	var unknownMediaCommit *media.UnknownMediaCommitError
+	var unknownMediaUpload *media.UnknownMediaUploadError
 	var cleanupFailed *upload.CleanupFailedError
 	var rejected *files.CompleteRejectedError
 	switch {
@@ -149,17 +150,19 @@ func classifyPrimaryCause(err error) commandErrorDetail {
 		return invalidInputErrorDetail(usageErr.Error())
 	case errors.As(err, &unknownState):
 		return uploadIncompleteDetail(err, unknownState)
-	case errors.As(err, &unknownMediaCommit):
+	case errors.As(err, &unknownMediaUpload):
 		return commandErrorDetail{
 			Type:    "upload_error",
-			Code:    "media_commit_state_unknown",
-			Message: unknownMediaCommit.Error(),
-			Hint:    unknownMediaCommit.RecoveryHint(),
+			Code:    "media_" + string(unknownMediaUpload.Stage) + "_state_unknown",
+			Message: unknownMediaUpload.Error(),
+			Hint:    unknownMediaUpload.RecoveryHint(),
 			Recovery: &commandRecoveryInfo{
-				SignedBlobID: unknownMediaCommit.SignedBlobID,
-				MediaName:    unknownMediaCommit.Name,
-				Filename:     unknownMediaCommit.Filename,
-				FileSize:     unknownMediaCommit.FileSize,
+				SignedBlobID: unknownMediaUpload.SignedBlobID,
+				Stage:        string(unknownMediaUpload.Stage),
+				Key:          unknownMediaUpload.BlobKey,
+				MediaName:    unknownMediaUpload.Name,
+				Filename:     unknownMediaUpload.Filename,
+				FileSize:     unknownMediaUpload.FileSize,
 			},
 		}
 	// ErrPresignExpired is a sentinel distinct from UnknownStateError: the
@@ -324,9 +327,17 @@ func uploadIncompleteDetail(err error, state *upload.UnknownStateError) commandE
 	}
 }
 
-// printUploadRecovery emits any recovery handles carried by multipart-upload
-// errors so a human operator can reconcile state without re-uploading blindly.
+// printUploadRecovery emits recovery handles for uploads with unknown state.
 func printUploadRecovery(w io.Writer, style output.Styler, err error) {
+	var unknownMedia *media.UnknownMediaUploadError
+	if errors.As(err, &unknownMedia) {
+		fmt.Fprintln(w, style.Dim("Recovery:"))
+		fmt.Fprintln(w, style.Dim("  stage:          "+string(unknownMedia.Stage)))
+		fmt.Fprintln(w, style.Dim("  signed_blob_id: "+unknownMedia.SignedBlobID))
+		fmt.Fprintln(w, style.Dim("  key:            "+unknownMedia.BlobKey))
+		return
+	}
+
 	var state *upload.UnknownStateError
 	var cleanup *upload.CleanupFailedError
 	var rejected *files.CompleteRejectedError
