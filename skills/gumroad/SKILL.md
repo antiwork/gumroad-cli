@@ -413,7 +413,7 @@ gumroad media list --json --no-input
 gumroad media delete G_abc123 --yes --json --no-input
 ```
 
-Only images are accepted (JPEG, PNG, GIF, WebP; SVG is rejected), up to 10 MB, and each upload is content-moderated before it is hosted — a flagged image fails with the moderation message. Deleting a file breaks any page still embedding its URL. Requires the `edit_profile` scope (`media list` needs `view_profile`); tokens minted before the CLI requested those scopes get a 403 telling them to re-run `gumroad auth login`.
+Only images are accepted (JPEG, PNG, GIF, WebP, BMP, ICO; SVG is rejected), up to 10 MB, and each upload is content-moderated before it is hosted — a flagged image fails with the moderation message. Deleting a file breaks any page still embedding its URL. Requires the `edit_profile` scope (`media list` needs `view_profile`); tokens minted before the CLI requested those scopes get a 403 telling them to re-run `gumroad auth login`.
 
 ### emails — Manage audience emails
 

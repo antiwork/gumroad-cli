@@ -65,8 +65,9 @@ The returned URL is served from Gumroad's public CDN — the only host that
 custom product landing pages and profile pages are allowed to display images
 from — so it is safe to embed in page HTML pushed with ` + "`gumroad pages push`" + `.
 
-Only images are accepted (JPEG, PNG, GIF, WebP; not SVG), up to 10 MB. The
-image is content-moderated during upload and rejected if flagged.`,
+Only images are accepted (JPEG, PNG, GIF, WebP, BMP, or ICO — matching the
+server, which takes any image format except SVG), up to 10 MB. The image is
+content-moderated during upload and rejected if flagged.`,
 		Args: cmdutil.ExactArgs(1),
 		Example: `  gumroad media upload ./logo.png
   gumroad media upload ./logo.png --name "Store logo"
@@ -147,10 +148,10 @@ func detectMediaImageContentType(path string, file *os.File) (string, error) {
 
 	detected := strings.ToLower(strings.TrimSpace(strings.Split(http.DetectContentType(sample[:n]), ";")[0]))
 	if detected == "image/svg+xml" || strings.HasSuffix(strings.ToLower(filepath.Ext(path)), ".svg") {
-		return "", cmdutil.InvalidInputErrorf("SVG images are not supported in the media library; use JPEG, PNG, GIF, or WebP")
+		return "", cmdutil.InvalidInputErrorf("SVG images are not supported in the media library; use JPEG, PNG, GIF, WebP, BMP, or ICO")
 	}
 	if !strings.HasPrefix(detected, "image/") {
-		return "", cmdutil.InvalidInputErrorf("%s is not an image; the media library only accepts JPEG, PNG, GIF, or WebP images", path)
+		return "", cmdutil.InvalidInputErrorf("%s is not an image; the media library accepts JPEG, PNG, GIF, WebP, BMP, or ICO images", path)
 	}
 	return detected, nil
 }

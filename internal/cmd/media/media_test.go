@@ -642,3 +642,26 @@ func TestMediaUpload_JPEGAccepted(t *testing.T) {
 		t.Fatalf("content_type = %q, want image/jpeg", srv.directUploadForm["content_type"])
 	}
 }
+
+func TestMediaUpload_BMPAccepted(t *testing.T) {
+	srv := newMediaServers(t)
+	testutil.Setup(t, srv.dispatch(t))
+
+	// BMP magic bytes; the server's media pipeline accepts any image type
+	// except SVG, so the CLI must not be stricter than it.
+	bmp := append([]byte("BM"), bytes.Repeat([]byte{0}, 32)...)
+	path := filepath.Join(t.TempDir(), "chart.bmp")
+	if err := os.WriteFile(path, bmp, 0600); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+	cmd := testutil.Command(newUploadCmd())
+	cmd.SetArgs([]string{path})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	srv.mu.Lock()
+	defer srv.mu.Unlock()
+	if srv.directUploadForm["content_type"] != "image/bmp" {
+		t.Fatalf("content_type = %q, want image/bmp", srv.directUploadForm["content_type"])
+	}
+}
