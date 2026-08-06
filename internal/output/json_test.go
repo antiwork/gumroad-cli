@@ -102,6 +102,17 @@ func TestPrintJSON_InvalidJSON_Errors(t *testing.T) {
 	}
 }
 
+func TestValidateJQExpression(t *testing.T) {
+	for _, expr := range []string{"", ".media.url"} {
+		if err := ValidateJQExpression(expr); err != nil {
+			t.Fatalf("ValidateJQExpression(%q): %v", expr, err)
+		}
+	}
+	if err := ValidateJQExpression(".["); err == nil {
+		t.Fatal("invalid jq expression returned nil")
+	}
+}
+
 func TestFilterJQ_InvalidInputJSON(t *testing.T) {
 	var buf bytes.Buffer
 	data := json.RawMessage(`{not json}`)

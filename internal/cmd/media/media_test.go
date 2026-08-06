@@ -119,7 +119,7 @@ func (m *mediaServers) dispatch(t *testing.T) http.HandlerFunc {
 			testutil.JSON(t, w, map[string]any{
 				"media": map[string]any{
 					"id":        "G_abc123",
-					"name":      "logo.png",
+					"name":      "logo",
 					"url":       "https://public-files.gumroad.com/abc123.png",
 					"file_size": len(pngBytes),
 				},
@@ -226,6 +226,40 @@ func TestMediaUpload_JSONOutput(t *testing.T) {
 	}
 	if decoded.Media.URL != "https://public-files.gumroad.com/abc123.png" {
 		t.Fatalf("media.url = %q", decoded.Media.URL)
+	}
+}
+
+func TestMediaUpload_InvalidJQFailsBeforeRequest(t *testing.T) {
+	srv := newMediaServers(t)
+	testutil.Setup(t, srv.dispatch(t))
+
+	cmd := testutil.Command(newUploadCmd(), testutil.JQ(".["))
+	cmd.SetArgs([]string{writePNGFixture(t)})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "invalid jq expression") {
+		t.Fatalf("err = %v, want invalid jq expression", err)
+	}
+	if srv.railsReached.Load() || srv.s3Calls.Load() != 0 {
+		t.Fatal("invalid jq expression caused an upload request")
+	}
+}
+
+func TestMediaUpload_JQRuntimeErrorPreservesCommittedMedia(t *testing.T) {
+	srv := newMediaServers(t)
+	testutil.Setup(t, srv.dispatch(t))
+
+	cmd := testutil.Command(newUploadCmd(), testutil.JQ(".media.url | tonumber"))
+	cmd.SetArgs([]string{writePNGFixture(t)})
+	err := cmd.Execute()
+	var committed *CommittedMediaOutputError
+	if !errors.As(err, &committed) {
+		t.Fatalf("err = %v, want CommittedMediaOutputError", err)
+	}
+	if committed.MediaID != "G_abc123" || committed.MediaURL != "https://public-files.gumroad.com/abc123.png" {
+		t.Fatalf("committed media = %#v", committed)
+	}
+	if !strings.Contains(committed.RecoveryHint(), "Do not retry") {
+		t.Fatalf("hint = %q", committed.RecoveryHint())
 	}
 }
 
@@ -814,12 +848,16 @@ func TestMediaUpload_DryRunHumanOutput(t *testing.T) {
 }
 
 func TestMediaUpload_HelpStatesLocalFormatLimit(t *testing.T) {
-	help := newUploadCmd().Long
+	cmd := newUploadCmd()
+	help := cmd.Long
 	if strings.Contains(help, "any image format except SVG") {
 		t.Fatalf("help overstates format support: %q", help)
 	}
 	if !strings.Contains(help, "formats it cannot identify locally") {
 		t.Fatalf("help omits the local format limit: %q", help)
+	}
+	if got := cmd.Flags().Lookup("name").Usage; !strings.Contains(got, "without its extension") {
+		t.Fatalf("name help = %q", got)
 	}
 }
 

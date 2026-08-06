@@ -62,6 +62,9 @@ image again and runs content moderation before it hosts the file.`,
   gumroad media upload ./logo.png --json --jq '.media.url'`,
 		RunE: func(c *cobra.Command, args []string) error {
 			opts := cmdutil.OptionsFrom(c)
+			if err := output.ValidateJQExpression(opts.JQExpr); err != nil {
+				return err
+			}
 
 			plan, err := describeMediaUpload(args[0])
 			if err != nil {
@@ -75,7 +78,7 @@ image again and runs content moderation before it hosts the file.`,
 			return runMediaUpload(opts, plan, name)
 		},
 	}
-	c.Flags().StringVar(&name, "name", "", "Display name for the file (defaults to the filename)")
+	c.Flags().StringVar(&name, "name", "", "Display name for the file (defaults to the filename without its extension)")
 	return c
 }
 
@@ -205,6 +208,13 @@ func runMediaUpload(opts cmdutil.Options, plan plannedMediaUpload, name string) 
 		return mediaCommitResponseError(err, signedID, plan, name)
 	}
 
+	if err := renderMediaUpload(opts, data, resp, plan); err != nil {
+		return mediaOutputError(err, resp.Media)
+	}
+	return nil
+}
+
+func renderMediaUpload(opts cmdutil.Options, data []byte, resp mediaUploadResponse, plan plannedMediaUpload) error {
 	if opts.UsesJSONOutput() {
 		return cmdutil.PrintJSONResponse(opts, data)
 	}

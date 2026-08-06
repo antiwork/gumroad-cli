@@ -26,6 +26,24 @@ type UnknownMediaUploadError struct {
 	FileSize     int64
 }
 
+type CommittedMediaOutputError struct {
+	Cause    error
+	MediaID  string
+	MediaURL string
+}
+
+func (e *CommittedMediaOutputError) Error() string {
+	return fmt.Sprintf("media upload completed as %s, but output failed: %s", e.MediaID, e.Cause)
+}
+
+func (e *CommittedMediaOutputError) Unwrap() error {
+	return e.Cause
+}
+
+func (e *CommittedMediaOutputError) RecoveryHint() string {
+	return fmt.Sprintf("The upload completed. Do not retry it. The media ID is %s and the URL is %s.", e.MediaID, e.MediaURL)
+}
+
 func (e *UnknownMediaUploadError) Error() string {
 	return fmt.Sprintf("media upload state is unknown after %s: %s", e.Stage, e.Cause)
 }
@@ -59,6 +77,10 @@ func mediaCommitError(err error, reservation directUploadResponse, plan plannedM
 
 func mediaCommitResponseError(err error, reservation directUploadResponse, plan plannedMediaUpload, name string) error {
 	return newUnknownMediaUploadError(err, MediaUploadStageCommit, reservation, plan, name)
+}
+
+func mediaOutputError(err error, media mediaItem) error {
+	return &CommittedMediaOutputError{Cause: err, MediaID: media.ID, MediaURL: media.URL}
 }
 
 func newUnknownMediaUploadError(err error, stage MediaUploadStage, reservation directUploadResponse, plan plannedMediaUpload, name string) error {

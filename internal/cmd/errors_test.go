@@ -424,6 +424,32 @@ func TestPrintUploadRecovery_MediaStateUnknown(t *testing.T) {
 	}
 }
 
+func TestClassifyCommandError_CommittedMediaOutputFailure(t *testing.T) {
+	state := &media.CommittedMediaOutputError{
+		Cause:    errors.New("invalid jq result"),
+		MediaID:  "G_abc123",
+		MediaURL: "https://public-files.gumroad.com/abc123.png",
+	}
+	detail := classifyCommandError(state)
+	if detail.Type != "output_error" || detail.Code != "media_output_failed" {
+		t.Fatalf("detail = %+v", detail)
+	}
+	if detail.Recovery == nil || detail.Recovery.MediaID != state.MediaID || detail.Recovery.MediaURL != state.MediaURL {
+		t.Fatalf("recovery = %+v", detail.Recovery)
+	}
+	if !strings.Contains(detail.Hint, "Do not retry") {
+		t.Fatalf("hint = %q", detail.Hint)
+	}
+
+	var buf bytes.Buffer
+	printUploadRecovery(&buf, output.NewStyler(false), state)
+	for _, want := range []string{state.MediaID, state.MediaURL} {
+		if !strings.Contains(buf.String(), want) {
+			t.Fatalf("recovery output missing %q: %q", want, buf.String())
+		}
+	}
+}
+
 func TestClassifyCommandError_UploadCleanupFailed_CarriesOrphanHandles(t *testing.T) {
 	cleanup := &upload.CleanupFailedError{
 		UploadID: "up-2",

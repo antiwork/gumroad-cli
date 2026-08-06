@@ -31,6 +31,14 @@ func PrintJSON(w io.Writer, data json.RawMessage, jqExpr string) error {
 	return err
 }
 
+func ValidateJQExpression(expr string) error {
+	if expr == "" {
+		return nil
+	}
+	_, err := parseJQ(expr)
+	return err
+}
+
 func StreamJSONArrayEnvelope(w io.Writer, key string, writeItems func(func(any) error) error) error {
 	if _, err := fmt.Fprintln(w, "{"); err != nil {
 		return err

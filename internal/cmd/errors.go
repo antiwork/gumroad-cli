@@ -49,6 +49,8 @@ type commandRecoveryInfo struct {
 	MediaName      string                `json:"media_name,omitempty"`
 	Filename       string                `json:"filename,omitempty"`
 	FileSize       int64                 `json:"file_size,omitempty"`
+	MediaID        string                `json:"media_id,omitempty"`
+	MediaURL       string                `json:"media_url,omitempty"`
 }
 
 type uploadCompletedPart struct {
@@ -141,6 +143,7 @@ func classifyPrimaryCause(err error) commandErrorDetail {
 	var apiErr *api.APIError
 	var unknownState *upload.UnknownStateError
 	var unknownMediaUpload *media.UnknownMediaUploadError
+	var committedMediaOutput *media.CommittedMediaOutputError
 	var cleanupFailed *upload.CleanupFailedError
 	var rejected *files.CompleteRejectedError
 	switch {
@@ -163,6 +166,17 @@ func classifyPrimaryCause(err error) commandErrorDetail {
 				MediaName:    unknownMediaUpload.Name,
 				Filename:     unknownMediaUpload.Filename,
 				FileSize:     unknownMediaUpload.FileSize,
+			},
+		}
+	case errors.As(err, &committedMediaOutput):
+		return commandErrorDetail{
+			Type:    "output_error",
+			Code:    "media_output_failed",
+			Message: committedMediaOutput.Error(),
+			Hint:    committedMediaOutput.RecoveryHint(),
+			Recovery: &commandRecoveryInfo{
+				MediaID:  committedMediaOutput.MediaID,
+				MediaURL: committedMediaOutput.MediaURL,
 			},
 		}
 	// ErrPresignExpired is a sentinel distinct from UnknownStateError: the
@@ -329,6 +343,14 @@ func uploadIncompleteDetail(err error, state *upload.UnknownStateError) commandE
 
 // printUploadRecovery emits recovery handles for uploads with unknown state.
 func printUploadRecovery(w io.Writer, style output.Styler, err error) {
+	var committedMedia *media.CommittedMediaOutputError
+	if errors.As(err, &committedMedia) {
+		fmt.Fprintln(w, style.Dim("Recovery:"))
+		fmt.Fprintln(w, style.Dim("  media_id:  "+committedMedia.MediaID))
+		fmt.Fprintln(w, style.Dim("  media_url: "+committedMedia.MediaURL))
+		return
+	}
+
 	var unknownMedia *media.UnknownMediaUploadError
 	if errors.As(err, &unknownMedia) {
 		fmt.Fprintln(w, style.Dim("Recovery:"))
