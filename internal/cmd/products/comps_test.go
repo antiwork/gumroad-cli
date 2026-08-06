@@ -81,3 +81,11 @@ func TestComps_RequiresCategoryOrQuery(t *testing.T) {
 		t.Fatalf("expected a missing-flag error, got %v", err)
 	}
 }
+
+func TestComps_RejectsWhitespaceOnlyFilters(t *testing.T) {
+	cmd := testutil.Command(newCompsCmd())
+	cmd.SetArgs([]string{"--category", "   ", "--query", "	"})
+	if err := cmd.Execute(); err == nil || !strings.Contains(err.Error(), "--category or --query") {
+		t.Fatalf("expected a missing-flag error for whitespace-only filters, got %v", err)
+	}
+}

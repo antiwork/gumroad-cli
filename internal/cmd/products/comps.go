@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+	"strings"
 
 	"github.com/antiwork/gumroad-cli/internal/cmdutil"
 	"github.com/antiwork/gumroad-cli/internal/output"
@@ -42,12 +43,14 @@ func newCompsCmd() *cobra.Command {
 		Short: "See what similar products charge",
 		Long: "Report the price distribution of comparable public products on Gumroad, " +
 			"so a new product can be priced against real marketplace numbers. " +
-			"Find category paths with  gumroad products categories.",
+			"Find category paths with gumroad products categories.",
 		Args: cmdutil.ExactArgs(0),
 		Example: `  gumroad products comps --category design/ui-and-web/figma
   gumroad products comps --category music-and-sound-design --query "whoosh sfx"
   gumroad products comps --query "notion template" --json --jq '.comps.price_cents'`,
 		RunE: func(c *cobra.Command, args []string) error {
+			category = strings.TrimSpace(category)
+			query = strings.TrimSpace(query)
 			if category == "" && query == "" {
 				return fmt.Errorf("at least one of --category or --query is required")
 			}
