@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/antiwork/gumroad-cli/internal/api"
+	"github.com/antiwork/gumroad-cli/internal/cmd/media"
 	"github.com/antiwork/gumroad-cli/internal/cmdutil"
 	"github.com/antiwork/gumroad-cli/internal/config"
 	"github.com/antiwork/gumroad-cli/internal/output"
@@ -634,8 +635,32 @@ func TestExitCodeForCommandError_StructuredOutputWriteFailureFallsBackToHumanErr
 	if code := exitCodeForCommandError(cmd, errors.New("boom")); code != 1 {
 		t.Fatalf("got exit code %d, want 1", code)
 	}
-	if !strings.Contains(stderr.String(), "Error: write failed") {
+	if !strings.Contains(stderr.String(), "Error: boom") || !strings.Contains(stderr.String(), "Structured error output failed: write failed") {
 		t.Fatalf("expected fallback human error, got %q", stderr.String())
+	}
+}
+
+func TestExitCodeForCommandError_StructuredWriteFailureKeepsCommittedMediaRecovery(t *testing.T) {
+	cmd := stubCommand(nil)
+	opts := cmdutil.DefaultOptions()
+	opts.JSONOutput = true
+	cmd.SetContext(cmdutil.WithOptions(context.Background(), opts))
+	cmd.SetOut(failingWriter{err: errors.New("disk full")})
+
+	var stderr bytes.Buffer
+	cmd.SetErr(&stderr)
+	err := &media.CommittedMediaOutputError{
+		Cause:    errors.New("output failed"),
+		MediaID:  "G_abc123",
+		MediaURL: "https://public-files.gumroad.com/abc123.png",
+	}
+	if code := exitCodeForCommandError(cmd, err); code != 1 {
+		t.Fatalf("got exit code %d, want 1", code)
+	}
+	for _, want := range []string{"G_abc123", "https://public-files.gumroad.com/abc123.png", "Structured error output failed: disk full"} {
+		if !strings.Contains(stderr.String(), want) {
+			t.Fatalf("stderr missing %q: %q", want, stderr.String())
+		}
 	}
 }
 

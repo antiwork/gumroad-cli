@@ -12,6 +12,7 @@ import (
 	"github.com/antiwork/gumroad-cli/internal/adminconfig"
 	"github.com/antiwork/gumroad-cli/internal/api"
 	"github.com/antiwork/gumroad-cli/internal/cmd/files"
+	"github.com/antiwork/gumroad-cli/internal/cmd/media"
 	"github.com/antiwork/gumroad-cli/internal/cmdutil"
 	"github.com/antiwork/gumroad-cli/internal/config"
 	"github.com/antiwork/gumroad-cli/internal/output"
@@ -27,24 +28,29 @@ type commandErrorEnvelope struct {
 }
 
 type commandErrorDetail struct {
-	Type       string              `json:"type"`
-	Code       string              `json:"code,omitempty"`
-	Message    string              `json:"message"`
-	Hint       string              `json:"hint,omitempty"`
-	StatusCode int                 `json:"status_code,omitempty"`
-	Recovery   *uploadRecoveryInfo `json:"recovery,omitempty"`
+	Type       string               `json:"type"`
+	Code       string               `json:"code,omitempty"`
+	Message    string               `json:"message"`
+	Hint       string               `json:"hint,omitempty"`
+	StatusCode int                  `json:"status_code,omitempty"`
+	Recovery   *commandRecoveryInfo `json:"recovery,omitempty"`
 }
 
-// uploadRecoveryInfo carries the handles a caller needs to reconcile an
-// ambiguous multipart upload: whether the file committed (file_url), the
-// identifiers needed to retry /files/complete or /files/abort (upload_id, key),
-// and the parts already successfully PUT to S3 (so the caller doesn't re-upload
-// bytes on retry).
-type uploadRecoveryInfo struct {
+// commandRecoveryInfo carries handles that a caller needs to reconcile an
+// upload with an unknown result. Multipart file uploads use the S3 fields.
+// Public media uploads use the signed blob and file identity fields.
+type commandRecoveryInfo struct {
 	FileURL        string                `json:"file_url,omitempty"`
 	UploadID       string                `json:"upload_id,omitempty"`
 	Key            string                `json:"key,omitempty"`
 	CompletedParts []uploadCompletedPart `json:"completed_parts,omitempty"`
+	SignedBlobID   string                `json:"signed_blob_id,omitempty"`
+	Stage          string                `json:"stage,omitempty"`
+	MediaName      string                `json:"media_name,omitempty"`
+	Filename       string                `json:"filename,omitempty"`
+	FileSize       int64                 `json:"file_size,omitempty"`
+	MediaID        string                `json:"media_id,omitempty"`
+	MediaURL       string                `json:"media_url,omitempty"`
 }
 
 type uploadCompletedPart struct {
@@ -136,6 +142,10 @@ func classifyPrimaryCause(err error) commandErrorDetail {
 	var usageErr *cmdutil.UsageError
 	var apiErr *api.APIError
 	var unknownState *upload.UnknownStateError
+	var unknownMediaUpload *media.UnknownMediaUploadError
+	var committedMediaOutput *media.CommittedMediaOutputError
+	var completedMediaDelete *media.CompletedMediaDeleteOutputError
+	var unknownMediaDelete *media.UnknownMediaDeleteError
 	var cleanupFailed *upload.CleanupFailedError
 	var rejected *files.CompleteRejectedError
 	switch {
@@ -145,6 +155,54 @@ func classifyPrimaryCause(err error) commandErrorDetail {
 		return invalidInputErrorDetail(usageErr.Error())
 	case errors.As(err, &unknownState):
 		return uploadIncompleteDetail(err, unknownState)
+	case errors.As(err, &unknownMediaUpload):
+		return commandErrorDetail{
+			Type:    "upload_error",
+			Code:    "media_" + string(unknownMediaUpload.Stage) + "_state_unknown",
+			Message: unknownMediaUpload.Error(),
+			Hint:    unknownMediaUpload.RecoveryHint(),
+			Recovery: &commandRecoveryInfo{
+				SignedBlobID: unknownMediaUpload.SignedBlobID,
+				Stage:        string(unknownMediaUpload.Stage),
+				Key:          unknownMediaUpload.BlobKey,
+				MediaName:    unknownMediaUpload.Name,
+				Filename:     unknownMediaUpload.Filename,
+				FileSize:     unknownMediaUpload.FileSize,
+			},
+		}
+	case errors.As(err, &committedMediaOutput):
+		return commandErrorDetail{
+			Type:    "output_error",
+			Code:    "media_output_failed",
+			Message: committedMediaOutput.Error(),
+			Hint:    committedMediaOutput.RecoveryHint(),
+			Recovery: &commandRecoveryInfo{
+				MediaID:  committedMediaOutput.MediaID,
+				MediaURL: committedMediaOutput.MediaURL,
+			},
+		}
+	case errors.As(err, &completedMediaDelete):
+		return commandErrorDetail{
+			Type:    "output_error",
+			Code:    "media_delete_output_failed",
+			Message: completedMediaDelete.Error(),
+			Hint:    completedMediaDelete.RecoveryHint(),
+			Recovery: &commandRecoveryInfo{
+				Stage:   "delete",
+				MediaID: completedMediaDelete.MediaID,
+			},
+		}
+	case errors.As(err, &unknownMediaDelete):
+		return commandErrorDetail{
+			Type:    "mutation_error",
+			Code:    "media_delete_state_unknown",
+			Message: unknownMediaDelete.Error(),
+			Hint:    unknownMediaDelete.RecoveryHint(),
+			Recovery: &commandRecoveryInfo{
+				Stage:   "delete",
+				MediaID: unknownMediaDelete.MediaID,
+			},
+		}
 	// ErrPresignExpired is a sentinel distinct from UnknownStateError: the
 	// server never committed, so a retry-the-whole-upload is safe (no
 	// duplicate risk). Classify it explicitly so automation distinguishes
@@ -260,12 +318,12 @@ func sellerEnvTokenIsAdminToken() bool {
 
 // mergeCleanupRecovery attaches cleanup orphan handles as secondary recovery
 // metadata without overwriting upload state the primary error already carried.
-func mergeCleanupRecovery(recovery *uploadRecoveryInfo, cleanup *upload.CleanupFailedError) *uploadRecoveryInfo {
+func mergeCleanupRecovery(recovery *commandRecoveryInfo, cleanup *upload.CleanupFailedError) *commandRecoveryInfo {
 	if cleanup == nil {
 		return recovery
 	}
 	if recovery == nil {
-		return &uploadRecoveryInfo{
+		return &commandRecoveryInfo{
 			UploadID: cleanup.UploadID,
 			Key:      cleanup.Key,
 		}
@@ -280,7 +338,7 @@ func mergeCleanupRecovery(recovery *uploadRecoveryInfo, cleanup *upload.CleanupF
 }
 
 func uploadIncompleteDetail(err error, state *upload.UnknownStateError) commandErrorDetail {
-	recovery := &uploadRecoveryInfo{
+	recovery := &commandRecoveryInfo{
 		FileURL:  state.FileURL,
 		UploadID: state.UploadID,
 		Key:      state.Key,
@@ -307,9 +365,41 @@ func uploadIncompleteDetail(err error, state *upload.UnknownStateError) commandE
 	}
 }
 
-// printUploadRecovery emits any recovery handles carried by multipart-upload
-// errors so a human operator can reconcile state without re-uploading blindly.
+// printUploadRecovery emits recovery handles for uploads with unknown state.
 func printUploadRecovery(w io.Writer, style output.Styler, err error) {
+	var unknownDelete *media.UnknownMediaDeleteError
+	if errors.As(err, &unknownDelete) {
+		fmt.Fprintln(w, style.Dim("Recovery:"))
+		fmt.Fprintln(w, style.Dim("  stage:     delete"))
+		fmt.Fprintln(w, style.Dim("  media_id:  "+unknownDelete.MediaID))
+		return
+	}
+
+	var completedDelete *media.CompletedMediaDeleteOutputError
+	if errors.As(err, &completedDelete) {
+		fmt.Fprintln(w, style.Dim("Recovery:"))
+		fmt.Fprintln(w, style.Dim("  stage:     delete"))
+		fmt.Fprintln(w, style.Dim("  media_id:  "+completedDelete.MediaID))
+		return
+	}
+
+	var committedMedia *media.CommittedMediaOutputError
+	if errors.As(err, &committedMedia) {
+		fmt.Fprintln(w, style.Dim("Recovery:"))
+		fmt.Fprintln(w, style.Dim("  media_id:  "+committedMedia.MediaID))
+		fmt.Fprintln(w, style.Dim("  media_url: "+committedMedia.MediaURL))
+		return
+	}
+
+	var unknownMedia *media.UnknownMediaUploadError
+	if errors.As(err, &unknownMedia) {
+		fmt.Fprintln(w, style.Dim("Recovery:"))
+		fmt.Fprintln(w, style.Dim("  stage:          "+string(unknownMedia.Stage)))
+		fmt.Fprintln(w, style.Dim("  signed_blob_id: "+unknownMedia.SignedBlobID))
+		fmt.Fprintln(w, style.Dim("  key:            "+unknownMedia.BlobKey))
+		return
+	}
+
 	var state *upload.UnknownStateError
 	var cleanup *upload.CleanupFailedError
 	var rejected *files.CompleteRejectedError
@@ -392,7 +482,7 @@ func resolveOrphanHandles(state *upload.UnknownStateError, cleanup *upload.Clean
 }
 
 func completeRejectedClassification(err error, rejected *files.CompleteRejectedError) commandErrorDetail {
-	recovery := &uploadRecoveryInfo{
+	recovery := &commandRecoveryInfo{
 		FileURL:  rejected.FileURL,
 		UploadID: rejected.UploadID,
 		Key:      rejected.Key,
@@ -442,7 +532,7 @@ func uploadCleanupFailedDetail(err error, cleanup *upload.CleanupFailedError) co
 		Code:    "cleanup_failed",
 		Message: err.Error(),
 		Hint:    "A multipart upload was left orphaned on S3. Reclaim it with `gumroad files abort --upload-id <id> --key <key>`.",
-		Recovery: &uploadRecoveryInfo{
+		Recovery: &commandRecoveryInfo{
 			UploadID: cleanup.UploadID,
 			Key:      cleanup.Key,
 		},

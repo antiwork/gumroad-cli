@@ -21,7 +21,9 @@ var (
 
 func PrintJSON(w io.Writer, data json.RawMessage, jqExpr string) error {
 	if jqExpr != "" {
-		return filterJQBytes(w, data, jqExpr)
+		return stageOutput(w, "gumroad-jq-*", func(stage io.Writer) error {
+			return filterJQBytes(stage, data, jqExpr)
+		})
 	}
 	var buf bytes.Buffer
 	if err := json.Indent(&buf, data, "", "  "); err != nil {
@@ -29,6 +31,20 @@ func PrintJSON(w io.Writer, data json.RawMessage, jqExpr string) error {
 	}
 	_, err := fmt.Fprintln(w, buf.String())
 	return err
+}
+
+func ValidateJQExpression(expr string) error {
+	if expr == "" {
+		return nil
+	}
+	query, err := parseJQ(expr)
+	if err != nil {
+		return err
+	}
+	if _, err := gojq.Compile(query); err != nil {
+		return fmt.Errorf("invalid jq expression: %w", err)
+	}
+	return nil
 }
 
 func StreamJSONArrayEnvelope(w io.Writer, key string, writeItems func(func(any) error) error) error {

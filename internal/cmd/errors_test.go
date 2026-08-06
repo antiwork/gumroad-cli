@@ -13,6 +13,7 @@ import (
 	"github.com/antiwork/gumroad-cli/internal/adminconfig"
 	"github.com/antiwork/gumroad-cli/internal/api"
 	"github.com/antiwork/gumroad-cli/internal/cmd/files"
+	"github.com/antiwork/gumroad-cli/internal/cmd/media"
 	"github.com/antiwork/gumroad-cli/internal/cmdutil"
 	"github.com/antiwork/gumroad-cli/internal/config"
 	"github.com/antiwork/gumroad-cli/internal/output"
@@ -373,6 +374,122 @@ func TestClassifyCommandError_UploadUnknownState_CarriesRecovery(t *testing.T) {
 	}
 	if detail.Hint == "" {
 		t.Error("expected human-facing hint about avoiding blind retry")
+	}
+}
+
+func TestClassifyCommandError_MediaCommitStateUnknownCarriesRecovery(t *testing.T) {
+	state := &media.UnknownMediaUploadError{
+		Cause:        &api.APIError{StatusCode: 502, Message: "upstream failed"},
+		Stage:        media.MediaUploadStageCommit,
+		SignedBlobID: "signed-1",
+		BlobKey:      "abc123",
+		Name:         "Store logo",
+		Filename:     "logo.png",
+		FileSize:     1234,
+	}
+	detail := classifyCommandError(state)
+	if detail.Type != "upload_error" || detail.Code != "media_commit_state_unknown" {
+		t.Fatalf("detail = %+v", detail)
+	}
+	if detail.Recovery == nil {
+		t.Fatal("recovery is nil")
+	}
+	if detail.Recovery.SignedBlobID != "signed-1" || detail.Recovery.Key != "abc123" {
+		t.Fatalf("recovery = %+v", detail.Recovery)
+	}
+	if detail.Recovery.Stage != "commit" || detail.Recovery.MediaName != "Store logo" {
+		t.Fatalf("recovery = %+v", detail.Recovery)
+	}
+	if detail.Recovery.Filename != "logo.png" || detail.Recovery.FileSize != 1234 {
+		t.Fatalf("recovery = %+v", detail.Recovery)
+	}
+	if !strings.Contains(detail.Hint, "gumroad media list") {
+		t.Fatalf("hint = %q", detail.Hint)
+	}
+}
+
+func TestPrintUploadRecovery_MediaStateUnknown(t *testing.T) {
+	state := &media.UnknownMediaUploadError{
+		Cause:        errors.New("connection lost"),
+		Stage:        media.MediaUploadStageDirectUpload,
+		SignedBlobID: "signed-1",
+		BlobKey:      "abc123",
+	}
+	var buf bytes.Buffer
+	printUploadRecovery(&buf, output.NewStyler(false), state)
+	for _, want := range []string{"stage:          direct_upload", "signed_blob_id: signed-1", "key:            abc123"} {
+		if !strings.Contains(buf.String(), want) {
+			t.Fatalf("recovery output missing %q: %q", want, buf.String())
+		}
+	}
+}
+
+func TestClassifyCommandError_CommittedMediaOutputFailure(t *testing.T) {
+	state := &media.CommittedMediaOutputError{
+		Cause:    errors.New("invalid jq result"),
+		MediaID:  "G_abc123",
+		MediaURL: "https://public-files.gumroad.com/abc123.png",
+	}
+	detail := classifyCommandError(state)
+	if detail.Type != "output_error" || detail.Code != "media_output_failed" {
+		t.Fatalf("detail = %+v", detail)
+	}
+	if detail.Recovery == nil || detail.Recovery.MediaID != state.MediaID || detail.Recovery.MediaURL != state.MediaURL {
+		t.Fatalf("recovery = %+v", detail.Recovery)
+	}
+	if !strings.Contains(detail.Hint, "Do not retry") {
+		t.Fatalf("hint = %q", detail.Hint)
+	}
+
+	var buf bytes.Buffer
+	printUploadRecovery(&buf, output.NewStyler(false), state)
+	for _, want := range []string{state.MediaID, state.MediaURL} {
+		if !strings.Contains(buf.String(), want) {
+			t.Fatalf("recovery output missing %q: %q", want, buf.String())
+		}
+	}
+}
+
+func TestClassifyCommandError_CompletedMediaDeleteOutputFailure(t *testing.T) {
+	state := &media.CompletedMediaDeleteOutputError{
+		Cause:   errors.New("jq runtime error"),
+		MediaID: "G_abc123",
+	}
+	detail := classifyCommandError(state)
+	if detail.Type != "output_error" || detail.Code != "media_delete_output_failed" {
+		t.Fatalf("detail = %+v", detail)
+	}
+	if detail.Recovery == nil || detail.Recovery.Stage != "delete" || detail.Recovery.MediaID != state.MediaID {
+		t.Fatalf("recovery = %+v", detail.Recovery)
+	}
+	if !strings.Contains(detail.Hint, "Do not retry") {
+		t.Fatalf("hint = %q", detail.Hint)
+	}
+
+	var buf bytes.Buffer
+	printUploadRecovery(&buf, output.NewStyler(false), state)
+	if !strings.Contains(buf.String(), state.MediaID) || !strings.Contains(buf.String(), "delete") {
+		t.Fatalf("recovery output = %q", buf.String())
+	}
+}
+
+func TestClassifyCommandError_UnknownMediaDelete(t *testing.T) {
+	state := &media.UnknownMediaDeleteError{
+		Cause:   &api.APIError{StatusCode: 502, Message: "upstream failed"},
+		MediaID: "G_abc123",
+	}
+	detail := classifyCommandError(state)
+	if detail.Type != "mutation_error" || detail.Code != "media_delete_state_unknown" {
+		t.Fatalf("detail = %+v", detail)
+	}
+	if detail.Recovery == nil || detail.Recovery.Stage != "delete" || detail.Recovery.MediaID != state.MediaID {
+		t.Fatalf("recovery = %+v", detail.Recovery)
+	}
+
+	var buf bytes.Buffer
+	printUploadRecovery(&buf, output.NewStyler(false), state)
+	if !strings.Contains(buf.String(), state.MediaID) || !strings.Contains(buf.String(), "delete") {
+		t.Fatalf("recovery output = %q", buf.String())
 	}
 }
 

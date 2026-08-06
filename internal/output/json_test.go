@@ -87,6 +87,18 @@ func TestPrintJSON_InvalidJQ(t *testing.T) {
 	}
 }
 
+func TestPrintJSON_JQRuntimeErrorLeavesNoPartialOutput(t *testing.T) {
+	var buf bytes.Buffer
+	data := json.RawMessage(`{"value":"not-a-number"}`)
+	err := PrintJSON(&buf, data, ".value, (.value | tonumber)")
+	if err == nil {
+		t.Fatal("expected jq runtime error")
+	}
+	if buf.Len() != 0 {
+		t.Fatalf("partial jq output = %q", buf.String())
+	}
+}
+
 func TestPrintJSON_InvalidJSON_Errors(t *testing.T) {
 	var buf bytes.Buffer
 	data := json.RawMessage(`not json at all`)
@@ -99,6 +111,20 @@ func TestPrintJSON_InvalidJSON_Errors(t *testing.T) {
 	}
 	if buf.Len() != 0 {
 		t.Fatalf("expected no output on invalid JSON, got %q", buf.String())
+	}
+}
+
+func TestValidateJQExpression(t *testing.T) {
+	for _, expr := range []string{"", ".media.url"} {
+		if err := ValidateJQExpression(expr); err != nil {
+			t.Fatalf("ValidateJQExpression(%q): %v", expr, err)
+		}
+	}
+	if err := ValidateJQExpression(".["); err == nil {
+		t.Fatal("invalid jq expression returned nil")
+	}
+	if err := ValidateJQExpression("foo"); err == nil {
+		t.Fatal("jq compile error returned nil")
 	}
 }
 

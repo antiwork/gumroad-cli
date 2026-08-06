@@ -718,8 +718,8 @@ func TestDefaultFlowConfig(t *testing.T) {
 }
 
 func TestDefaultScopesRequestAccountAndEditProfile(t *testing.T) {
-	if Scopes != "account edit_profile" {
-		t.Fatalf("Scopes = %q, want account edit_profile", Scopes)
+	if Scopes != "account edit_profile view_profile" {
+		t.Fatalf("Scopes = %q, want account edit_profile view_profile", Scopes)
 	}
 }
 

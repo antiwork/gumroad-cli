@@ -79,6 +79,13 @@ func (c *Client) SetDebugWriter(w io.Writer) {
 	c.debugWriter = w
 }
 
+func (c *Client) SetTimeout(timeout time.Duration) {
+	if c == nil || c.httpClient == nil {
+		return
+	}
+	c.httpClient.Timeout = timeout
+}
+
 func (c *Client) Get(path string, params url.Values) (json.RawMessage, error) {
 	return c.do("GET", path, params)
 }

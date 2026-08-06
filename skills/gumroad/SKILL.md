@@ -78,6 +78,7 @@ Most responses are wrapped in `{"success": true, ...}` with resource-specific ke
 - `variant-categories list` → `.variant_categories[]`
 - `variants list` → `.variants[]`
 - `files upload` / `files complete` → `.file_url`
+- `media upload` → `.media` (`.id`, `.name`, `.url`, `.file_size`), `media list` → `.media[]`, `media delete` → `.message`
 - `products create` with media flags → `.product` plus `.media[]`
 - `products update` with media flags → `.product` plus `.media[]`
 - `products covers add --image` → `.result.covers[]`, `.result.main_cover_id`, plus `.result.media[]`
@@ -397,6 +398,24 @@ gumroad files abort --upload-id up-123 --key attachments/u/k/original/pack.zip -
 ```
 
 `files upload` and `files complete` both return `.file_url`. When a JSON upload fails with recovery details, reuse `.error.recovery` with `files complete` to finish it or `files abort` to reclaim the orphaned multipart upload.
+
+### media — Public media library (page images)
+
+Files from `files upload` are stored privately and can never be displayed on custom product landing pages or profile pages — the pages' Content-Security-Policy only allows Gumroad's public CDN, and page moderation cannot fetch private URLs, so a page embedding one fails review every time. To put an image on a page, upload it to the public media library instead and embed the returned `.media.url` in the page HTML before `pages push` / `products page publish`.
+
+```sh
+# Host an image publicly and print its page-embeddable URL
+gumroad media upload ./logo.png --json --no-input
+gumroad media upload ./logo.png --name "Store logo" --json --jq '.media.url' --no-input
+
+# List and delete media library files
+gumroad media list --json --no-input
+gumroad media delete k3n8xq1p9wr2sd4a --yes --json --no-input
+```
+
+The CLI detects JPEG, PNG, GIF, WebP, BMP, and ICO images up to 10 MB. It rejects SVG and other formats it cannot identify locally. Gumroad checks each image again and moderates it before hosting. A flagged image fails with the moderation message. Deleting a file breaks each page that still embeds its URL. The upload command requires the `edit_profile` scope. The list command requires the `view_profile` scope. Tokens created before the CLI requested these scopes fail with `Access denied: This endpoint requires the view_profile scope.` Run `gumroad auth login` again to create a token with the new scopes.
+
+If an upload returns `media_commit_state_unknown`, do not retry it automatically. Read `.error.recovery.key`. List the media and find the item whose URL contains that key. If the item exists, the upload completed. If it does not exist, keep `.error.recovery.signed_blob_id` and `.error.recovery.key` for support. If an upload returns `media_direct_upload_state_unknown`, do not start a new upload. Keep the same recovery values for support. If it returns `media_output_failed`, the upload completed. Use `.error.recovery.media_id` and `.error.recovery.media_url`. Do not retry the upload. If a delete returns `media_delete_output_failed`, the deletion completed. Do not retry it. If a delete returns `media_delete_state_unknown`, list the media and search for `.error.recovery.media_id`. Do not retry the deletion automatically.
 
 ### emails — Manage audience emails
 
