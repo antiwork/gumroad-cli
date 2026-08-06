@@ -292,6 +292,10 @@ gumroad products view <id> --json --no-input
 # Find product categories
 gumroad products categories --search figma --json --no-input
 
+# See what similar products charge before picking a price
+gumroad products comps --category design/ui-and-web/figma --json --no-input
+gumroad products comps --category music-and-sound-design --query "whoosh sfx" --json --no-input
+
 # Create a product (created as draft)
 gumroad products create --name "Art Pack" --price 10.00 --json --no-input
 gumroad products create --name "Figma Kit" --category design/ui-and-web/figma --json --no-input
@@ -373,6 +377,8 @@ In custom HTML, use Gumroad data attributes for live product values and checkout
 **List flags:** `--all`, `--page-key`.
 
 **Categories:** `products categories [--search <term>]` returns label, path, and numeric ID. Prefer `--category <path>` for product create/update. `--taxonomy-id` remains supported when you already have the numeric ID, but it cannot be combined with `--category`.
+
+**Comps:** `products comps [--category <path>] [--query <text>]` (at least one required) reports the price distribution of comparable public products: total count, p25/p50/p75 of `price_cents`, and the top five sellers with name, formatted price, and public URL. Use it to anchor pricing advice in real marketplace numbers instead of static defaults.
 
 **Create flags:** `--name` (required), `--price`, `--type` (digital|course|ebook|membership|bundle|coffee|call|commission), `--currency`, `--pay-what-you-want`, `--suggested-price`, `--description`, `--custom-summary`, `--custom-permalink`, `--custom-receipt`, `--max-purchase-count`, `--category`, `--taxonomy-id`, `--tag` (repeatable), `--file` (repeatable), `--file-name` (repeatable, aligned to `--file`), `--file-description` (repeatable, aligned to `--file`), `--cover-image`, `--preview-image` (repeatable), `--preview-video` (repeatable), `--thumbnail`.
 
