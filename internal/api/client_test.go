@@ -84,6 +84,14 @@ func TestNewClientWithBaseURL(t *testing.T) {
 	}
 }
 
+func TestClientSetTimeout(t *testing.T) {
+	client := NewClient("token", "test", false)
+	client.SetTimeout(3 * time.Minute)
+	if client.httpClient.Timeout != 3*time.Minute {
+		t.Fatalf("timeout = %s, want 3m", client.httpClient.Timeout)
+	}
+}
+
 func TestClient_BearerHeader(t *testing.T) {
 	var gotAuth string
 	srv := setupTestServer(t, func(w http.ResponseWriter, r *http.Request) {

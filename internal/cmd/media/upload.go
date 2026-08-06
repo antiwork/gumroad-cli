@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/antiwork/gumroad-cli/internal/cmdutil"
 	"github.com/antiwork/gumroad-cli/internal/config"
@@ -22,6 +23,8 @@ import (
 // (CreatePublicMediaService::MAX_IMAGE_BYTES): images render inline on pages,
 // so the pipeline only accepts small files.
 const maxMediaImageBytes = 10 * 1024 * 1024
+
+const mediaFinalizeTimeout = 3 * time.Minute
 
 type plannedMediaUpload struct {
 	Path        string
@@ -200,6 +203,7 @@ func runMediaUpload(opts cmdutil.Options, plan plannedMediaUpload, name string) 
 	if sp != nil {
 		sp.SetMessage("Finalizing and moderating " + plan.Filename + "...")
 	}
+	client.SetTimeout(mediaFinalizeTimeout)
 	data, err := client.Post("/media", params)
 	if err != nil {
 		return mediaCommitError(err, signedID, plan, name)
