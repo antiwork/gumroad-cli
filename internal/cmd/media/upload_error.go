@@ -69,7 +69,7 @@ func mediaDirectUploadError(err error, reservation directUploadResponse, plan pl
 
 func mediaCommitError(err error, reservation directUploadResponse, plan plannedMediaUpload, name string) error {
 	var apiErr *api.APIError
-	if errors.As(err, &apiErr) && apiErr.StatusCode < 500 {
+	if errors.As(err, &apiErr) && isDefinitiveMediaMutationRejection(apiErr.StatusCode) {
 		return err
 	}
 	return newUnknownMediaUploadError(err, MediaUploadStageCommit, reservation, plan, name)

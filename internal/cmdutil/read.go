@@ -137,6 +137,13 @@ func RunRequestData(opts Options, spinnerMessage, method, path string, params ur
 	return runAuthenticatedData(opts, spinnerMessage, requestRunner(method, path, params))
 }
 
+// RunRequestWithTokenData executes an API request with a token that the caller
+// resolved before a mutation. This lets the caller classify request failures
+// without treating local authentication failures as unknown mutation state.
+func RunRequestWithTokenData(opts Options, token, spinnerMessage, method, path string, params url.Values) (json.RawMessage, error) {
+	return runWithTokenData(opts, token, spinnerMessage, requestRunner(method, path, params))
+}
+
 // RunWithToken executes a caller-provided client operation with a
 // caller-supplied token.
 func RunWithToken(opts Options, token, spinnerMessage string, run ClientRunner, render func(json.RawMessage) error) error {

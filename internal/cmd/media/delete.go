@@ -5,6 +5,7 @@ import (
 	"net/url"
 
 	"github.com/antiwork/gumroad-cli/internal/cmdutil"
+	"github.com/antiwork/gumroad-cli/internal/config"
 	"github.com/antiwork/gumroad-cli/internal/output"
 	"github.com/spf13/cobra"
 )
@@ -35,7 +36,11 @@ deletion.`,
 			if opts.DryRun {
 				return cmdutil.PrintDryRunRequest(opts, http.MethodDelete, path, params)
 			}
-			data, err := cmdutil.RunRequestData(opts, "Deleting media file...", http.MethodDelete, path, params)
+			token, err := config.Token()
+			if err != nil {
+				return err
+			}
+			data, err := cmdutil.RunRequestWithTokenData(opts, token, "Deleting media file...", http.MethodDelete, path, params)
 			if err != nil {
 				return mediaDeleteRequestError(err, args[0])
 			}

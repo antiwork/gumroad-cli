@@ -5,13 +5,11 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/antiwork/gumroad-cli/internal/api"
@@ -19,7 +17,6 @@ import (
 )
 
 const (
-	maxDirectUploadErrorBody      = 4 * 1024
 	directUploadMaxAttempts       = 3
 	directUploadInitialRetryDelay = 100 * time.Millisecond
 	directUploadMaxRetryDelay     = 500 * time.Millisecond
@@ -207,10 +204,9 @@ func putDirectUploadAttempt(ctx context.Context, client *http.Client, plan plann
 		return nil
 	}
 
-	body, _ := io.ReadAll(io.LimitReader(resp.Body, maxDirectUploadErrorBody))
-	message := strings.TrimSpace(string(body))
+	message := http.StatusText(resp.StatusCode)
 	if message == "" {
-		message = resp.Status
+		message = "request rejected"
 	}
 	return &directUploadStatusError{StatusCode: resp.StatusCode, Message: message}
 }

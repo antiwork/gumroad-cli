@@ -3,6 +3,7 @@ package media
 import (
 	"errors"
 	"fmt"
+	"net/http"
 
 	"github.com/antiwork/gumroad-cli/internal/api"
 )
@@ -47,8 +48,21 @@ func mediaDeleteOutputError(err error, mediaID string) error {
 
 func mediaDeleteRequestError(err error, mediaID string) error {
 	var apiErr *api.APIError
-	if errors.As(err, &apiErr) && apiErr.StatusCode < 500 {
+	if errors.As(err, &apiErr) && isDefinitiveMediaMutationRejection(apiErr.StatusCode) {
 		return err
 	}
 	return &UnknownMediaDeleteError{Cause: err, MediaID: mediaID}
+}
+
+// isDefinitiveMediaMutationRejection reports whether the server proves that a
+// mutation did not commit. Transient 4xx and all 5xx responses remain unknown.
+func isDefinitiveMediaMutationRejection(status int) bool {
+	if status >= 500 {
+		return false
+	}
+	switch status {
+	case http.StatusRequestTimeout, http.StatusConflict, http.StatusTooEarly, http.StatusTooManyRequests:
+		return false
+	}
+	return true
 }

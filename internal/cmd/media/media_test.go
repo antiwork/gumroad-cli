@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/antiwork/gumroad-cli/internal/cmdutil"
+	"github.com/antiwork/gumroad-cli/internal/config"
 	"github.com/antiwork/gumroad-cli/internal/testutil"
 )
 
@@ -528,21 +529,57 @@ func TestMediaDelete_JQRuntimeErrorPreservesCompletedDelete(t *testing.T) {
 	}
 }
 
-func TestMediaDelete_ServerFailurePreservesUnknownState(t *testing.T) {
-	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
-		http.Error(w, "upstream failed", http.StatusBadGateway)
-	})
+func TestMediaDelete_TransientFailurePreservesUnknownState(t *testing.T) {
+	for _, status := range []int{
+		http.StatusRequestTimeout,
+		http.StatusConflict,
+		http.StatusTooEarly,
+		http.StatusTooManyRequests,
+		http.StatusBadGateway,
+	} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+				http.Error(w, "transient failure", status)
+			})
 
-	const mediaID = "k3n8xq1p9wr2sd4a"
-	cmd := testutil.Command(newDeleteCmd(), testutil.Yes(true))
-	cmd.SetArgs([]string{mediaID})
-	err := cmd.Execute()
-	var unknown *UnknownMediaDeleteError
-	if !errors.As(err, &unknown) {
-		t.Fatalf("err = %v, want UnknownMediaDeleteError", err)
+			const mediaID = "k3n8xq1p9wr2sd4a"
+			cmd := testutil.Command(newDeleteCmd(), testutil.Yes(true))
+			cmd.SetArgs([]string{mediaID})
+			err := cmd.Execute()
+			var unknown *UnknownMediaDeleteError
+			if !errors.As(err, &unknown) {
+				t.Fatalf("status %d: err = %v, want UnknownMediaDeleteError", status, err)
+			}
+			if unknown.MediaID != mediaID || !strings.Contains(unknown.RecoveryHint(), "media list") {
+				t.Fatalf("unknown delete = %#v", unknown)
+			}
+		})
 	}
-	if unknown.MediaID != mediaID || !strings.Contains(unknown.RecoveryHint(), "media list") {
-		t.Fatalf("unknown delete = %#v", unknown)
+}
+
+func TestMediaDelete_AuthenticationFailureIsNotUnknown(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv(config.EnvAccessToken, "")
+	reached := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reached = true
+		http.Error(w, "unexpected request", http.StatusInternalServerError)
+	}))
+	t.Cleanup(srv.Close)
+	t.Setenv("GUMROAD_API_BASE_URL", srv.URL)
+
+	cmd := testutil.Command(newDeleteCmd(), testutil.Yes(true))
+	cmd.SetArgs([]string{"k3n8xq1p9wr2sd4a"})
+	err := cmd.Execute()
+	if !errors.Is(err, config.ErrNotAuthenticated) {
+		t.Fatalf("err = %v, want ErrNotAuthenticated", err)
+	}
+	var unknown *UnknownMediaDeleteError
+	if errors.As(err, &unknown) {
+		t.Fatalf("authentication failure was wrapped as unknown delete: %v", err)
+	}
+	if reached {
+		t.Fatal("authentication failure caused a delete request")
 	}
 }
 
@@ -614,11 +651,11 @@ func TestMediaUpload_RejectsInsecureDirectUploadURL(t *testing.T) {
 	}
 }
 
-func TestMediaUpload_S3FailureSurfacesBody(t *testing.T) {
+func TestMediaUpload_S3FailureRedactsBody(t *testing.T) {
 	var calls atomic.Int32
 	s3 := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
-		http.Error(w, "access denied", http.StatusForbidden)
+		http.Error(w, "request https://storage.example/upload?X-Amz-Signature=do-not-log failed", http.StatusForbidden)
 	}))
 	t.Cleanup(s3.Close)
 	prev := s3HTTPClientForTesting
@@ -640,8 +677,11 @@ func TestMediaUpload_S3FailureSurfacesBody(t *testing.T) {
 	cmd := testutil.Command(newUploadCmd())
 	cmd.SetArgs([]string{writePNGFixture(t)})
 	err := cmd.Execute()
-	if err == nil || !strings.Contains(err.Error(), "403") || !strings.Contains(err.Error(), "access denied") {
-		t.Fatalf("err = %v, want HTTP 403 with body", err)
+	if err == nil || !strings.Contains(err.Error(), "403") {
+		t.Fatalf("err = %v, want HTTP 403", err)
+	}
+	if strings.Contains(err.Error(), "do-not-log") || strings.Contains(err.Error(), "storage.example") {
+		t.Fatalf("error leaked direct upload response body: %q", err.Error())
 	}
 	if mediaReached {
 		t.Fatal("POST /media fired after a failed direct upload")
@@ -884,34 +924,44 @@ func TestMediaUpload_ServerRejectionSurfaced(t *testing.T) {
 	}
 }
 
-func TestMediaUpload_FinalStateUnknownCarriesRecovery(t *testing.T) {
-	srv := newMediaServers(t)
-	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/media" {
-			http.Error(w, "upstream failed", http.StatusBadGateway)
-			return
-		}
-		srv.dispatch(t)(w, r)
-	})
+func TestMediaUpload_TransientFinalStatePreservesRecovery(t *testing.T) {
+	for _, status := range []int{
+		http.StatusRequestTimeout,
+		http.StatusConflict,
+		http.StatusTooEarly,
+		http.StatusTooManyRequests,
+		http.StatusBadGateway,
+	} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			srv := newMediaServers(t)
+			testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/media" {
+					http.Error(w, "transient failure", status)
+					return
+				}
+				srv.dispatch(t)(w, r)
+			})
 
-	cmd := testutil.Command(newUploadCmd())
-	cmd.SetArgs([]string{writePNGFixture(t), "--name", "Store logo"})
-	err := cmd.Execute()
-	var unknown *UnknownMediaUploadError
-	if !errors.As(err, &unknown) {
-		t.Fatalf("err = %v, want UnknownMediaUploadError", err)
-	}
-	if unknown.Stage != MediaUploadStageCommit || unknown.SignedBlobID != "signed-1" || unknown.BlobKey != "abc123" {
-		t.Fatalf("recovery = %#v", unknown)
-	}
-	if unknown.Name != "Store logo" || unknown.Filename != "logo.png" {
-		t.Fatalf("recovery = %#v", unknown)
-	}
-	if unknown.FileSize != int64(len(pngBytes)) {
-		t.Fatalf("file size = %d, want %d", unknown.FileSize, len(pngBytes))
-	}
-	if !strings.Contains(unknown.RecoveryHint(), "gumroad media list") {
-		t.Fatalf("hint = %q", unknown.RecoveryHint())
+			cmd := testutil.Command(newUploadCmd())
+			cmd.SetArgs([]string{writePNGFixture(t), "--name", "Store logo"})
+			err := cmd.Execute()
+			var unknown *UnknownMediaUploadError
+			if !errors.As(err, &unknown) {
+				t.Fatalf("status %d: err = %v, want UnknownMediaUploadError", status, err)
+			}
+			if unknown.Stage != MediaUploadStageCommit || unknown.SignedBlobID != "signed-1" || unknown.BlobKey != "abc123" {
+				t.Fatalf("recovery = %#v", unknown)
+			}
+			if unknown.Name != "Store logo" || unknown.Filename != "logo.png" {
+				t.Fatalf("recovery = %#v", unknown)
+			}
+			if unknown.FileSize != int64(len(pngBytes)) {
+				t.Fatalf("file size = %d, want %d", unknown.FileSize, len(pngBytes))
+			}
+			if !strings.Contains(unknown.RecoveryHint(), "gumroad media list") {
+				t.Fatalf("hint = %q", unknown.RecoveryHint())
+			}
+		})
 	}
 }
 
