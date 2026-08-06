@@ -38,12 +38,14 @@ type compsResponse struct {
 func newCompsCmd() *cobra.Command {
 	var category string
 	var query string
+	var currency string
 
 	cmd := &cobra.Command{
 		Use:   "comps",
 		Short: "See what similar products charge",
-		Long: "Report the price distribution of comparable public products on Gumroad, " +
+		Long: "Report the price distribution of comparable priced public products on Gumroad, " +
 			"so a new product can be priced against real marketplace numbers. " +
+			"Categories include their descendants, and free listings are excluded. " +
 			"Find category paths with gumroad products categories.",
 		Args: cmdutil.ExactArgs(0),
 		Example: `  gumroad products comps --category design/ui-and-web/figma
@@ -53,7 +55,10 @@ func newCompsCmd() *cobra.Command {
 			category = strings.TrimSpace(category)
 			query = strings.TrimSpace(query)
 			if category == "" && query == "" {
-				return fmt.Errorf("at least one of --category or --query is required")
+				return cmdutil.UsageErrorf(c, "at least one of --category or --query is required")
+			}
+			if currency != "" && !cmdutil.IsSupportedCurrency(currency) {
+				return cmdutil.UsageErrorf(c, "unsupported currency %q", currency)
 			}
 			opts := cmdutil.OptionsFrom(c)
 
@@ -64,6 +69,9 @@ func newCompsCmd() *cobra.Command {
 			if query != "" {
 				params.Set("query", query)
 			}
+			if currency != "" {
+				params.Set("price_currency_type", strings.ToLower(currency))
+			}
 
 			return cmdutil.RunRequestDecoded[compsResponse](opts, "Fetching comparable products...", "GET", "/products/comps", params, func(resp compsResponse) error {
 				return renderComps(opts, resp.Comps)
@@ -71,8 +79,9 @@ func newCompsCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&category, "category", "", "Category path (see: gumroad products categories)")
+	cmd.Flags().StringVar(&category, "category", "", "Category path, descendants included (see: gumroad products categories)")
 	cmd.Flags().StringVar(&query, "query", "", "Full-text filter over product names and descriptions")
+	cmd.Flags().StringVar(&currency, "currency", "", "Currency to compare in (ISO code, default usd)")
 
 	return cmd
 }
@@ -85,6 +94,7 @@ func renderComps(opts cmdutil.Options, comps compsData) error {
 	if opts.PlainOutput {
 		rows := [][]string{
 			{"count", fmt.Sprintf("%d", comps.Count)},
+			{"currency", compsCurrency(comps)},
 			{"p25", centsString(comps.PriceCents.P25)},
 			{"p50", centsString(comps.PriceCents.P50)},
 			{"p75", centsString(comps.PriceCents.P75)},
@@ -100,10 +110,12 @@ func renderComps(opts cmdutil.Options, comps compsData) error {
 		if err := output.Writeln(w, fmt.Sprintf("%s comparable products", style.Bold(fmt.Sprintf("%d", comps.Count)))); err != nil {
 			return err
 		}
-		if err := output.Writeln(w, fmt.Sprintf("Prices: 25th %s · median %s · 75th %s",
-			centsDollarString(comps.PriceCents.P25),
-			style.Bold(centsDollarString(comps.PriceCents.P50)),
-			centsDollarString(comps.PriceCents.P75))); err != nil {
+		cur := compsCurrency(comps)
+		if err := output.Writeln(w, fmt.Sprintf("Prices (%s): 25th %s · median %s · 75th %s",
+			strings.ToUpper(cur),
+			compsMoneyString(comps.PriceCents.P25, cur),
+			style.Bold(compsMoneyString(comps.PriceCents.P50, cur)),
+			compsMoneyString(comps.PriceCents.P75, cur))); err != nil {
 			return err
 		}
 		if len(comps.Examples) == 0 {
@@ -120,6 +132,14 @@ func renderComps(opts cmdutil.Options, comps compsData) error {
 	})
 }
 
+// compsCurrency defaults to usd for servers that predate the currency field.
+func compsCurrency(comps compsData) string {
+	if comps.Currency == "" {
+		return "usd"
+	}
+	return strings.ToLower(comps.Currency)
+}
+
 func centsString(cents *int64) string {
 	if cents == nil {
 		return ""
@@ -127,12 +147,14 @@ func centsString(cents *int64) string {
 	return fmt.Sprintf("%d", *cents)
 }
 
-func centsDollarString(cents *int64) string {
+func compsMoneyString(cents *int64, currency string) string {
 	if cents == nil {
 		return "n/a"
 	}
-	if *cents%100 == 0 {
-		return fmt.Sprintf("$%d", *cents/100)
+	formatted := cmdutil.FormatMoney(int(*cents), currency)
+	formatted = strings.TrimSuffix(formatted, ".00")
+	if strings.ToLower(currency) == "usd" {
+		return "$" + formatted
 	}
-	return fmt.Sprintf("$%.2f", float64(*cents)/100)
+	return formatted
 }

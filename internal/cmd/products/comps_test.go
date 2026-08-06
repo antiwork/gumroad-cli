@@ -82,6 +82,107 @@ func TestComps_RequiresCategoryOrQuery(t *testing.T) {
 	}
 }
 
+func TestComps_RejectsUnsupportedCurrency(t *testing.T) {
+	cmd := testutil.Command(newCompsCmd())
+	cmd.SetArgs([]string{"--category", "design", "--currency", "zzz"})
+	if err := cmd.Execute(); err == nil || !strings.Contains(err.Error(), "unsupported currency") {
+		t.Fatalf("expected an unsupported-currency error, got %v", err)
+	}
+}
+
+func TestComps_EmptyResult(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{
+			"success": true,
+			"comps":   map[string]any{"count": 0, "price_cents": map[string]any{"p25": nil, "p50": nil, "p75": nil}, "examples": []any{}},
+		})
+	})
+
+	cmd := testutil.Command(newCompsCmd(), testutil.Quiet(false))
+	cmd.SetArgs([]string{"--query", "nothing matches"})
+	out := testutil.CaptureStdout(func() {
+		testutil.MustExecute(t, cmd)
+	})
+
+	if !strings.Contains(out, "No comparable products found.") {
+		t.Fatalf("missing empty message in output: %q", out)
+	}
+}
+
+func TestComps_NilPercentilesRenderNA(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{
+			"success": true,
+			"comps": map[string]any{
+				"count":       2,
+				"price_cents": map[string]any{"p25": nil, "p50": 1550, "p75": nil},
+				"examples":    []any{},
+			},
+		})
+	})
+
+	cmd := testutil.Command(newCompsCmd())
+	cmd.SetArgs([]string{"--query", "sparse"})
+	out := testutil.CaptureStdout(func() {
+		testutil.MustExecute(t, cmd)
+	})
+
+	for _, want := range []string{"25th n/a", "median $15.50", "75th n/a"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing %q in output: %q", want, out)
+		}
+	}
+}
+
+func TestComps_SingleUnitCurrencyFormatting(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		if got := r.URL.Query().Get("price_currency_type"); got != "jpy" {
+			t.Errorf("price_currency_type param = %q, want jpy", got)
+		}
+		testutil.JSON(t, w, map[string]any{
+			"success": true,
+			"comps": map[string]any{
+				"count":       9,
+				"currency":    "jpy",
+				"price_cents": map[string]any{"p25": 500, "p50": 1500, "p75": 3000},
+				"examples":    []any{},
+			},
+		})
+	})
+
+	cmd := testutil.Command(newCompsCmd())
+	cmd.SetArgs([]string{"--query", "manga", "--currency", "JPY"})
+	out := testutil.CaptureStdout(func() {
+		testutil.MustExecute(t, cmd)
+	})
+
+	// JPY is single-unit: 1500 minor units render as 1500, never $15.
+	for _, want := range []string{"Prices (JPY)", "median 1500"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing %q in output: %q", want, out)
+		}
+	}
+	if strings.Contains(out, "$") {
+		t.Fatalf("JPY output must not carry a dollar sign: %q", out)
+	}
+}
+
+func TestComps_Plain(t *testing.T) {
+	testutil.Setup(t, productCompsHandler(t, "music-and-sound-design", ""))
+
+	cmd := testutil.Command(newCompsCmd(), testutil.PlainOutput())
+	cmd.SetArgs([]string{"--category", "music-and-sound-design"})
+	out := testutil.CaptureStdout(func() {
+		testutil.MustExecute(t, cmd)
+	})
+
+	for _, want := range []string{"count	412", "currency	usd", "p50	1500", "example	Cinematic Whoosh Pack	$15	https://sfx.gumroad.com/l/whoosh"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing %q in plain output: %q", want, out)
+		}
+	}
+}
+
 func TestComps_RejectsWhitespaceOnlyFilters(t *testing.T) {
 	cmd := testutil.Command(newCompsCmd())
 	cmd.SetArgs([]string{"--category", "   ", "--query", "	"})

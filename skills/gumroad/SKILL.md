@@ -378,7 +378,7 @@ In custom HTML, use Gumroad data attributes for live product values and checkout
 
 **Categories:** `products categories [--search <term>]` returns label, path, and numeric ID. Prefer `--category <path>` for product create/update. `--taxonomy-id` remains supported when you already have the numeric ID, but it cannot be combined with `--category`.
 
-**Comps:** `products comps [--category <path>] [--query <text>]` (at least one required) reports the price distribution of comparable public products: total count, p25/p50/p75 of `price_cents`, and the top five sellers with name, formatted price, and public URL. Use it to anchor pricing advice in real marketplace numbers instead of static defaults.
+**Comps:** `products comps [--category <path>] [--query <text>] [--currency <iso>]` (category or query required) reports the price distribution of comparable priced public products: count of discoverable priced listings (free products excluded), p25/p50/p75 of `price_cents` in one currency (default `usd`), and the top five sellers with name, formatted price, and public URL. `--category` includes descendant categories. Use it to anchor pricing advice in real marketplace numbers instead of static defaults.
 
 **Create flags:** `--name` (required), `--price`, `--type` (digital|course|ebook|membership|bundle|coffee|call|commission), `--currency`, `--pay-what-you-want`, `--suggested-price`, `--description`, `--custom-summary`, `--custom-permalink`, `--custom-receipt`, `--max-purchase-count`, `--category`, `--taxonomy-id`, `--tag` (repeatable), `--file` (repeatable), `--file-name` (repeatable, aligned to `--file`), `--file-description` (repeatable, aligned to `--file`), `--cover-image`, `--preview-image` (repeatable), `--preview-video` (repeatable), `--thumbnail`.
 
