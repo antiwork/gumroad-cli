@@ -12,6 +12,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -49,7 +50,7 @@ type mediaServers struct {
 func newMediaServers(t *testing.T) *mediaServers {
 	t.Helper()
 	m := &mediaServers{}
-	m.s3 = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	m.s3 = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		m.s3Calls.Add(1)
 		if r.Method != http.MethodPut {
 			t.Errorf("S3 got %s, want PUT", r.Method)
@@ -271,7 +272,8 @@ func TestMediaUpload_JQRuntimeErrorPreservesCommittedMedia(t *testing.T) {
 	srv := newMediaServers(t)
 	testutil.Setup(t, srv.dispatch(t))
 
-	cmd := testutil.Command(newUploadCmd(), testutil.JQ(".media.url | tonumber"))
+	var out bytes.Buffer
+	cmd := testutil.Command(newUploadCmd(), testutil.JQ(".media.url, (.media.url | tonumber)"), testutil.Stdout(&out))
 	cmd.SetArgs([]string{writePNGFixture(t)})
 	err := cmd.Execute()
 	var committed *CommittedMediaOutputError
@@ -283,6 +285,9 @@ func TestMediaUpload_JQRuntimeErrorPreservesCommittedMedia(t *testing.T) {
 	}
 	if !strings.Contains(committed.RecoveryHint(), "Do not retry") {
 		t.Fatalf("hint = %q", committed.RecoveryHint())
+	}
+	if strings.Contains(out.String(), committed.MediaURL) {
+		t.Fatalf("stdout contains partial jq output: %q", out.String())
 	}
 }
 
@@ -496,6 +501,51 @@ func TestMediaDelete_JQCompileErrorFailsBeforeRequest(t *testing.T) {
 	}
 }
 
+func TestMediaDelete_JQRuntimeErrorPreservesCompletedDelete(t *testing.T) {
+	reached := false
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		reached = true
+		testutil.JSON(t, w, map[string]any{"success": true, "message": "The file was deleted."})
+	})
+
+	const mediaID = "k3n8xq1p9wr2sd4a"
+	var out bytes.Buffer
+	cmd := testutil.Command(newDeleteCmd(), testutil.Yes(true), testutil.JQ(".id, (.result.message | tonumber)"), testutil.Stdout(&out))
+	cmd.SetArgs([]string{mediaID})
+	err := cmd.Execute()
+	var completed *CompletedMediaDeleteOutputError
+	if !errors.As(err, &completed) {
+		t.Fatalf("err = %v, want CompletedMediaDeleteOutputError", err)
+	}
+	if completed.MediaID != mediaID || !strings.Contains(completed.RecoveryHint(), "Do not retry") {
+		t.Fatalf("completed delete = %#v", completed)
+	}
+	if !reached {
+		t.Fatal("delete request was not sent")
+	}
+	if strings.Contains(out.String(), mediaID) {
+		t.Fatalf("stdout contains partial jq output: %q", out.String())
+	}
+}
+
+func TestMediaDelete_ServerFailurePreservesUnknownState(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "upstream failed", http.StatusBadGateway)
+	})
+
+	const mediaID = "k3n8xq1p9wr2sd4a"
+	cmd := testutil.Command(newDeleteCmd(), testutil.Yes(true))
+	cmd.SetArgs([]string{mediaID})
+	err := cmd.Execute()
+	var unknown *UnknownMediaDeleteError
+	if !errors.As(err, &unknown) {
+		t.Fatalf("err = %v, want UnknownMediaDeleteError", err)
+	}
+	if unknown.MediaID != mediaID || !strings.Contains(unknown.RecoveryHint(), "media list") {
+		t.Fatalf("unknown delete = %#v", unknown)
+	}
+}
+
 func TestMediaUpload_MissingSignedID(t *testing.T) {
 	newMediaServers(t)
 	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
@@ -541,9 +591,32 @@ func TestMediaUpload_MissingStorageKey(t *testing.T) {
 	}
 }
 
+func TestMediaUpload_RejectsInsecureDirectUploadURL(t *testing.T) {
+	srv := newMediaServers(t)
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{
+			"signed_id": "signed-1",
+			"key":       "abc123",
+			"direct_upload": map[string]any{
+				"url": "http://example.com/upload?secret=token",
+			},
+		})
+	})
+
+	cmd := testutil.Command(newUploadCmd())
+	cmd.SetArgs([]string{writePNGFixture(t)})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "valid HTTPS upload URL") {
+		t.Fatalf("err = %v, want HTTPS URL error", err)
+	}
+	if srv.s3Calls.Load() != 0 {
+		t.Fatal("insecure URL caused a direct upload request")
+	}
+}
+
 func TestMediaUpload_S3FailureSurfacesBody(t *testing.T) {
 	var calls atomic.Int32
-	s3 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	s3 := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
 		http.Error(w, "access denied", http.StatusForbidden)
 	}))
@@ -582,7 +655,7 @@ func TestPutDirectUpload_RetriesTransientFailureWithFreshBody(t *testing.T) {
 	var calls atomic.Int32
 	var bodySizes []int
 	var mu sync.Mutex
-	s3 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	s3 := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		call := calls.Add(1)
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
@@ -624,7 +697,7 @@ func TestPutDirectUpload_RetriesTransientFailureWithFreshBody(t *testing.T) {
 
 func TestPutDirectUpload_TimesOutEachAttempt(t *testing.T) {
 	var calls atomic.Int32
-	s3 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	s3 := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		calls.Add(1)
 		time.Sleep(200 * time.Millisecond)
 		w.WriteHeader(http.StatusOK)
@@ -652,7 +725,7 @@ func TestPutDirectUpload_TimesOutEachAttempt(t *testing.T) {
 
 func TestMediaUpload_DirectStateUnknownCarriesRecovery(t *testing.T) {
 	var s3Calls atomic.Int32
-	s3 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	s3 := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		s3Calls.Add(1)
 		time.Sleep(200 * time.Millisecond)
 		w.WriteHeader(http.StatusOK)
@@ -699,7 +772,7 @@ func TestMediaUpload_DirectStateUnknownCarriesRecovery(t *testing.T) {
 
 func TestPutDirectUpload_CanceledContextMakesNoRequest(t *testing.T) {
 	var calls atomic.Int32
-	s3 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	s3 := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		calls.Add(1)
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -734,6 +807,45 @@ func TestDirectUploadRetryPolicyRejectsPermanentErrors(t *testing.T) {
 	networkErr := &directUploadTransportError{Cause: &net.DNSError{IsTimeout: true}}
 	if !isRetryableDirectUploadError(networkErr) {
 		t.Fatal("transient network errors must be retried")
+	}
+}
+
+func TestDirectUploadTransportErrorRedactsPresignedURL(t *testing.T) {
+	presignedURL := "https://example.com/upload?sig=do-not-log"
+	err := &directUploadTransportError{Cause: &url.Error{Op: http.MethodPut, URL: presignedURL, Err: context.DeadlineExceeded}}
+	if strings.Contains(err.Error(), presignedURL) || strings.Contains(err.Error(), "do-not-log") {
+		t.Fatalf("error leaked presigned URL: %q", err.Error())
+	}
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("error does not preserve cause: %v", err)
+	}
+}
+
+func TestPutDirectUpload_DoesNotFollowRedirects(t *testing.T) {
+	var targetCalls atomic.Int32
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		targetCalls.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(target.Close)
+	source := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, target.URL+"/upload", http.StatusTemporaryRedirect)
+	}))
+	t.Cleanup(source.Close)
+	prev := s3HTTPClientForTesting
+	s3HTTPClientForTesting = source.Client()
+	t.Cleanup(func() { s3HTTPClientForTesting = prev })
+
+	plan, err := describeMediaUpload(writePNGFixture(t))
+	if err != nil {
+		t.Fatalf("describeMediaUpload: %v", err)
+	}
+	err = putDirectUpload(cmdutil.Options{Context: context.Background()}, plan, source.URL+"/upload", nil)
+	if err == nil || !strings.Contains(err.Error(), "307") {
+		t.Fatalf("err = %v, want HTTP 307", err)
+	}
+	if targetCalls.Load() != 0 {
+		t.Fatal("direct upload followed a redirect")
 	}
 }
 

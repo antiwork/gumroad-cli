@@ -450,6 +450,49 @@ func TestClassifyCommandError_CommittedMediaOutputFailure(t *testing.T) {
 	}
 }
 
+func TestClassifyCommandError_CompletedMediaDeleteOutputFailure(t *testing.T) {
+	state := &media.CompletedMediaDeleteOutputError{
+		Cause:   errors.New("jq runtime error"),
+		MediaID: "G_abc123",
+	}
+	detail := classifyCommandError(state)
+	if detail.Type != "output_error" || detail.Code != "media_delete_output_failed" {
+		t.Fatalf("detail = %+v", detail)
+	}
+	if detail.Recovery == nil || detail.Recovery.Stage != "delete" || detail.Recovery.MediaID != state.MediaID {
+		t.Fatalf("recovery = %+v", detail.Recovery)
+	}
+	if !strings.Contains(detail.Hint, "Do not retry") {
+		t.Fatalf("hint = %q", detail.Hint)
+	}
+
+	var buf bytes.Buffer
+	printUploadRecovery(&buf, output.NewStyler(false), state)
+	if !strings.Contains(buf.String(), state.MediaID) || !strings.Contains(buf.String(), "delete") {
+		t.Fatalf("recovery output = %q", buf.String())
+	}
+}
+
+func TestClassifyCommandError_UnknownMediaDelete(t *testing.T) {
+	state := &media.UnknownMediaDeleteError{
+		Cause:   &api.APIError{StatusCode: 502, Message: "upstream failed"},
+		MediaID: "G_abc123",
+	}
+	detail := classifyCommandError(state)
+	if detail.Type != "mutation_error" || detail.Code != "media_delete_state_unknown" {
+		t.Fatalf("detail = %+v", detail)
+	}
+	if detail.Recovery == nil || detail.Recovery.Stage != "delete" || detail.Recovery.MediaID != state.MediaID {
+		t.Fatalf("recovery = %+v", detail.Recovery)
+	}
+
+	var buf bytes.Buffer
+	printUploadRecovery(&buf, output.NewStyler(false), state)
+	if !strings.Contains(buf.String(), state.MediaID) || !strings.Contains(buf.String(), "delete") {
+		t.Fatalf("recovery output = %q", buf.String())
+	}
+}
+
 func TestClassifyCommandError_UploadCleanupFailed_CarriesOrphanHandles(t *testing.T) {
 	cleanup := &upload.CleanupFailedError{
 		UploadID: "up-2",

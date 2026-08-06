@@ -21,7 +21,9 @@ var (
 
 func PrintJSON(w io.Writer, data json.RawMessage, jqExpr string) error {
 	if jqExpr != "" {
-		return filterJQBytes(w, data, jqExpr)
+		return stageOutput(w, "gumroad-jq-*", func(stage io.Writer) error {
+			return filterJQBytes(stage, data, jqExpr)
+		})
 	}
 	var buf bytes.Buffer
 	if err := json.Indent(&buf, data, "", "  "); err != nil {

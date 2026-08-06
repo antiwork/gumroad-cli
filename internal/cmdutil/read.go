@@ -126,11 +126,15 @@ func RunRequestWithSuccess(opts Options, spinnerMessage, method, path string, pa
 		return PrintDryRunRequest(opts, method, path, params)
 	}
 
-	data, err := runAuthenticatedData(opts, spinnerMessage, requestRunner(method, path, params))
+	data, err := RunRequestData(opts, spinnerMessage, method, path, params)
 	if err != nil {
 		return err
 	}
 	return PrintMutationSuccess(opts, data, id, successMessage)
+}
+
+func RunRequestData(opts Options, spinnerMessage, method, path string, params url.Values) (json.RawMessage, error) {
+	return runAuthenticatedData(opts, spinnerMessage, requestRunner(method, path, params))
 }
 
 // RunWithToken executes a caller-provided client operation with a

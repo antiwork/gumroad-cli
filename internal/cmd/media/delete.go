@@ -1,6 +1,7 @@
 package media
 
 import (
+	"net/http"
 	"net/url"
 
 	"github.com/antiwork/gumroad-cli/internal/cmdutil"
@@ -29,8 +30,20 @@ deletion.`,
 			if !ok {
 				return cmdutil.PrintCancelledAction(opts, "delete media file "+args[0], args[0])
 			}
+			path := cmdutil.JoinPath("media", args[0])
+			params := url.Values{}
+			if opts.DryRun {
+				return cmdutil.PrintDryRunRequest(opts, http.MethodDelete, path, params)
+			}
+			data, err := cmdutil.RunRequestData(opts, "Deleting media file...", http.MethodDelete, path, params)
+			if err != nil {
+				return mediaDeleteRequestError(err, args[0])
+			}
+			if err := cmdutil.PrintMutationSuccess(opts, data, args[0], "Media file "+args[0]+" deleted."); err != nil {
+				return mediaDeleteOutputError(err, args[0])
+			}
+			return nil
 
-			return cmdutil.RunRequestWithSuccess(opts, "Deleting media file...", "DELETE", cmdutil.JoinPath("media", args[0]), url.Values{}, args[0], "Media file "+args[0]+" deleted.")
 		},
 	}
 }

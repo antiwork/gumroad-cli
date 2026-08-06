@@ -144,6 +144,8 @@ func classifyPrimaryCause(err error) commandErrorDetail {
 	var unknownState *upload.UnknownStateError
 	var unknownMediaUpload *media.UnknownMediaUploadError
 	var committedMediaOutput *media.CommittedMediaOutputError
+	var completedMediaDelete *media.CompletedMediaDeleteOutputError
+	var unknownMediaDelete *media.UnknownMediaDeleteError
 	var cleanupFailed *upload.CleanupFailedError
 	var rejected *files.CompleteRejectedError
 	switch {
@@ -177,6 +179,28 @@ func classifyPrimaryCause(err error) commandErrorDetail {
 			Recovery: &commandRecoveryInfo{
 				MediaID:  committedMediaOutput.MediaID,
 				MediaURL: committedMediaOutput.MediaURL,
+			},
+		}
+	case errors.As(err, &completedMediaDelete):
+		return commandErrorDetail{
+			Type:    "output_error",
+			Code:    "media_delete_output_failed",
+			Message: completedMediaDelete.Error(),
+			Hint:    completedMediaDelete.RecoveryHint(),
+			Recovery: &commandRecoveryInfo{
+				Stage:   "delete",
+				MediaID: completedMediaDelete.MediaID,
+			},
+		}
+	case errors.As(err, &unknownMediaDelete):
+		return commandErrorDetail{
+			Type:    "mutation_error",
+			Code:    "media_delete_state_unknown",
+			Message: unknownMediaDelete.Error(),
+			Hint:    unknownMediaDelete.RecoveryHint(),
+			Recovery: &commandRecoveryInfo{
+				Stage:   "delete",
+				MediaID: unknownMediaDelete.MediaID,
 			},
 		}
 	// ErrPresignExpired is a sentinel distinct from UnknownStateError: the
@@ -343,6 +367,22 @@ func uploadIncompleteDetail(err error, state *upload.UnknownStateError) commandE
 
 // printUploadRecovery emits recovery handles for uploads with unknown state.
 func printUploadRecovery(w io.Writer, style output.Styler, err error) {
+	var unknownDelete *media.UnknownMediaDeleteError
+	if errors.As(err, &unknownDelete) {
+		fmt.Fprintln(w, style.Dim("Recovery:"))
+		fmt.Fprintln(w, style.Dim("  stage:     delete"))
+		fmt.Fprintln(w, style.Dim("  media_id:  "+unknownDelete.MediaID))
+		return
+	}
+
+	var completedDelete *media.CompletedMediaDeleteOutputError
+	if errors.As(err, &completedDelete) {
+		fmt.Fprintln(w, style.Dim("Recovery:"))
+		fmt.Fprintln(w, style.Dim("  stage:     delete"))
+		fmt.Fprintln(w, style.Dim("  media_id:  "+completedDelete.MediaID))
+		return
+	}
+
 	var committedMedia *media.CommittedMediaOutputError
 	if errors.As(err, &committedMedia) {
 		fmt.Fprintln(w, style.Dim("Recovery:"))

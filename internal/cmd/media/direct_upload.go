@@ -58,6 +58,10 @@ func (e *directUploadStateUnknownError) Unwrap() error {
 }
 
 func (e *directUploadTransportError) Error() string {
+	var urlErr *url.Error
+	if errors.As(e.Cause, &urlErr) {
+		return fmt.Sprintf("direct upload failed during %s: %v", urlErr.Op, urlErr.Err)
+	}
 	return "direct upload failed: " + e.Cause.Error()
 }
 
@@ -91,10 +95,21 @@ func reserveDirectUpload(client *api.Client, plan plannedMediaUpload) (directUpl
 	if resp.DirectUpload.URL == "" {
 		return directUploadResponse{}, fmt.Errorf("direct upload response did not include upload URL")
 	}
+	if err := validateDirectUploadURL(resp.DirectUpload.URL); err != nil {
+		return directUploadResponse{}, err
+	}
 	if resp.Key == "" {
 		return directUploadResponse{}, fmt.Errorf("direct upload response did not include storage key")
 	}
 	return resp, nil
+}
+
+func validateDirectUploadURL(rawURL string) error {
+	parsed, err := url.Parse(rawURL)
+	if err != nil || parsed.Scheme != "https" || parsed.Host == "" {
+		return fmt.Errorf("direct upload response did not include a valid HTTPS upload URL")
+	}
+	return nil
 }
 
 // Tests in this package must not use t.Parallel while they replace this client.
@@ -145,10 +160,17 @@ func directUploadResult(err error, outcomeUnknown bool) error {
 }
 
 func directUploadHTTPClient() *http.Client {
+	var client *http.Client
 	if s3HTTPClientForTesting != nil {
-		return s3HTTPClientForTesting
+		clone := *s3HTTPClientForTesting
+		client = &clone
+	} else {
+		client = &http.Client{Timeout: directUploadAttemptTimeout}
 	}
-	return &http.Client{Timeout: directUploadAttemptTimeout}
+	client.CheckRedirect = func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+	return client
 }
 
 func putDirectUploadAttempt(ctx context.Context, client *http.Client, plan plannedMediaUpload, uploadURL string, headers map[string]string) error {

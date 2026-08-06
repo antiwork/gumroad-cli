@@ -87,6 +87,18 @@ func TestPrintJSON_InvalidJQ(t *testing.T) {
 	}
 }
 
+func TestPrintJSON_JQRuntimeErrorLeavesNoPartialOutput(t *testing.T) {
+	var buf bytes.Buffer
+	data := json.RawMessage(`{"value":"not-a-number"}`)
+	err := PrintJSON(&buf, data, ".value, (.value | tonumber)")
+	if err == nil {
+		t.Fatal("expected jq runtime error")
+	}
+	if buf.Len() != 0 {
+		t.Fatalf("partial jq output = %q", buf.String())
+	}
+}
+
 func TestPrintJSON_InvalidJSON_Errors(t *testing.T) {
 	var buf bytes.Buffer
 	data := json.RawMessage(`not json at all`)
