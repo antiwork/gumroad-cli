@@ -119,7 +119,7 @@ func (m *mediaServers) dispatch(t *testing.T) http.HandlerFunc {
 			testutil.JSON(t, w, map[string]any{
 				"media": map[string]any{
 					"id":        "G_abc123",
-					"name":      "logo",
+					"name":      "logo.png",
 					"url":       "https://public-files.gumroad.com/abc123.png",
 					"file_size": len(pngBytes),
 				},
@@ -172,6 +172,9 @@ func TestMediaUpload_HappyPath(t *testing.T) {
 	if mediaForm["signed_blob_id"] != "signed-1" {
 		t.Fatalf("signed_blob_id = %q, want signed-1", mediaForm["signed_blob_id"])
 	}
+	if mediaForm["name"] != "logo.png" {
+		t.Fatalf("name = %q, want logo.png", mediaForm["name"])
+	}
 	wantMD5 := md5.Sum(pngBytes) // #nosec G401 -- verifying the S3 Content-MD5 integrity header.
 	wantChecksum := base64.StdEncoding.EncodeToString(wantMD5[:])
 	if form["checksum"] != wantChecksum {
@@ -207,6 +210,26 @@ func TestMediaUpload_NamePassedThrough(t *testing.T) {
 	defer srv.mu.Unlock()
 	if srv.mediaForm["name"] != "Store logo" {
 		t.Fatalf("name = %q, want Store logo", srv.mediaForm["name"])
+	}
+}
+
+func TestMediaUpload_DefaultNameKeepsMultiDotFilename(t *testing.T) {
+	srv := newMediaServers(t)
+	testutil.Setup(t, srv.dispatch(t))
+
+	path := filepath.Join(t.TempDir(), "logo.final.png")
+	if err := os.WriteFile(path, pngBytes, 0600); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+	cmd := testutil.Command(newUploadCmd())
+	cmd.SetArgs([]string{path})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	srv.mu.Lock()
+	defer srv.mu.Unlock()
+	if srv.mediaForm["name"] != "logo.final.png" {
+		t.Fatalf("name = %q, want logo.final.png", srv.mediaForm["name"])
 	}
 }
 
@@ -434,6 +457,24 @@ func TestMediaDelete_SendsDelete(t *testing.T) {
 	}
 	if gotMethod != http.MethodDelete || gotPath != "/media/k3n8xq1p9wr2sd4a" {
 		t.Fatalf("got %s %s, want DELETE /media/k3n8xq1p9wr2sd4a", gotMethod, gotPath)
+	}
+}
+
+func TestMediaDelete_InvalidJQFailsBeforeRequest(t *testing.T) {
+	reached := false
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		reached = true
+		testutil.JSON(t, w, map[string]any{"success": true})
+	})
+
+	cmd := testutil.Command(newDeleteCmd(), testutil.Yes(true), testutil.JQ(".["))
+	cmd.SetArgs([]string{"k3n8xq1p9wr2sd4a"})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "invalid jq expression") {
+		t.Fatalf("err = %v, want invalid jq expression", err)
+	}
+	if reached {
+		t.Fatal("invalid jq expression caused a delete request")
 	}
 }
 
@@ -856,7 +897,7 @@ func TestMediaUpload_HelpStatesLocalFormatLimit(t *testing.T) {
 	if !strings.Contains(help, "formats it cannot identify locally") {
 		t.Fatalf("help omits the local format limit: %q", help)
 	}
-	if got := cmd.Flags().Lookup("name").Usage; !strings.Contains(got, "without its extension") {
+	if got := cmd.Flags().Lookup("name").Usage; !strings.Contains(got, "defaults to the filename") || strings.Contains(got, "without") {
 		t.Fatalf("name help = %q", got)
 	}
 }

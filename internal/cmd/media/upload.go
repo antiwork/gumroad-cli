@@ -70,15 +70,19 @@ image again and runs content moderation before it hosts the file.`,
 			if err != nil {
 				return err
 			}
-
-			if opts.DryRun {
-				return renderUploadDryRun(opts, plan, name)
+			displayName := name
+			if displayName == "" {
+				displayName = plan.Filename
 			}
 
-			return runMediaUpload(opts, plan, name)
+			if opts.DryRun {
+				return renderUploadDryRun(opts, plan, displayName)
+			}
+
+			return runMediaUpload(opts, plan, displayName)
 		},
 	}
-	c.Flags().StringVar(&name, "name", "", "Display name for the file (defaults to the filename without its extension)")
+	c.Flags().StringVar(&name, "name", "", "Display name for the file (defaults to the filename)")
 	return c
 }
 

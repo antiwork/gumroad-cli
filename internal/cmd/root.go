@@ -318,7 +318,8 @@ func exitCodeForCommandError(cmd *cobra.Command, err error) int {
 		case output.IsBrokenPipeError(writeErr):
 			return 0
 		default:
-			printHumanCommandError(cmd, writeErr)
+			printHumanCommandError(cmd, err)
+			fmt.Fprintln(cmd.ErrOrStderr(), "Structured error output failed: "+writeErr.Error())
 			return 1
 		}
 	}
