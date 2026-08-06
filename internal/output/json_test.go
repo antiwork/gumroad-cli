@@ -111,6 +111,9 @@ func TestValidateJQExpression(t *testing.T) {
 	if err := ValidateJQExpression(".["); err == nil {
 		t.Fatal("invalid jq expression returned nil")
 	}
+	if err := ValidateJQExpression("foo"); err == nil {
+		t.Fatal("jq compile error returned nil")
+	}
 }
 
 func TestFilterJQ_InvalidInputJSON(t *testing.T) {

@@ -35,8 +35,14 @@ func ValidateJQExpression(expr string) error {
 	if expr == "" {
 		return nil
 	}
-	_, err := parseJQ(expr)
-	return err
+	query, err := parseJQ(expr)
+	if err != nil {
+		return err
+	}
+	if _, err := gojq.Compile(query); err != nil {
+		return fmt.Errorf("invalid jq expression: %w", err)
+	}
+	return nil
 }
 
 func StreamJSONArrayEnvelope(w io.Writer, key string, writeItems func(func(any) error) error) error {

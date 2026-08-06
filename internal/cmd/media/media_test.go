@@ -478,6 +478,24 @@ func TestMediaDelete_InvalidJQFailsBeforeRequest(t *testing.T) {
 	}
 }
 
+func TestMediaDelete_JQCompileErrorFailsBeforeRequest(t *testing.T) {
+	reached := false
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		reached = true
+		testutil.JSON(t, w, map[string]any{"success": true})
+	})
+
+	cmd := testutil.Command(newDeleteCmd(), testutil.Yes(true), testutil.JQ("foo"))
+	cmd.SetArgs([]string{"k3n8xq1p9wr2sd4a"})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "invalid jq expression") {
+		t.Fatalf("err = %v, want invalid jq expression", err)
+	}
+	if reached {
+		t.Fatal("jq compile error caused a delete request")
+	}
+}
+
 func TestMediaUpload_MissingSignedID(t *testing.T) {
 	newMediaServers(t)
 	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
