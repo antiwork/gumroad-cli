@@ -25,6 +25,7 @@ type compsPriceCents struct {
 
 type compsData struct {
 	Count      int64           `json:"count"`
+	Currency   string          `json:"currency,omitempty"`
 	PriceCents compsPriceCents `json:"price_cents"`
 	Examples   []compsExample  `json:"examples"`
 }
