@@ -13,6 +13,7 @@ import (
 	"github.com/antiwork/gumroad-cli/internal/adminconfig"
 	"github.com/antiwork/gumroad-cli/internal/api"
 	"github.com/antiwork/gumroad-cli/internal/cmd/files"
+	"github.com/antiwork/gumroad-cli/internal/cmd/media"
 	"github.com/antiwork/gumroad-cli/internal/cmdutil"
 	"github.com/antiwork/gumroad-cli/internal/config"
 	"github.com/antiwork/gumroad-cli/internal/output"
@@ -373,6 +374,32 @@ func TestClassifyCommandError_UploadUnknownState_CarriesRecovery(t *testing.T) {
 	}
 	if detail.Hint == "" {
 		t.Error("expected human-facing hint about avoiding blind retry")
+	}
+}
+
+func TestClassifyCommandError_MediaCommitStateUnknownCarriesRecovery(t *testing.T) {
+	state := &media.UnknownMediaCommitError{
+		Cause:        &api.APIError{StatusCode: 502, Message: "upstream failed"},
+		SignedBlobID: "signed-1",
+		Name:         "Store logo",
+		Filename:     "logo.png",
+		FileSize:     1234,
+	}
+	detail := classifyCommandError(state)
+	if detail.Type != "upload_error" || detail.Code != "media_commit_state_unknown" {
+		t.Fatalf("detail = %+v", detail)
+	}
+	if detail.Recovery == nil {
+		t.Fatal("recovery is nil")
+	}
+	if detail.Recovery.SignedBlobID != "signed-1" || detail.Recovery.MediaName != "Store logo" {
+		t.Fatalf("recovery = %+v", detail.Recovery)
+	}
+	if detail.Recovery.Filename != "logo.png" || detail.Recovery.FileSize != 1234 {
+		t.Fatalf("recovery = %+v", detail.Recovery)
+	}
+	if !strings.Contains(detail.Hint, "gumroad media list") {
+		t.Fatalf("hint = %q", detail.Hint)
 	}
 }
 

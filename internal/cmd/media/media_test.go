@@ -2,10 +2,14 @@ package media
 
 import (
 	"bytes"
+	"context"
 	"crypto/md5" // #nosec G501 -- verifying the S3 Content-MD5 integrity header in tests.
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -14,7 +18,9 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
+	"github.com/antiwork/gumroad-cli/internal/cmdutil"
 	"github.com/antiwork/gumroad-cli/internal/testutil"
 )
 
@@ -306,7 +312,7 @@ func TestMediaUpload_DryRunMakesNoRequests(t *testing.T) {
 
 	var out bytes.Buffer
 	cmd := testutil.Command(newUploadCmd(), testutil.DryRun(true), testutil.JSONOutput(), testutil.Stdout(&out))
-	cmd.SetArgs([]string{writePNGFixture(t)})
+	cmd.SetArgs([]string{writePNGFixture(t), "--name", "Store logo"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
@@ -317,8 +323,26 @@ func TestMediaUpload_DryRunMakesNoRequests(t *testing.T) {
 	if err := json.Unmarshal(out.Bytes(), &payload); err != nil {
 		t.Fatalf("dry-run JSON not parseable: %v (%q)", err, out.String())
 	}
-	if !payload.DryRun || payload.ContentType != "image/png" {
+	if !payload.DryRun || payload.ContentType != "image/png" || payload.Name != "Store logo" {
 		t.Fatalf("dry-run payload = %#v", payload)
+	}
+	if len(payload.Requests) != 3 {
+		t.Fatalf("dry-run requests = %#v, want 3", payload.Requests)
+	}
+	if payload.Requests[0].Method != http.MethodPost || payload.Requests[0].Path != "/direct_uploads" {
+		t.Fatalf("reserve request = %#v", payload.Requests[0])
+	}
+	if payload.Requests[0].Params["purpose"] != "media" {
+		t.Fatalf("reserve params = %#v", payload.Requests[0].Params)
+	}
+	if payload.Requests[1].Method != http.MethodPut || payload.Requests[1].Path != "<direct_upload_url>" {
+		t.Fatalf("upload request = %#v", payload.Requests[1])
+	}
+	if payload.Requests[2].Method != http.MethodPost || payload.Requests[2].Path != "/media" {
+		t.Fatalf("commit request = %#v", payload.Requests[2])
+	}
+	if payload.Requests[2].Params["name"] != "Store logo" {
+		t.Fatalf("commit params = %#v", payload.Requests[2].Params)
 	}
 }
 
@@ -407,7 +431,9 @@ func TestMediaUpload_MissingUploadURL(t *testing.T) {
 }
 
 func TestMediaUpload_S3FailureSurfacesBody(t *testing.T) {
+	var calls atomic.Int32
 	s3 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
 		http.Error(w, "access denied", http.StatusForbidden)
 	}))
 	t.Cleanup(s3.Close)
@@ -435,6 +461,138 @@ func TestMediaUpload_S3FailureSurfacesBody(t *testing.T) {
 	if mediaReached {
 		t.Fatal("POST /media fired after a failed direct upload")
 	}
+	if got := calls.Load(); got != 1 {
+		t.Fatalf("S3 calls = %d, want 1 for a permanent failure", got)
+	}
+}
+
+func TestPutDirectUpload_RetriesTransientFailureWithFreshBody(t *testing.T) {
+	var calls atomic.Int32
+	var bodySizes []int
+	var mu sync.Mutex
+	s3 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		call := calls.Add(1)
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("read body: %v", err)
+		}
+		mu.Lock()
+		bodySizes = append(bodySizes, len(body))
+		mu.Unlock()
+		if call < 3 {
+			http.Error(w, "try again", http.StatusServiceUnavailable)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(s3.Close)
+	prev := s3HTTPClientForTesting
+	s3HTTPClientForTesting = s3.Client()
+	t.Cleanup(func() { s3HTTPClientForTesting = prev })
+
+	plan, err := describeMediaUpload(writePNGFixture(t))
+	if err != nil {
+		t.Fatalf("describeMediaUpload: %v", err)
+	}
+	err = putDirectUpload(cmdutil.Options{Context: context.Background()}, plan, s3.URL+"/upload", nil)
+	if err != nil {
+		t.Fatalf("putDirectUpload: %v", err)
+	}
+	if got := calls.Load(); got != 3 {
+		t.Fatalf("S3 calls = %d, want 3", got)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	for i, size := range bodySizes {
+		if size != len(pngBytes) {
+			t.Fatalf("body %d size = %d, want %d", i+1, size, len(pngBytes))
+		}
+	}
+}
+
+func TestPutDirectUpload_TimesOutEachAttempt(t *testing.T) {
+	var calls atomic.Int32
+	s3 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls.Add(1)
+		time.Sleep(200 * time.Millisecond)
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(s3.Close)
+	prevClient := s3HTTPClientForTesting
+	s3HTTPClientForTesting = s3.Client()
+	t.Cleanup(func() { s3HTTPClientForTesting = prevClient })
+	prevTimeout := directUploadAttemptTimeout
+	directUploadAttemptTimeout = 20 * time.Millisecond
+	t.Cleanup(func() { directUploadAttemptTimeout = prevTimeout })
+
+	plan, err := describeMediaUpload(writePNGFixture(t))
+	if err != nil {
+		t.Fatalf("describeMediaUpload: %v", err)
+	}
+	err = putDirectUpload(cmdutil.Options{Context: context.Background()}, plan, s3.URL+"/upload", nil)
+	if err == nil || !strings.Contains(err.Error(), "after 3 attempts") {
+		t.Fatalf("err = %v, want bounded retry failure", err)
+	}
+	if got := calls.Load(); got != directUploadMaxAttempts {
+		t.Fatalf("S3 calls = %d, want %d", got, directUploadMaxAttempts)
+	}
+}
+
+func TestPutDirectUpload_CanceledContextMakesNoRequest(t *testing.T) {
+	var calls atomic.Int32
+	s3 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(s3.Close)
+	prev := s3HTTPClientForTesting
+	s3HTTPClientForTesting = s3.Client()
+	t.Cleanup(func() { s3HTTPClientForTesting = prev })
+
+	plan, err := describeMediaUpload(writePNGFixture(t))
+	if err != nil {
+		t.Fatalf("describeMediaUpload: %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	err = putDirectUpload(cmdutil.Options{Context: ctx}, plan, s3.URL+"/upload", nil)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled", err)
+	}
+	if got := calls.Load(); got != 0 {
+		t.Fatalf("S3 calls = %d, want 0", got)
+	}
+}
+
+func TestDirectUploadRetryPolicyRejectsPermanentErrors(t *testing.T) {
+	if isRetryableDirectUploadError(errors.New("invalid upload request")) {
+		t.Fatal("plain errors must not be retried")
+	}
+	certificateErr := &directUploadTransportError{Cause: x509.UnknownAuthorityError{}}
+	if isRetryableDirectUploadError(certificateErr) {
+		t.Fatal("certificate errors must not be retried")
+	}
+	networkErr := &directUploadTransportError{Cause: &net.DNSError{IsTimeout: true}}
+	if !isRetryableDirectUploadError(networkErr) {
+		t.Fatal("transient network errors must be retried")
+	}
+}
+
+func TestDirectUploadHTTPClientUsesAttemptTimeout(t *testing.T) {
+	prev := s3HTTPClientForTesting
+	s3HTTPClientForTesting = nil
+	t.Cleanup(func() { s3HTTPClientForTesting = prev })
+	if got := directUploadHTTPClient().Timeout; got != directUploadAttemptTimeout {
+		t.Fatalf("client timeout = %s, want %s", got, directUploadAttemptTimeout)
+	}
+}
+
+func TestWaitForDirectUploadRetryStopsOnCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := waitForDirectUploadRetry(ctx, 0); !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled", err)
+	}
 }
 
 func TestMediaUpload_ServerRejectionSurfaced(t *testing.T) {
@@ -452,6 +610,42 @@ func TestMediaUpload_ServerRejectionSurfaced(t *testing.T) {
 	err := cmd.Execute()
 	if err == nil || !strings.Contains(err.Error(), "flagged by content moderation") {
 		t.Fatalf("err = %v, want moderation message", err)
+	}
+}
+
+func TestMediaUpload_FinalStateUnknownCarriesRecovery(t *testing.T) {
+	srv := newMediaServers(t)
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/media" {
+			http.Error(w, "upstream failed", http.StatusBadGateway)
+			return
+		}
+		srv.dispatch(t)(w, r)
+	})
+
+	cmd := testutil.Command(newUploadCmd())
+	cmd.SetArgs([]string{writePNGFixture(t), "--name", "Store logo"})
+	err := cmd.Execute()
+	var unknown *UnknownMediaCommitError
+	if !errors.As(err, &unknown) {
+		t.Fatalf("err = %v, want UnknownMediaCommitError", err)
+	}
+	if unknown.SignedBlobID != "signed-1" || unknown.Name != "Store logo" || unknown.Filename != "logo.png" {
+		t.Fatalf("recovery = %#v", unknown)
+	}
+	if unknown.FileSize != int64(len(pngBytes)) {
+		t.Fatalf("file size = %d, want %d", unknown.FileSize, len(pngBytes))
+	}
+	if !strings.Contains(unknown.RecoveryHint(), "gumroad media list") {
+		t.Fatalf("hint = %q", unknown.RecoveryHint())
+	}
+}
+
+func TestUnknownMediaCommitError_RecoveryHintUsesFilenameByDefault(t *testing.T) {
+	err := &UnknownMediaCommitError{Filename: "logo.png", FileSize: 1234}
+	hint := err.RecoveryHint()
+	if !strings.Contains(hint, `"logo.png"`) || !strings.Contains(hint, "1234") {
+		t.Fatalf("hint = %q", hint)
 	}
 }
 
@@ -476,15 +670,17 @@ func TestMediaUpload_DryRunPlainOutput(t *testing.T) {
 
 	var out bytes.Buffer
 	cmd := testutil.Command(newUploadCmd(), testutil.DryRun(true), testutil.PlainOutput(), testutil.Stdout(&out))
-	cmd.SetArgs([]string{writePNGFixture(t)})
+	cmd.SetArgs([]string{writePNGFixture(t), "--name", "Store logo"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
 	if srv.railsReached.Load() {
 		t.Fatal("dry run made real requests")
 	}
-	if !strings.Contains(out.String(), "media upload") || !strings.Contains(out.String(), "image/png") {
-		t.Fatalf("plain dry-run output = %q", out.String())
+	for _, want := range []string{"media upload", "image/png", "Store logo", "/direct_uploads", "<direct_upload_url>", "/media"} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("plain dry-run output missing %q: %q", want, out.String())
+		}
 	}
 }
 
@@ -494,15 +690,27 @@ func TestMediaUpload_DryRunHumanOutput(t *testing.T) {
 
 	var out bytes.Buffer
 	cmd := testutil.Command(newUploadCmd(), testutil.DryRun(true), testutil.Quiet(false), testutil.Stdout(&out))
-	cmd.SetArgs([]string{writePNGFixture(t)})
+	cmd.SetArgs([]string{writePNGFixture(t), "--name", "Store logo"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
 	if srv.railsReached.Load() {
 		t.Fatal("dry run made real requests")
 	}
-	if !strings.Contains(out.String(), "Dry run") || !strings.Contains(out.String(), "Content type: image/png") {
-		t.Fatalf("human dry-run output = %q", out.String())
+	for _, want := range []string{"Dry run", "Content type: image/png", "Display name: Store logo", "Request: POST /direct_uploads", "Request: PUT <direct_upload_url>", "Request: POST /media"} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("human dry-run output missing %q: %q", want, out.String())
+		}
+	}
+}
+
+func TestMediaUpload_HelpStatesLocalFormatLimit(t *testing.T) {
+	help := newUploadCmd().Long
+	if strings.Contains(help, "any image format except SVG") {
+		t.Fatalf("help overstates format support: %q", help)
+	}
+	if !strings.Contains(help, "formats it cannot identify locally") {
+		t.Fatalf("help omits the local format limit: %q", help)
 	}
 }
 

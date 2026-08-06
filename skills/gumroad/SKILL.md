@@ -413,7 +413,7 @@ gumroad media list --json --no-input
 gumroad media delete k3n8xq1p9wr2sd4a --yes --json --no-input
 ```
 
-Only images are accepted (JPEG, PNG, GIF, WebP, BMP, ICO; SVG is rejected), up to 10 MB, and each upload is content-moderated before it is hosted — a flagged image fails with the moderation message. Deleting a file breaks any page still embedding its URL. Requires the `edit_profile` scope (`media list` needs `view_profile`); tokens minted before the CLI requested those scopes fail `media list` with `Access denied: This endpoint requires the view_profile scope.` — fix by re-running `gumroad auth login` to mint a fresh token.
+The CLI detects JPEG, PNG, GIF, WebP, BMP, and ICO images up to 10 MB. It rejects SVG and other formats it cannot identify locally. Gumroad checks each image again and moderates it before hosting. A flagged image fails with the moderation message. Deleting a file breaks each page that still embeds its URL. The upload command requires the `edit_profile` scope. The list command requires the `view_profile` scope. Tokens created before the CLI requested these scopes fail with `Access denied: This endpoint requires the view_profile scope.` Run `gumroad auth login` again to create a token with the new scopes.
 
 ### emails — Manage audience emails
 

@@ -3,20 +3,18 @@ package media
 import (
 	"crypto/md5" // #nosec G501 -- S3 requires an MD5 Content-MD5 header for direct uploads; not used for security.
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 
-	"github.com/antiwork/gumroad-cli/internal/api"
 	"github.com/antiwork/gumroad-cli/internal/cmdutil"
 	"github.com/antiwork/gumroad-cli/internal/config"
 	"github.com/antiwork/gumroad-cli/internal/output"
+	"github.com/antiwork/gumroad-cli/internal/uploadui"
 	"github.com/spf13/cobra"
 )
 
@@ -25,22 +23,12 @@ import (
 // so the pipeline only accepts small files.
 const maxMediaImageBytes = 10 * 1024 * 1024
 
-const maxDirectUploadErrorBody = 4 * 1024
-
 type plannedMediaUpload struct {
 	Path        string
 	Filename    string
 	ContentType string
 	Checksum    string
 	Size        int64
-}
-
-type directUploadResponse struct {
-	SignedID     string `json:"signed_id"`
-	DirectUpload struct {
-		URL     string            `json:"url"`
-		Headers map[string]string `json:"headers"`
-	} `json:"direct_upload"`
 }
 
 type mediaItem struct {
@@ -65,9 +53,9 @@ The returned URL is served from Gumroad's public CDN — the only host that
 custom product landing pages and profile pages are allowed to display images
 from — so it is safe to embed in page HTML pushed with ` + "`gumroad pages push`" + `.
 
-Only images are accepted (JPEG, PNG, GIF, WebP, BMP, or ICO — matching the
-server, which takes any image format except SVG), up to 10 MB. The image is
-content-moderated during upload and rejected if flagged.`,
+The CLI detects JPEG, PNG, GIF, WebP, BMP, and ICO images up to 10 MB. It
+rejects SVG and image formats it cannot identify locally. Gumroad checks the
+image again and runs content moderation before it hosts the file.`,
 		Args: cmdutil.ExactArgs(1),
 		Example: `  gumroad media upload ./logo.png
   gumroad media upload ./logo.png --name "Store logo"
@@ -81,7 +69,7 @@ content-moderated during upload and rejected if flagged.`,
 			}
 
 			if opts.DryRun {
-				return renderUploadDryRun(opts, plan)
+				return renderUploadDryRun(opts, plan, name)
 			}
 
 			return runMediaUpload(opts, plan, name)
@@ -179,10 +167,19 @@ func runMediaUpload(opts cmdutil.Options, plan plannedMediaUpload, name string) 
 		return err
 	}
 	client := cmdutil.NewAPIClient(opts, token)
+	var sp *output.Spinner
+	if cmdutil.ShouldShowSpinner(opts) {
+		sp = output.NewSpinnerTo("Reserving upload for "+plan.Filename+"...", opts.Err())
+		sp.Start()
+		defer sp.Stop()
+	}
 
 	signedID, err := reserveDirectUpload(client, plan)
 	if err != nil {
 		return err
+	}
+	if sp != nil {
+		sp.SetMessage("Uploading " + plan.Filename + " (" + uploadui.HumanBytes(plan.Size) + ")...")
 	}
 	if err := putDirectUpload(opts, plan, signedID.DirectUpload.URL, signedID.DirectUpload.Headers); err != nil {
 		return err
@@ -193,9 +190,15 @@ func runMediaUpload(opts cmdutil.Options, plan plannedMediaUpload, name string) 
 	if name != "" {
 		params.Set("name", name)
 	}
+	if sp != nil {
+		sp.SetMessage("Finalizing and moderating " + plan.Filename + "...")
+	}
 	data, err := client.Post("/media", params)
 	if err != nil {
-		return err
+		return mediaCommitError(err, signedID.SignedID, plan, name)
+	}
+	if sp != nil {
+		sp.Stop()
 	}
 
 	if opts.UsesJSONOutput() {
@@ -219,124 +222,4 @@ func runMediaUpload(opts cmdutil.Options, plan plannedMediaUpload, name string) 
 		return err
 	}
 	return output.Writeln(opts.Out(), "Embed this URL in your page HTML, then publish with `gumroad pages push`.")
-}
-
-func reserveDirectUpload(client *api.Client, plan plannedMediaUpload) (directUploadResponse, error) {
-	params := url.Values{}
-	params.Set("purpose", "media")
-	params.Set("blob[filename]", plan.Filename)
-	params.Set("blob[byte_size]", strconv.FormatInt(plan.Size, 10))
-	params.Set("blob[checksum]", plan.Checksum)
-	params.Set("blob[content_type]", plan.ContentType)
-
-	data, err := client.Post("/direct_uploads", params)
-	if err != nil {
-		return directUploadResponse{}, err
-	}
-	resp, err := cmdutil.DecodeJSON[directUploadResponse](data)
-	if err != nil {
-		return directUploadResponse{}, err
-	}
-	if resp.SignedID == "" {
-		return directUploadResponse{}, fmt.Errorf("direct upload response did not include signed_id")
-	}
-	if resp.DirectUpload.URL == "" {
-		return directUploadResponse{}, fmt.Errorf("direct upload response did not include upload URL")
-	}
-	return resp, nil
-}
-
-// s3HTTPClientForTesting redirects the direct-upload PUT at a test server.
-// Production leaves this nil so the default client is used. Tests in this
-// package must not use t.Parallel — overwriting this var across goroutines
-// would race.
-var s3HTTPClientForTesting *http.Client
-
-func putDirectUpload(opts cmdutil.Options, plan plannedMediaUpload, uploadURL string, headers map[string]string) error {
-	file, err := os.Open(plan.Path)
-	if err != nil {
-		return fmt.Errorf("could not open %s: %w", plan.Path, err)
-	}
-	defer func() { _ = file.Close() }()
-
-	req, err := http.NewRequestWithContext(opts.Context, http.MethodPut, uploadURL, file)
-	if err != nil {
-		return fmt.Errorf("could not create direct upload request: %w", err)
-	}
-	req.ContentLength = plan.Size
-	for key, value := range headers {
-		req.Header.Set(key, value)
-	}
-	if req.Header.Get("Content-Type") == "" {
-		req.Header.Set("Content-Type", plan.ContentType)
-	}
-	if req.Header.Get("Content-MD5") == "" {
-		req.Header.Set("Content-MD5", plan.Checksum)
-	}
-
-	httpClient := http.DefaultClient
-	if s3HTTPClientForTesting != nil {
-		httpClient = s3HTTPClientForTesting
-	}
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("direct upload failed: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, maxDirectUploadErrorBody))
-		message := strings.TrimSpace(string(body))
-		if message == "" {
-			message = resp.Status
-		}
-		return fmt.Errorf("direct upload failed with HTTP %d: %s", resp.StatusCode, message)
-	}
-	return nil
-}
-
-type dryRunUploadPlan struct {
-	DryRun      bool   `json:"dry_run"`
-	Action      string `json:"action"`
-	Path        string `json:"path"`
-	Filename    string `json:"filename"`
-	ContentType string `json:"content_type"`
-	Size        int64  `json:"size"`
-}
-
-func renderUploadDryRun(opts cmdutil.Options, plan plannedMediaUpload) error {
-	payload := dryRunUploadPlan{
-		DryRun:      true,
-		Action:      "media upload",
-		Path:        plan.Path,
-		Filename:    plan.Filename,
-		ContentType: plan.ContentType,
-		Size:        plan.Size,
-	}
-	if opts.UsesJSONOutput() {
-		data, err := json.Marshal(payload)
-		if err != nil {
-			return fmt.Errorf("could not encode dry-run output: %w", err)
-		}
-		return output.PrintJSON(opts.Out(), data, opts.JQExpr)
-	}
-	if opts.PlainOutput {
-		return output.PrintPlain(opts.Out(), [][]string{{
-			"media upload",
-			plan.Path,
-			plan.Filename,
-			plan.ContentType,
-			strconv.FormatInt(plan.Size, 10),
-		}})
-	}
-	if opts.Quiet {
-		return nil
-	}
-	style := opts.Style()
-	if err := output.Writeln(opts.Out(), style.Yellow("Dry run")+": media upload "+plan.Path); err != nil {
-		return err
-	}
-	if err := output.Writef(opts.Out(), "Filename: %s\n", plan.Filename); err != nil {
-		return err
-	}
-	return output.Writef(opts.Out(), "Content type: %s (%d bytes)\n", plan.ContentType, plan.Size)
 }
