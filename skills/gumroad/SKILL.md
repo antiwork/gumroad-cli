@@ -78,6 +78,7 @@ Most responses are wrapped in `{"success": true, ...}` with resource-specific ke
 - `variant-categories list` → `.variant_categories[]`
 - `variants list` → `.variants[]`
 - `files upload` / `files complete` → `.file_url`
+- `media upload` → `.media` (`.id`, `.name`, `.url`, `.file_size`), `media list` → `.media[]`, `media delete` → `.message`
 - `products create` with media flags → `.product` plus `.media[]`
 - `products update` with media flags → `.product` plus `.media[]`
 - `products covers add --image` → `.result.covers[]`, `.result.main_cover_id`, plus `.result.media[]`
@@ -397,6 +398,22 @@ gumroad files abort --upload-id up-123 --key attachments/u/k/original/pack.zip -
 ```
 
 `files upload` and `files complete` both return `.file_url`. When a JSON upload fails with recovery details, reuse `.error.recovery` with `files complete` to finish it or `files abort` to reclaim the orphaned multipart upload.
+
+### media — Public media library (page images)
+
+Files from `files upload` are stored privately and can never be displayed on custom product landing pages or profile pages — the pages' Content-Security-Policy only allows Gumroad's public CDN, and page moderation cannot fetch private URLs, so a page embedding one fails review every time. To put an image on a page, upload it to the public media library instead and embed the returned `.media.url` in the page HTML before `pages push` / `products page publish`.
+
+```sh
+# Host an image publicly and print its page-embeddable URL
+gumroad media upload ./logo.png --json --no-input
+gumroad media upload ./logo.png --name "Store logo" --json --jq '.media.url' --no-input
+
+# List and delete media library files
+gumroad media list --json --no-input
+gumroad media delete G_abc123 --yes --json --no-input
+```
+
+Only images are accepted (JPEG, PNG, GIF, WebP; SVG is rejected), up to 10 MB, and each upload is content-moderated before it is hosted — a flagged image fails with the moderation message. Deleting a file breaks any page still embedding its URL. Requires the `edit_profile` scope (`media list` needs `view_profile`); tokens minted before the CLI requested those scopes get a 403 telling them to re-run `gumroad auth login`.
 
 ### emails — Manage audience emails
 

@@ -14,8 +14,9 @@ const (
 	// The broad legacy `account` scope covers most of the public API, but the
 	// storefront pages write endpoints additionally require the narrower
 	// `edit_profile` scope on the token itself (they deliberately refuse the
-	// `account` fallback), so login requests both.
-	Scopes = "account edit_profile"
+	// `account` fallback), so login requests both. `view_profile` is needed by
+	// the media library list endpoint, which refuses the fallback the same way.
+	Scopes = "account edit_profile view_profile"
 
 	DeviceGrantType = "urn:ietf:params:oauth:grant-type:device_code"
 
