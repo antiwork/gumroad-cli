@@ -410,10 +410,10 @@ gumroad media upload ./logo.png --name "Store logo" --json --jq '.media.url' --n
 
 # List and delete media library files
 gumroad media list --json --no-input
-gumroad media delete G_abc123 --yes --json --no-input
+gumroad media delete k3n8xq1p9wr2sd4a --yes --json --no-input
 ```
 
-Only images are accepted (JPEG, PNG, GIF, WebP, BMP, ICO; SVG is rejected), up to 10 MB, and each upload is content-moderated before it is hosted — a flagged image fails with the moderation message. Deleting a file breaks any page still embedding its URL. Requires the `edit_profile` scope (`media list` needs `view_profile`); tokens minted before the CLI requested those scopes get a 403 telling them to re-run `gumroad auth login`.
+Only images are accepted (JPEG, PNG, GIF, WebP, BMP, ICO; SVG is rejected), up to 10 MB, and each upload is content-moderated before it is hosted — a flagged image fails with the moderation message. Deleting a file breaks any page still embedding its URL. Requires the `edit_profile` scope (`media list` needs `view_profile`); tokens minted before the CLI requested those scopes fail `media list` with `Access denied: invalid_scope` — fix by re-running `gumroad auth login` to mint a fresh token.
 
 ### emails — Manage audience emails
 

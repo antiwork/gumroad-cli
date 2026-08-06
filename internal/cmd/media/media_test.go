@@ -2,6 +2,8 @@ package media
 
 import (
 	"bytes"
+	"crypto/md5" // #nosec G501 -- verifying the S3 Content-MD5 integrity header in tests.
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -33,6 +35,8 @@ type mediaServers struct {
 	mu               sync.Mutex
 	directUploadForm map[string]string
 	mediaForm        map[string]string
+	s3Headers        map[string]string
+	s3BodyLen        int64
 	railsReached     atomic.Bool
 }
 
@@ -46,7 +50,14 @@ func newMediaServers(t *testing.T) *mediaServers {
 			http.Error(w, "bad method", http.StatusBadRequest)
 			return
 		}
-		_, _ = io.Copy(io.Discard, r.Body)
+		n, _ := io.Copy(io.Discard, r.Body)
+		m.mu.Lock()
+		m.s3Headers = map[string]string{
+			"Content-Type": r.Header.Get("Content-Type"),
+			"Content-MD5":  r.Header.Get("Content-MD5"),
+		}
+		m.s3BodyLen = n
+		m.mu.Unlock()
 		w.WriteHeader(http.StatusOK)
 	}))
 	t.Cleanup(m.s3.Close)
@@ -153,6 +164,23 @@ func TestMediaUpload_HappyPath(t *testing.T) {
 	}
 	if mediaForm["signed_blob_id"] != "signed-1" {
 		t.Fatalf("signed_blob_id = %q, want signed-1", mediaForm["signed_blob_id"])
+	}
+	wantMD5 := md5.Sum(pngBytes) // #nosec G401 -- verifying the S3 Content-MD5 integrity header.
+	wantChecksum := base64.StdEncoding.EncodeToString(wantMD5[:])
+	if form["checksum"] != wantChecksum {
+		t.Fatalf("presign checksum = %q, want %q", form["checksum"], wantChecksum)
+	}
+	srv.mu.Lock()
+	s3h, s3n := srv.s3Headers, srv.s3BodyLen
+	srv.mu.Unlock()
+	if s3h["Content-MD5"] != wantChecksum {
+		t.Fatalf("S3 Content-MD5 = %q, want %q", s3h["Content-MD5"], wantChecksum)
+	}
+	if s3h["Content-Type"] != "image/png" {
+		t.Fatalf("S3 Content-Type = %q, want image/png", s3h["Content-Type"])
+	}
+	if s3n != int64(len(pngBytes)) {
+		t.Fatalf("S3 body length = %d, want %d", s3n, len(pngBytes))
 	}
 	if !strings.Contains(out.String(), "https://public-files.gumroad.com/abc123.png") {
 		t.Fatalf("output missing URL: %q", out.String())
@@ -341,12 +369,12 @@ func TestMediaDelete_SendsDelete(t *testing.T) {
 	})
 
 	cmd := testutil.Command(newDeleteCmd(), testutil.Yes(true))
-	cmd.SetArgs([]string{"G_abc123"})
+	cmd.SetArgs([]string{"k3n8xq1p9wr2sd4a"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
-	if gotMethod != http.MethodDelete || gotPath != "/media/G_abc123" {
-		t.Fatalf("got %s %s, want DELETE /media/G_abc123", gotMethod, gotPath)
+	if gotMethod != http.MethodDelete || gotPath != "/media/k3n8xq1p9wr2sd4a" {
+		t.Fatalf("got %s %s, want DELETE /media/k3n8xq1p9wr2sd4a", gotMethod, gotPath)
 	}
 }
 
@@ -515,9 +543,8 @@ func TestMediaDelete_Cancelled(t *testing.T) {
 		testutil.JSON(t, w, map[string]any{})
 	})
 
-	var out bytes.Buffer
-	cmd := testutil.Command(newDeleteCmd(), testutil.NoInput(true), testutil.Quiet(false), testutil.Stdout(&out))
-	cmd.SetArgs([]string{"G_abc123"})
+	cmd := testutil.Command(newDeleteCmd(), testutil.NoInput(true))
+	cmd.SetArgs([]string{"k3n8xq1p9wr2sd4a"})
 	err := cmd.Execute()
 	if err == nil || !strings.Contains(err.Error(), "confirmation required") {
 		t.Fatalf("err = %v, want confirmation-required", err)
@@ -525,7 +552,6 @@ func TestMediaDelete_Cancelled(t *testing.T) {
 	if reached {
 		t.Fatal("unconfirmed delete reached the API")
 	}
-	_ = out
 }
 
 func TestMediaList_JSONOutput(t *testing.T) {
@@ -663,5 +689,47 @@ func TestMediaUpload_BMPAccepted(t *testing.T) {
 	defer srv.mu.Unlock()
 	if srv.directUploadForm["content_type"] != "image/bmp" {
 		t.Fatalf("content_type = %q, want image/bmp", srv.directUploadForm["content_type"])
+	}
+}
+
+func TestMediaUpload_WebPAccepted(t *testing.T) {
+	srv := newMediaServers(t)
+	testutil.Setup(t, srv.dispatch(t))
+
+	webp := append([]byte("RIFF"), append([]byte{0x20, 0, 0, 0}, append([]byte("WEBPVP8 "), bytes.Repeat([]byte{0}, 16)...)...)...)
+	path := filepath.Join(t.TempDir(), "photo.webp")
+	if err := os.WriteFile(path, webp, 0600); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+	cmd := testutil.Command(newUploadCmd())
+	cmd.SetArgs([]string{path})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	srv.mu.Lock()
+	defer srv.mu.Unlock()
+	if srv.directUploadForm["content_type"] != "image/webp" {
+		t.Fatalf("content_type = %q, want image/webp", srv.directUploadForm["content_type"])
+	}
+}
+
+func TestMediaUpload_RenamedSVGStillRejected(t *testing.T) {
+	srv := newMediaServers(t)
+	testutil.Setup(t, srv.dispatch(t))
+
+	// An SVG renamed to .png dodges the extension guard but sniffs as XML/text,
+	// so the image/ prefix check rejects it.
+	path := filepath.Join(t.TempDir(), "sneaky.png")
+	if err := os.WriteFile(path, []byte(`<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg"></svg>`), 0600); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+	cmd := testutil.Command(newUploadCmd())
+	cmd.SetArgs([]string{path})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "not an image") {
+		t.Fatalf("err = %v, want not-an-image", err)
+	}
+	if srv.railsReached.Load() {
+		t.Fatal("API was reached for a rejected file")
 	}
 }

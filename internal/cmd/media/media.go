@@ -22,7 +22,7 @@ func NewMediaCmd() *cobra.Command {
 		Example: `  gumroad media upload ./logo.png
   gumroad media upload ./logo.png --name "Store logo"
   gumroad media list
-  gumroad media delete G_abc123`,
+  gumroad media delete k3n8xq1p9wr2sd4a`,
 	}
 
 	cmd.AddCommand(newUploadCmd())

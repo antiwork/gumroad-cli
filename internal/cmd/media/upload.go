@@ -146,10 +146,13 @@ func detectMediaImageContentType(path string, file *os.File) (string, error) {
 		return "", err
 	}
 
-	detected := strings.ToLower(strings.TrimSpace(strings.Split(http.DetectContentType(sample[:n]), ";")[0]))
-	if detected == "image/svg+xml" || strings.HasSuffix(strings.ToLower(filepath.Ext(path)), ".svg") {
+	// SVG can't be caught by sniffing — http.DetectContentType reports XML/plain
+	// text for SVG bytes — so the guard is extension-based. A renamed SVG still
+	// fails the image/ prefix check below, and the server rejects SVG regardless.
+	if strings.EqualFold(filepath.Ext(path), ".svg") {
 		return "", cmdutil.InvalidInputErrorf("SVG images are not supported in the media library; use JPEG, PNG, GIF, WebP, BMP, or ICO")
 	}
+	detected := strings.ToLower(strings.TrimSpace(strings.Split(http.DetectContentType(sample[:n]), ";")[0]))
 	if !strings.HasPrefix(detected, "image/") {
 		return "", cmdutil.InvalidInputErrorf("%s is not an image; the media library accepts JPEG, PNG, GIF, WebP, BMP, or ICO images", path)
 	}
