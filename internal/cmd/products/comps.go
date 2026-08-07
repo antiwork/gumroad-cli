@@ -121,12 +121,16 @@ func renderComps(opts cmdutil.Options, comps compsData) error {
 		if len(comps.Examples) == 0 {
 			return nil
 		}
-		if err := output.Writeln(w, "\n"+style.Bold("Top sellers")); err != nil {
+		if err := output.Writeln(w, "\n"+style.Bold("Top products")); err != nil {
 			return err
 		}
 		tbl := output.NewStyledTable(style, "NAME", "PRICE", "URL")
 		for _, example := range comps.Examples {
-			tbl.AddRow(example.Name, example.Price, example.URL)
+			tbl.AddRow(
+				output.EscapePlainField(example.Name),
+				output.EscapePlainField(example.Price),
+				output.EscapePlainField(example.URL),
+			)
 		}
 		return tbl.Render(w)
 	})

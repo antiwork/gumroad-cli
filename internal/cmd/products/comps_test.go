@@ -190,3 +190,31 @@ func TestComps_RejectsWhitespaceOnlyFilters(t *testing.T) {
 		t.Fatalf("expected a missing-flag error for whitespace-only filters, got %v", err)
 	}
 }
+
+func TestComps_TableEscapesControlCharacters(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{
+			"success": true,
+			"comps": map[string]any{
+				"count":       1,
+				"price_cents": map[string]any{"p25": 900, "p50": 1500, "p75": 2900},
+				"examples": []map[string]any{
+					{"name": "Evil\nPack\x1b[31m", "price": "$15", "url": "https://sfx.gumroad.com/l/evil"},
+				},
+			},
+		})
+	})
+
+	cmd := testutil.Command(newCompsCmd())
+	cmd.SetArgs([]string{"--query", "evil"})
+	out := testutil.CaptureStdout(func() {
+		testutil.MustExecute(t, cmd)
+	})
+
+	if !strings.Contains(out, `Evil\nPack\x1b[31m`) {
+		t.Fatalf("expected escaped control characters in table output: %q", out)
+	}
+	if strings.Contains(out, "Evil\nPack") || strings.Contains(out, "\x1b[31m") {
+		t.Fatalf("raw control characters reached table output: %q", out)
+	}
+}
