@@ -116,7 +116,7 @@ func TestFilesDownloadImplicitDestinationStripsControlCharacters(t *testing.T) {
 
 	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
 		testutil.JSON(t, w, downloadURLPayload(storage.URL+"/signed", func(p map[string]any) {
-			p["file"].(map[string]any)["file_name"] = "evil\x1b[31m\nname.pdf"
+			p["file"].(map[string]any)["file_name"] = "evil\x1b[31m\u009bname.pdf"
 			p["file"].(map[string]any)["display_name"] = "Evil\nPack\x1b[31m"
 		}))
 	})
@@ -126,7 +126,7 @@ func TestFilesDownloadImplicitDestinationStripsControlCharacters(t *testing.T) {
 	cmd.SetArgs([]string{"abc123", "f_1"})
 	testutil.MustExecute(t, cmd)
 
-	if _, err := os.Stat("evil[31mname.pdf"); err != nil {
+	if _, err := os.Stat("evil[31mname.pdf"); err != nil { // C0, C1 (U+009B), and DEL all stripped
 		t.Fatalf("expected control-stripped filename in cwd: %v", err)
 	}
 	rendered := out.String()

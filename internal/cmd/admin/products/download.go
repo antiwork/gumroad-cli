@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"unicode"
 
 	"github.com/antiwork/gumroad-cli/internal/adminapi"
 	"github.com/antiwork/gumroad-cli/internal/admincmd"
@@ -119,7 +120,10 @@ func downloadDestination(outputPath string, file productFile, fileID string) str
 		return outputPath
 	}
 	name := strings.Map(func(r rune) rune {
-		if r < 0x20 || r == 0x7f {
+		// unicode.IsControl covers C0, DEL, and the C1 range (U+0080–U+009F)
+		// — U+009B is a single-rune CSI that would otherwise survive a
+		// bytes-below-0x20 check and reach the terminal.
+		if unicode.IsControl(r) {
 			return -1
 		}
 		return r
