@@ -6,8 +6,10 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/antiwork/gumroad-cli/internal/testutil"
 )
@@ -188,6 +190,97 @@ func TestFilesDownloadRefusesDestinationAppearingMidDownload(t *testing.T) {
 	data, _ := os.ReadFile("big-guide.pdf")
 	if string(data) != "raced" {
 		t.Fatalf("raced file was overwritten: %q", data)
+	}
+	assertNoTempFiles(t)
+}
+
+func TestFilesDownloadKeepsDownloadOwnerPrivate(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix permission bits do not apply on Windows")
+	}
+	t.Chdir(t.TempDir())
+	storage, _ := storageServer(t, "private bytes")
+
+	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, downloadURLPayload(storage.URL+"/signed"))
+	})
+
+	cmd := testutil.Command(newFilesDownloadCmd())
+	cmd.SetArgs([]string{"abc123", "f_1"})
+	testutil.MustExecute(t, cmd)
+
+	info, err := os.Stat("big-guide.pdf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != 0o600 {
+		t.Fatalf("downloaded review content must stay owner-private, got mode %o", got)
+	}
+}
+
+func TestInstallDownloadedFileRefusesDestinationCreatedAtInstallTime(t *testing.T) {
+	dir := t.TempDir()
+	tmpName := filepath.Join(dir, ".gumroad-download-race")
+	dest := filepath.Join(dir, "review.zip")
+	if err := os.WriteFile(tmpName, []byte("downloaded"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// dest appears after any earlier stat could have run; the install itself
+	// must refuse without --force.
+	if err := os.WriteFile(dest, []byte("raced"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	err := installDownloadedFile(tmpName, dest, false)
+	if err == nil || !strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("expected already-exists error, got: %v", err)
+	}
+	data, _ := os.ReadFile(dest)
+	if string(data) != "raced" {
+		t.Fatalf("raced destination was overwritten: %q", data)
+	}
+	if _, err := os.Stat(tmpName); err == nil {
+		t.Fatal("temp file left behind after refused install")
+	}
+}
+
+func TestFilesDownloadStalledStorageResponseTimesOut(t *testing.T) {
+	t.Chdir(t.TempDir())
+	prev := downloadStallTimeout
+	downloadStallTimeout = 150 * time.Millisecond
+	t.Cleanup(func() { downloadStallTimeout = prev })
+
+	release := make(chan struct{})
+	storage := newHTTPTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+		<-release // accepted the request, then never sends a byte
+	})
+	// Registered after the server so it runs first (cleanups are LIFO):
+	// Server.Close waits for the handler, which waits on this channel.
+	t.Cleanup(func() { close(release) })
+
+	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, downloadURLPayload(storage.URL+"/signed"))
+	})
+
+	cmd := testutil.Command(newFilesDownloadCmd())
+	cmd.SetArgs([]string{"abc123", "f_1"})
+	done := make(chan error, 1)
+	go func() { done <- cmd.Execute() }()
+
+	select {
+	case err := <-done:
+		if err == nil || !strings.Contains(err.Error(), "sent no data") {
+			t.Fatalf("expected stall-timeout error, got: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("download blocked past the stall timeout")
+	}
+	if _, err := os.Stat("big-guide.pdf"); err == nil {
+		t.Fatal("stalled download must not install a destination file")
 	}
 	assertNoTempFiles(t)
 }

@@ -1,7 +1,9 @@
 package products
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -10,6 +12,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/antiwork/gumroad-cli/internal/adminapi"
@@ -45,8 +48,6 @@ func newFilesDownloadCmd() *cobra.Command {
 			opts := cmdutil.OptionsFrom(c)
 			productID, fileID := args[0], args[1]
 
-			// JSON output owns stdout, so it cannot be combined with streaming
-			// the file bytes there.
 			if outputPath == "-" && opts.UsesJSONOutput() {
 				return cmdutil.InvalidInputErrorf("--json/--jq cannot be combined with -o - (both write to stdout); use -o <path> to keep the file")
 			}
@@ -91,11 +92,10 @@ func newFilesDownloadCmd() *cobra.Command {
 	return cmd
 }
 
-// checkDownloadDestinationWritable fails fast when an explicit destination
-// already exists and --force wasn't given, so no API call is wasted. The check
-// runs again when the file is actually replaced (see downloadToFile) — this
-// one is only an early exit, and the default destination is only known after
-// the response arrives.
+// checkDownloadDestinationWritable is only an early exit before the API call
+// is spent; the binding no-overwrite check happens when the finished file is
+// installed (see installDownloadedFile), since the default destination is
+// only known after the response arrives.
 func checkDownloadDestinationWritable(dest string, force bool) error {
 	if dest == "" || dest == "-" || force {
 		return nil
@@ -135,27 +135,42 @@ func downloadDestination(outputPath string, file productFile, fileID string) str
 	return name
 }
 
+// downloadStallTimeout bounds how long the signed-URL transfer may go without
+// delivering any bytes (a total-transfer deadline would break large files on
+// slow links). Variable so tests can shrink it.
+var downloadStallTimeout = 2 * time.Minute
+
 // downloadToFile streams the signed URL to dest via a temporary file in the
 // same directory, moving it into place only after the whole download has been
 // written. The destination is never touched on a failed or partial write, and
-// --force is enforced at the moment the file is actually replaced.
+// --force is enforced at the moment the file is actually installed. The temp
+// file keeps os.CreateTemp's 0600 mode: downloads are privileged seller
+// content pulled for review, so they stay owner-private, unlike the public
+// storefront HTML written by `pages pull`.
 func downloadToFile(opts cmdutil.Options, signedURL, dest string, force bool) error {
-	req, err := http.NewRequestWithContext(opts.Context, http.MethodGet, signedURL, nil)
+	ctx, cancel := context.WithCancel(opts.Context)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, signedURL, nil)
 	if err != nil {
 		return err
 	}
+	stallTimer := time.AfterFunc(downloadStallTimeout, cancel)
+	defer stallTimer.Stop()
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("downloading the file failed: %w", err)
+		return stallAwareDownloadError(ctx, opts.Context, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("downloading the file failed: storage returned HTTP %d", resp.StatusCode)
 	}
+	body := &stallResetReader{r: resp.Body, timer: stallTimer}
 
 	if dest == "-" {
-		_, err := io.Copy(opts.Out(), resp.Body)
-		return err
+		if _, err := io.Copy(opts.Out(), body); err != nil {
+			return stallAwareDownloadError(ctx, opts.Context, err)
+		}
+		return nil
 	}
 
 	tmp, err := os.CreateTemp(filepath.Dir(dest), ".gumroad-download-*")
@@ -163,26 +178,36 @@ func downloadToFile(opts cmdutil.Options, signedURL, dest string, force bool) er
 		return err
 	}
 	tmpName := tmp.Name()
-	if _, err := io.Copy(tmp, resp.Body); err != nil {
+	if _, err := io.Copy(tmp, body); err != nil {
 		tmp.Close()
 		os.Remove(tmpName)
-		return err
+		return stallAwareDownloadError(ctx, opts.Context, err)
 	}
 	if err := tmp.Close(); err != nil {
 		os.Remove(tmpName)
 		return err
 	}
-	// The download is a seller's product file pulled for review, not a
-	// credential — match the world-readable mode the rest of the CLI uses for
-	// non-secret content.
-	if err := os.Chmod(tmpName, 0644); err != nil { //nolint:gosec // G302: reviewed product content
-		os.Remove(tmpName)
-		return err
-	}
+	return installDownloadedFile(tmpName, dest, force)
+}
+
+// installDownloadedFile moves the finished temp file into place. Without
+// --force it links the temp file to dest, which the OS refuses atomically if
+// dest exists — a plain stat-then-rename check would let a file created in
+// that window be silently replaced. Filesystems without hard links fall back
+// to the racy check rather than failing the download.
+func installDownloadedFile(tmpName, dest string, force bool) error {
 	if !force {
-		if _, err := os.Stat(dest); err == nil {
+		switch err := os.Link(tmpName, dest); {
+		case err == nil:
+			return os.Remove(tmpName)
+		case errors.Is(err, os.ErrExist):
 			os.Remove(tmpName)
 			return downloadDestinationExistsError(dest)
+		default:
+			if _, statErr := os.Stat(dest); statErr == nil {
+				os.Remove(tmpName)
+				return downloadDestinationExistsError(dest)
+			}
 		}
 	}
 	if err := os.Rename(tmpName, dest); err != nil {
@@ -190,6 +215,28 @@ func downloadToFile(opts cmdutil.Options, signedURL, dest string, force bool) er
 		return err
 	}
 	return nil
+}
+
+// stallAwareDownloadError distinguishes a stall-timer cancellation from the
+// user's own Ctrl-C, which shares the same context error.
+func stallAwareDownloadError(ctx, parent context.Context, err error) error {
+	if ctx.Err() != nil && parent.Err() == nil {
+		return fmt.Errorf("downloading the file failed: storage sent no data for %s", downloadStallTimeout)
+	}
+	return fmt.Errorf("downloading the file failed: %w", err)
+}
+
+type stallResetReader struct {
+	r     io.Reader
+	timer *time.Timer
+}
+
+func (s *stallResetReader) Read(p []byte) (int, error) {
+	n, err := s.r.Read(p)
+	if n > 0 {
+		s.timer.Reset(downloadStallTimeout)
+	}
+	return n, err
 }
 
 func renderDownloadSuccess(opts cmdutil.Options, file productFile, dest string) error {
@@ -214,9 +261,6 @@ func renderDownloadSuccess(opts cmdutil.Options, file productFile, dest string) 
 	return output.Writef(opts.Out(), "Inspect it locally, e.g. `unzip -l %s` or your scanner of choice.\n", quotePathForShell(dest))
 }
 
-// quotePathForShell makes a path safe to copy-paste into the suggested
-// follow-up command. Plain paths pass through untouched; anything with spaces
-// or shell metacharacters gets single-quoted.
 func quotePathForShell(path string) string {
 	if plainDownloadPathPattern.MatchString(path) {
 		return path
