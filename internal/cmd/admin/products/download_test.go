@@ -110,6 +110,34 @@ func TestFilesDownloadImplicitDestinationCannotEscapeCwd(t *testing.T) {
 	assertNoTempFiles(t)
 }
 
+func TestFilesDownloadImplicitDestinationStripsControlCharacters(t *testing.T) {
+	t.Chdir(t.TempDir())
+	storage, _ := storageServer(t, "payload")
+
+	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, downloadURLPayload(storage.URL+"/signed", func(p map[string]any) {
+			p["file"].(map[string]any)["file_name"] = "evil\x1b[31m\nname.pdf"
+			p["file"].(map[string]any)["display_name"] = "Evil\nPack\x1b[31m"
+		}))
+	})
+
+	var out bytes.Buffer
+	cmd := testutil.Command(newFilesDownloadCmd(), testutil.Quiet(false), testutil.Stdout(&out))
+	cmd.SetArgs([]string{"abc123", "f_1"})
+	testutil.MustExecute(t, cmd)
+
+	if _, err := os.Stat("evil[31mname.pdf"); err != nil {
+		t.Fatalf("expected control-stripped filename in cwd: %v", err)
+	}
+	rendered := out.String()
+	if strings.Contains(rendered, "\x1b[31m") {
+		t.Fatalf("raw ANSI escape reached stdout: %q", rendered)
+	}
+	if !strings.Contains(rendered, `Evil\nPack\x1b[31m`) {
+		t.Fatalf("expected escaped display name in output: %q", rendered)
+	}
+}
+
 func TestFilesDownloadRefusesExistingDestinationBeforeRequest(t *testing.T) {
 	t.Chdir(t.TempDir())
 	if err := os.WriteFile("review.zip", []byte("old"), 0o600); err != nil {

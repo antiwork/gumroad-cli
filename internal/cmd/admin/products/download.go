@@ -111,12 +111,20 @@ func downloadDestinationExistsError(dest string) error {
 
 // downloadDestination picks the implicit output path from the server-provided
 // file name. The name is seller-controlled, so only its base name is used —
-// a name like "../evil.pdf" must not write outside the working directory.
+// a name like "../evil.pdf" must not write outside the working directory —
+// and control characters are stripped so the name can't smuggle terminal
+// escape sequences into the success output or the shell.
 func downloadDestination(outputPath string, file productFile, fileID string) string {
 	if outputPath != "" {
 		return outputPath
 	}
-	name := filepath.Base(strings.TrimSpace(file.FileName))
+	name := strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f {
+			return -1
+		}
+		return r
+	}, strings.TrimSpace(file.FileName))
+	name = filepath.Base(name)
 	if name == "" || name == "." || name == ".." || name == string(filepath.Separator) {
 		return fileID
 	}
@@ -196,7 +204,7 @@ func renderDownloadSuccess(opts cmdutil.Options, file productFile, dest string) 
 	if name == "" {
 		name = file.ID
 	}
-	if err := output.Writeln(opts.Out(), style.Bold(fmt.Sprintf("Downloaded %s → %s (%s)", output.EscapePlainField(name), dest, formatFileSize(int(file.FileSize))))); err != nil {
+	if err := output.Writeln(opts.Out(), style.Bold(fmt.Sprintf("Downloaded %s → %s (%s)", output.EscapePlainField(name), output.EscapePlainField(dest), formatFileSize(int(file.FileSize))))); err != nil {
 		return err
 	}
 	return output.Writef(opts.Out(), "Inspect it locally, e.g. `unzip -l %s` or your scanner of choice.\n", quotePathForShell(dest))
