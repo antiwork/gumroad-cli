@@ -346,7 +346,9 @@ func TestNewWorkflowsCmd_RegistersSubcommands(t *testing.T) {
 		names = append(names, sub.Name())
 	}
 	joined := strings.Join(names, ",")
-	if !strings.Contains(joined, "list") || !strings.Contains(joined, "view") {
-		t.Errorf("missing subcommands, got: %v", names)
+	for _, name := range []string{"list", "view", "add-email", "update-email"} {
+		if !strings.Contains(joined, name) {
+			t.Errorf("missing %s subcommand, got: %v", name, names)
+		}
 	}
 }

@@ -3,7 +3,7 @@ name: gumroad
 description: >
   Use the `gumroad` CLI to look up and manage Gumroad data from the terminal.
   Trigger when the user asks about Gumroad products, files, file uploads,
-  attachments, sales, subscribers, licenses, payouts, audience emails, broadcasts, offer codes, webhooks,
+  attachments, sales, subscribers, licenses, payouts, audience emails, email workflows, broadcasts, offer codes, webhooks,
   refund policies,
   or any Gumroad data lookup.
   Also trigger on "check my Gumroad", "look up a sale", "verify a license",
@@ -33,7 +33,7 @@ Always follow these rules:
 - **Always** pass `--no-input` to prevent interactive prompts from blocking.
 - **Always** pass `--json` for programmatic access.
 - Use `--json --jq <expr>` together to extract exactly what you need.
-- For operations that can prompt for confirmation (delete, refund, mutating admin actions, `files abort`, `files complete` replay, product updates that remove files, or `products content set` when omitted page IDs will be deleted), add `--yes` to skip confirmation.
+- For operations that can prompt for confirmation (delete, refund, workflow step adds, workflow delay changes, mutating admin actions, `files abort`, `files complete` replay, product updates that remove files, or `products content set` when omitted page IDs will be deleted), add `--yes` to skip confirmation.
 - Pass `--quiet` to suppress spinners and status messages.
 - Pass `--dry-run` to preview mutating requests without executing them.
 - Use `--page-delay 200ms` with `--all` to avoid rate limits on large datasets.
@@ -46,6 +46,7 @@ Always follow these rules:
 - Product rich content uses `gumroad products content list <id> --json --no-input` to inspect page IDs, `gumroad products content get <id> --json --no-input` to dump the shared `rich_content` page array, and `gumroad products content set <id> content.json --dry-run --json --no-input` to preview a whole-document replacement. Without an explicit path, whole-document `set` reads `./content.json`; `set --page` reads `./page.json`. Use `--page <page_id>` with `get`/`set` to edit one matching page object; `set --page` still sends a merged whole-document PUT. For per-variant content, pass both `--variant <variant_id>` and `--category <cat_id>`. Whole-document `set` deletes existing pages omitted from the JSON.
 - Custom HTML pages can use `data-gumroad-field="name"`, `data-gumroad-field="price"`, `data-gumroad-field="description"`, and `data-gumroad-action="buy"`. To preselect checkout state, add `data-gumroad-option="<variant name>"`, `data-gumroad-quantity="<integer>"`, `data-gumroad-price="<decimal>"`, or `data-gumroad-recurrence="monthly|quarterly|biannually|yearly|every_two_years"`. Production validates these values and falls back to product defaults when invalid. Prefer anchors for buy CTAs so production can add a checkout href; non-anchor buy elements also post to checkout.
 - Audience emails are created as drafts by default. Use `gumroad emails send-preview <id> --json --no-input` and inspect `.preview_url` before `gumroad emails send <id> --yes --json --no-input`. Creating with `--send` publishes and blasts immediately, so use `--dry-run` first and require explicit human approval.
+- Workflow email writes do not change the workflow publication state. Adding a step to a published workflow can schedule eligible past recipients. Changing a delay can reschedule recipients. Use `--dry-run` before each write.
 - If a command fails with a seller auth error, run `gumroad auth status --json --no-input` first. Agents can start seller auth with `gumroad auth login --no-input` and hand the printed approval URL to a human, or use an existing seller token via `GUMROAD_ACCESS_TOKEN` or `gumroad auth login --with-token`.
 - For admin commands in agents/CI, pass `--non-interactive` and set `GUMROAD_ADMIN_TOKEN`; interactive shells can store an admin token with `gumroad auth login --web`.
 
@@ -70,6 +71,7 @@ Most responses are wrapped in `{"success": true, ...}` with resource-specific ke
 - `sales export` → `.status`, `.recipient_email`
 - `sales summary` → `.gross_cents`, `.net_cents`, `.breakdown[]`
 - `emails list` → `.emails[]`, `emails view/create/send` → `.email`, `emails send-preview` → `.preview_url`, `emails delete` → `.message`
+- `workflows list` → `.workflows[]`, `workflows view` → `.workflow`, `workflows add-email/update-email` → `.email`
 - `payouts list` → `.payouts[]`, `payouts view/upcoming` → `.payout`
 - `subscribers list` → `.subscribers[]`, `subscribers view` → `.subscriber`
 - `licenses verify` → `.purchase`
@@ -448,7 +450,7 @@ gumroad emails delete <id> --yes --json --no-input
 
 Use `--dry-run --json --no-input` to inspect create params without calling the API. Passing `--send` blasts the audience immediately; prefer the draft → `send-preview` URL → `send` workflow. `send-preview` emails a copy to the seller. Scheduled emails can only be created in the web UI; the CLI can list and view them (`--state scheduled`) but not create them.
 
-### workflows — Inspect email workflows
+### workflows — Manage email workflows
 
 ```sh
 # List workflows with audience, state, and email step count.
@@ -459,9 +461,23 @@ gumroad workflows view <id> --json --no-input
 
 # Compare steps: pull subject and click rate for every step.
 gumroad workflows view <id> --json --jq '.workflow.emails[] | {subject, click_rate}' --no-input
+
+# Preview and then add one step from an HTML body file.
+gumroad workflows add-email <workflow-id> --subject "Week four" --body ./email.html --delay "4 weeks" --dry-run --json --no-input
+gumroad workflows add-email <workflow-id> --subject "Week four" --body ./email.html --delay "4 weeks" --yes --json --no-input
+
+# Update only the supplied fields on one step.
+gumroad workflows update-email <workflow-id> <email-id> --body ./email.html --dry-run --json --no-input
+gumroad workflows update-email <workflow-id> <email-id> --body ./email.html --json --no-input
 ```
 
-Workflows are read-only in the CLI; create and edit them in the Gumroad dashboard. `view` returns steps ordered by delay, each with `delay` (`amount` + `unit`), `sent_count`, `open_count`, `open_rate`, `click_count`, `click_rate`. Rates are `null` for unsent steps. Plain output for `view` prints one row per email step.
+`add-email` requires `--subject`, `--body`, and `--delay`. `update-email` requires at least one of these flags. `--body` accepts an HTML file path or `-` for stdin. `--delay` accepts a non-negative integer and `hour`, `day`, `week`, or `month`; singular and plural units work.
+
+Neither write command changes the workflow publication state. A new step inherits that state. A published workflow can schedule eligible past recipients when you add a step. A delay change can reschedule recipients. `add-email` and delay updates require `--yes` when you pass `--no-input`. Abandoned cart workflows reject added steps and delay changes. Use the dashboard to create, publish, or unpublish a workflow.
+
+If a write returns `workflow_email_add_state_unknown` or `workflow_email_update_state_unknown`, do not retry it automatically. Run `gumroad workflows view <workflow-id> --json --no-input` and inspect step IDs and timestamps. A matching step does not prove an uncertain add completed. Contact support if the state remains unclear. If the command returns `workflow_email_output_failed`, the write completed. Use `.error.recovery.email_id` to find the saved step. Do not retry it.
+
+`view` returns steps ordered by delay, each with `delay` (`amount` + `unit`), `sent_count`, `open_count`, `open_rate`, `click_count`, and `click_rate`. Rates are `null` for unsent steps. Plain output for `view` prints one row per email step.
 
 ### sales — Manage sales
 
