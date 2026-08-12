@@ -35,6 +35,7 @@ func NewAdminCmd() *cobra.Command {
   gumroad admin payouts scheduled create --user-id <user-id> --processor stripe
   gumroad admin products list --email <email>
   gumroad admin products view <product-id>
+  gumroad admin products files download <product-id> <file-id>
   gumroad admin products flag-for-tos-violation <product-id> --user-id <user-id>`,
 	}
 
