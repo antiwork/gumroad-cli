@@ -70,6 +70,7 @@ Most responses are wrapped in `{"success": true, ...}` with resource-specific ke
 - `sales export` → `.status`, `.recipient_email`
 - `sales summary` → `.gross_cents`, `.net_cents`, `.breakdown[]`
 - `emails list` → `.emails[]`, `emails view/create/send` → `.email`, `emails send-preview` → `.preview_url`, `emails delete` → `.message`
+- `workflows list` → `.workflows[]`, `workflows view` → `.workflow` (with `.workflow.emails[]`), `workflows add-email/update-email` → `.email`
 - `payouts list` → `.payouts[]`, `payouts view/upcoming` → `.payout`
 - `subscribers list` → `.subscribers[]`, `subscribers view` → `.subscriber`
 - `licenses verify` → `.purchase`
@@ -448,7 +449,7 @@ gumroad emails delete <id> --yes --json --no-input
 
 Use `--dry-run --json --no-input` to inspect create params without calling the API. Passing `--send` blasts the audience immediately; prefer the draft → `send-preview` URL → `send` workflow. `send-preview` emails a copy to the seller. Scheduled emails can only be created in the web UI; the CLI can list and view them (`--state scheduled`) but not create them.
 
-### workflows — Inspect email workflows
+### workflows — Inspect and edit email workflows
 
 ```sh
 # List workflows with audience, state, and email step count.
@@ -459,9 +460,18 @@ gumroad workflows view <id> --json --no-input
 
 # Compare steps: pull subject and click rate for every step.
 gumroad workflows view <id> --json --jq '.workflow.emails[] | {subject, click_rate}' --no-input
+
+# Add one email step to an existing workflow. --delay is "<amount> <unit>" with unit hour, day, week, or month.
+gumroad workflows add-email <id> --subject "Week 4 check-in" --body ./email.html --delay "4 weeks" --json --no-input
+
+# Update one existing step in place; pass only the fields to change.
+gumroad workflows update-email <id> <email-id> --body ./email.html --json --no-input
+gumroad workflows update-email <id> <email-id> --subject "New subject" --delay "2 weeks" --json --no-input
 ```
 
-Workflows are read-only in the CLI; create and edit them in the Gumroad dashboard. `view` returns steps ordered by delay, each with `delay` (`amount` + `unit`), `sent_count`, `open_count`, `open_rate`, `click_count`, `click_rate`. Rates are `null` for unsent steps. Plain output for `view` prints one row per email step.
+`view` returns steps ordered by delay, each with `delay` (`amount` + `unit`), `sent_count`, `open_count`, `open_rate`, `click_count`, `click_rate`. Rates are `null` for unsent steps. Plain output for `view` prints one row per email step.
+
+`add-email` and `update-email` respond with the saved step under `.email` (same fields as `view` steps, without analytics). Neither command changes the workflow's publish state, so they never send mail by themselves — a step added to a draft workflow stays unsent until the workflow is published in the dashboard, and on a published workflow the new step schedules like any other. There is deliberately no publish/unpublish flag: the server rejects publish-state parameters on these endpoints, and publishing a workflow stays a dashboard action. Both reject delay edits on abandoned cart workflows (and `add-email` rejects abandoned cart workflows entirely). Creating a new workflow (audience/filter setup) is also dashboard-only.
 
 ### sales — Manage sales
 

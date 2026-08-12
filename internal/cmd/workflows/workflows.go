@@ -53,18 +53,23 @@ type workflowDelay struct {
 func NewWorkflowsCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "workflows",
-		Short: "Inspect email workflows",
-		Long: "Inspect Gumroad email workflows.\n\n" +
+		Short: "Inspect and edit email workflows",
+		Long: "Inspect and edit Gumroad email workflows.\n\n" +
 			"List workflows and view a workflow's email steps with per-step delay, sent, open, and click stats. " +
-			"Workflows are read-only in the CLI; create and edit them in the Gumroad dashboard.",
+			"Add or update individual email steps with add-email and update-email; neither changes the workflow's " +
+			"publish state, so they never send mail by themselves. Creating and publishing workflows stays in the Gumroad dashboard.",
 		Example: `  gumroad workflows list
   gumroad workflows list --json
   gumroad workflows view <id>
-  gumroad workflows view <id> --json --jq '.workflow.emails[] | {subject, click_rate}'`,
+  gumroad workflows view <id> --json --jq '.workflow.emails[] | {subject, click_rate}'
+  gumroad workflows add-email <id> --subject "Week 4 check-in" --body ./email.html --delay "4 weeks"
+  gumroad workflows update-email <id> <email-id> --body ./email.html`,
 	}
 
 	cmd.AddCommand(newListCmd())
 	cmd.AddCommand(newViewCmd())
+	cmd.AddCommand(newAddEmailCmd())
+	cmd.AddCommand(newUpdateEmailCmd())
 
 	return cmd
 }
