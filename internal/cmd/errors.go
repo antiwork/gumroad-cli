@@ -13,6 +13,7 @@ import (
 	"github.com/antiwork/gumroad-cli/internal/api"
 	"github.com/antiwork/gumroad-cli/internal/cmd/files"
 	"github.com/antiwork/gumroad-cli/internal/cmd/media"
+	"github.com/antiwork/gumroad-cli/internal/cmd/workflows"
 	"github.com/antiwork/gumroad-cli/internal/cmdutil"
 	"github.com/antiwork/gumroad-cli/internal/config"
 	"github.com/antiwork/gumroad-cli/internal/output"
@@ -51,6 +52,9 @@ type commandRecoveryInfo struct {
 	FileSize       int64                 `json:"file_size,omitempty"`
 	MediaID        string                `json:"media_id,omitempty"`
 	MediaURL       string                `json:"media_url,omitempty"`
+	Action         string                `json:"action,omitempty"`
+	WorkflowID     string                `json:"workflow_id,omitempty"`
+	EmailID        string                `json:"email_id,omitempty"`
 }
 
 type uploadCompletedPart struct {
@@ -146,6 +150,8 @@ func classifyPrimaryCause(err error) commandErrorDetail {
 	var committedMediaOutput *media.CommittedMediaOutputError
 	var completedMediaDelete *media.CompletedMediaDeleteOutputError
 	var unknownMediaDelete *media.UnknownMediaDeleteError
+	var unknownEmailWrite *workflows.UnknownEmailWriteError
+	var completedEmailWrite *workflows.CompletedEmailWriteOutputError
 	var cleanupFailed *upload.CleanupFailedError
 	var rejected *files.CompleteRejectedError
 	switch {
@@ -201,6 +207,30 @@ func classifyPrimaryCause(err error) commandErrorDetail {
 			Recovery: &commandRecoveryInfo{
 				Stage:   "delete",
 				MediaID: unknownMediaDelete.MediaID,
+			},
+		}
+	case errors.As(err, &unknownEmailWrite):
+		return commandErrorDetail{
+			Type:    "mutation_error",
+			Code:    "workflow_email_" + string(unknownEmailWrite.Action) + "_state_unknown",
+			Message: unknownEmailWrite.Error(),
+			Hint:    unknownEmailWrite.RecoveryHint(),
+			Recovery: &commandRecoveryInfo{
+				Action:     string(unknownEmailWrite.Action),
+				WorkflowID: unknownEmailWrite.WorkflowID,
+				EmailID:    unknownEmailWrite.EmailID,
+			},
+		}
+	case errors.As(err, &completedEmailWrite):
+		return commandErrorDetail{
+			Type:    "output_error",
+			Code:    "workflow_email_output_failed",
+			Message: completedEmailWrite.Error(),
+			Hint:    completedEmailWrite.RecoveryHint(),
+			Recovery: &commandRecoveryInfo{
+				Action:     string(completedEmailWrite.Action),
+				WorkflowID: completedEmailWrite.WorkflowID,
+				EmailID:    completedEmailWrite.EmailID,
 			},
 		}
 	// ErrPresignExpired is a sentinel distinct from UnknownStateError: the
@@ -365,8 +395,28 @@ func uploadIncompleteDetail(err error, state *upload.UnknownStateError) commandE
 	}
 }
 
-// printUploadRecovery emits recovery handles for uploads with unknown state.
+// printUploadRecovery emits recovery handles for mutations with uncertain state.
 func printUploadRecovery(w io.Writer, style output.Styler, err error) {
+	var unknownEmail *workflows.UnknownEmailWriteError
+	if errors.As(err, &unknownEmail) {
+		fmt.Fprintln(w, style.Dim("Recovery:"))
+		fmt.Fprintln(w, style.Dim("  action:      "+string(unknownEmail.Action)))
+		fmt.Fprintln(w, style.Dim("  workflow_id: "+unknownEmail.WorkflowID))
+		if unknownEmail.EmailID != "" {
+			fmt.Fprintln(w, style.Dim("  email_id:    "+unknownEmail.EmailID))
+		}
+		return
+	}
+
+	var completedEmail *workflows.CompletedEmailWriteOutputError
+	if errors.As(err, &completedEmail) {
+		fmt.Fprintln(w, style.Dim("Recovery:"))
+		fmt.Fprintln(w, style.Dim("  action:      "+string(completedEmail.Action)))
+		fmt.Fprintln(w, style.Dim("  workflow_id: "+completedEmail.WorkflowID))
+		fmt.Fprintln(w, style.Dim("  email_id:    "+completedEmail.EmailID))
+		return
+	}
+
 	var unknownDelete *media.UnknownMediaDeleteError
 	if errors.As(err, &unknownDelete) {
 		fmt.Fprintln(w, style.Dim("Recovery:"))

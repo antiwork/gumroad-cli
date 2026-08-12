@@ -14,6 +14,7 @@ import (
 	"github.com/antiwork/gumroad-cli/internal/api"
 	"github.com/antiwork/gumroad-cli/internal/cmd/files"
 	"github.com/antiwork/gumroad-cli/internal/cmd/media"
+	"github.com/antiwork/gumroad-cli/internal/cmd/workflows"
 	"github.com/antiwork/gumroad-cli/internal/cmdutil"
 	"github.com/antiwork/gumroad-cli/internal/config"
 	"github.com/antiwork/gumroad-cli/internal/output"
@@ -490,6 +491,60 @@ func TestClassifyCommandError_UnknownMediaDelete(t *testing.T) {
 	printUploadRecovery(&buf, output.NewStyler(false), state)
 	if !strings.Contains(buf.String(), state.MediaID) || !strings.Contains(buf.String(), "delete") {
 		t.Fatalf("recovery output = %q", buf.String())
+	}
+}
+
+func TestClassifyCommandError_UnknownWorkflowEmailWrite(t *testing.T) {
+	state := &workflows.UnknownEmailWriteError{
+		Cause:      &api.APIError{StatusCode: 502, Message: "upstream failed"},
+		Action:     workflows.EmailWriteActionUpdate,
+		WorkflowID: "workflow_1",
+		EmailID:    "email_1",
+	}
+	detail := classifyCommandError(state)
+	if detail.Type != "mutation_error" || detail.Code != "workflow_email_update_state_unknown" {
+		t.Fatalf("detail = %+v", detail)
+	}
+	if detail.Recovery == nil || detail.Recovery.Action != "update" || detail.Recovery.WorkflowID != "workflow_1" || detail.Recovery.EmailID != "email_1" {
+		t.Fatalf("recovery = %+v", detail.Recovery)
+	}
+	if !strings.Contains(detail.Hint, "workflows view workflow_1") || !strings.Contains(detail.Hint, "Do not retry") {
+		t.Fatalf("hint = %q", detail.Hint)
+	}
+
+	var buf bytes.Buffer
+	printUploadRecovery(&buf, output.NewStyler(false), state)
+	for _, want := range []string{"action:      update", "workflow_id: workflow_1", "email_id:    email_1"} {
+		if !strings.Contains(buf.String(), want) {
+			t.Fatalf("recovery output missing %q: %q", want, buf.String())
+		}
+	}
+}
+
+func TestClassifyCommandError_CompletedWorkflowEmailOutputFailure(t *testing.T) {
+	state := &workflows.CompletedEmailWriteOutputError{
+		Cause:      errors.New("jq runtime error"),
+		Action:     workflows.EmailWriteActionAdd,
+		WorkflowID: "workflow_1",
+		EmailID:    "email_2",
+	}
+	detail := classifyCommandError(state)
+	if detail.Type != "output_error" || detail.Code != "workflow_email_output_failed" {
+		t.Fatalf("detail = %+v", detail)
+	}
+	if detail.Recovery == nil || detail.Recovery.Action != "add" || detail.Recovery.WorkflowID != "workflow_1" || detail.Recovery.EmailID != "email_2" {
+		t.Fatalf("recovery = %+v", detail.Recovery)
+	}
+	if !strings.Contains(detail.Hint, "Do not retry") {
+		t.Fatalf("hint = %q", detail.Hint)
+	}
+
+	var buf bytes.Buffer
+	printUploadRecovery(&buf, output.NewStyler(false), state)
+	for _, want := range []string{"action:      add", "workflow_id: workflow_1", "email_id:    email_2"} {
+		if !strings.Contains(buf.String(), want) {
+			t.Fatalf("recovery output missing %q: %q", want, buf.String())
+		}
 	}
 }
 
