@@ -271,6 +271,9 @@ func TestCopyNoReplaceRefusesExistingDestination(t *testing.T) {
 }
 
 func TestCopyNoReplaceInstallsOwnerPrivate(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix permission bits do not apply on Windows")
+	}
 	dir := t.TempDir()
 	tmpName := filepath.Join(dir, ".gumroad-download-fallback")
 	dest := filepath.Join(dir, "review.zip")
