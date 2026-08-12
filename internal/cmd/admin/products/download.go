@@ -194,7 +194,8 @@ func downloadToFile(opts cmdutil.Options, signedURL, dest string, force bool) er
 // --force it links the temp file to dest, which the OS refuses atomically if
 // dest exists — a plain stat-then-rename check would let a file created in
 // that window be silently replaced. Filesystems without hard links fall back
-// to the racy check rather than failing the download.
+// to an O_EXCL copy, which keeps the no-overwrite guarantee at the cost of a
+// non-atomic write (a failure mid-copy removes the partial destination).
 func installDownloadedFile(tmpName, dest string, force bool) error {
 	if !force {
 		switch err := os.Link(tmpName, dest); {
@@ -204,14 +205,37 @@ func installDownloadedFile(tmpName, dest string, force bool) error {
 			os.Remove(tmpName)
 			return downloadDestinationExistsError(dest)
 		default:
-			if _, statErr := os.Stat(dest); statErr == nil {
-				os.Remove(tmpName)
-				return downloadDestinationExistsError(dest)
-			}
+			return copyNoReplace(tmpName, dest)
 		}
 	}
 	if err := os.Rename(tmpName, dest); err != nil {
 		os.Remove(tmpName)
+		return err
+	}
+	return nil
+}
+
+func copyNoReplace(tmpName, dest string) error {
+	defer os.Remove(tmpName)
+	src, err := os.Open(tmpName)
+	if err != nil {
+		return err
+	}
+	defer src.Close()
+	dst, err := os.OpenFile(dest, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return downloadDestinationExistsError(dest)
+		}
+		return err
+	}
+	if _, err := io.Copy(dst, src); err != nil {
+		dst.Close()
+		os.Remove(dest)
+		return err
+	}
+	if err := dst.Close(); err != nil {
+		os.Remove(dest)
 		return err
 	}
 	return nil

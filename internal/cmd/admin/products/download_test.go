@@ -244,6 +244,59 @@ func TestInstallDownloadedFileRefusesDestinationCreatedAtInstallTime(t *testing.
 	}
 }
 
+func TestCopyNoReplaceRefusesExistingDestination(t *testing.T) {
+	dir := t.TempDir()
+	tmpName := filepath.Join(dir, ".gumroad-download-fallback")
+	dest := filepath.Join(dir, "review.zip")
+	if err := os.WriteFile(tmpName, []byte("downloaded"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// dest is created by another process before the fallback install runs;
+	// O_EXCL must refuse it atomically instead of replacing it.
+	if err := os.WriteFile(dest, []byte("raced"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	err := copyNoReplace(tmpName, dest)
+	if err == nil || !strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("expected already-exists error, got: %v", err)
+	}
+	data, _ := os.ReadFile(dest)
+	if string(data) != "raced" {
+		t.Fatalf("raced destination was overwritten: %q", data)
+	}
+	if _, err := os.Stat(tmpName); err == nil {
+		t.Fatal("temp file left behind after refused fallback install")
+	}
+}
+
+func TestCopyNoReplaceInstallsOwnerPrivate(t *testing.T) {
+	dir := t.TempDir()
+	tmpName := filepath.Join(dir, ".gumroad-download-fallback")
+	dest := filepath.Join(dir, "review.zip")
+	if err := os.WriteFile(tmpName, []byte("downloaded"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := copyNoReplace(tmpName, dest); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(dest)
+	if err != nil || string(data) != "downloaded" {
+		t.Fatalf("fallback install wrote %q, err %v", data, err)
+	}
+	info, err := os.Stat(dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != 0o600 {
+		t.Fatalf("fallback install must stay owner-private, got mode %o", got)
+	}
+	if _, err := os.Stat(tmpName); err == nil {
+		t.Fatal("temp file left behind after fallback install")
+	}
+}
+
 func TestFilesDownloadStalledStorageResponseTimesOut(t *testing.T) {
 	t.Chdir(t.TempDir())
 	prev := downloadStallTimeout
