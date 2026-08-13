@@ -273,6 +273,8 @@ gumroad admin purchases refund <purchase-id> --email buyer@example.com --amount 
 gumroad admin products list --email seller@example.com --page 2 --per-page 25 --json --non-interactive --no-input
 gumroad admin products view <product-id> --with-fraud-context --json --non-interactive --no-input
 
+gumroad admin products view <product-id> --json --jq '.product.files[] | [.id, .display_name]' --non-interactive --no-input
+gumroad admin products files download <product-id> <file-id> --non-interactive --no-input
 # Watchlist state does not pause payouts or change user risk state
 gumroad admin users watch --user-id 2245593582708 --expected-email seller@example.com --revenue-threshold 200 --note "Review next buyers" --yes --json --non-interactive --no-input
 gumroad admin users update-watch --user-id 2245593582708 --expected-email seller@example.com --revenue-threshold 500 --yes --json --non-interactive --no-input

@@ -14,8 +14,11 @@ func NewProductsCmd() *cobra.Command {
   gumroad admin products flag-for-tos-violation abc123 --user-id 2245593582708`,
 	}
 
+	files := &cobra.Command{Use: "files", Short: "Work with a product's files"}
+	files.AddCommand(newFilesDownloadCmd())
 	cmd.AddCommand(newListCmd())
 	cmd.AddCommand(newViewCmd())
+	cmd.AddCommand(files)
 	cmd.AddCommand(newFlagForTOSViolationCmd())
 
 	return cmd
