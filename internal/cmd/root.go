@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"os"
@@ -197,6 +198,10 @@ func Execute() {
 
 func executeRootCommand(stdout, stderr io.Writer) int {
 	cmd := newRootCommand()
+	args := getOSArgs()[1:]
+	if rewritten := rewriteAdminDownloadArgs(cmd, args); rewritten != nil {
+		cmd.SetArgs(rewritten)
+	}
 	cmd.SetOut(stdout)
 	cmd.SetErr(stderr)
 
@@ -206,7 +211,7 @@ func executeRootCommand(stdout, stderr io.Writer) int {
 	}
 
 	if isUnknownShorthandError(err) {
-		if newArgs := insertDoubleDashBeforeArg(getOSArgs()[1:], err); newArgs != nil {
+		if newArgs := insertDoubleDashBeforeArg(args, err); newArgs != nil {
 			retryCmd := newRootCommand()
 			retryCmd.SetArgs(newArgs)
 			retryCmd.SetOut(stdout)
@@ -269,7 +274,6 @@ func insertDoubleDashBeforeArg(args []string, err error) []string {
 	if !looksLikeEncodedID(offending) {
 		return nil
 	}
-
 	// Move the offending arg to the end, preceded by "--", so all flags
 	// remain before "--" and are parsed normally.
 	result := make([]string, 0, len(args)+1)
@@ -286,6 +290,107 @@ func insertDoubleDashBeforeArg(args []string, err error) []string {
 	}
 	result = append(result, "--", offending)
 	return result
+}
+
+type adminDownloadArg struct {
+	values              []string
+	position, ambiguous bool
+}
+
+func rewriteAdminDownloadArgs(root *cobra.Command, args []string) []string {
+	command, commandArgs, _ := root.Find(args)
+	if command == nil || command.CommandPath() != "gumroad admin products files download" {
+		return nil
+	}
+	items := make([]adminDownloadArg, 0, len(commandArgs))
+	positionCount, encodedCount, ambiguousCount := 0, 0, 0
+	for i := 0; i < len(commandArgs); i++ {
+		arg := commandArgs[i]
+		if exactEncodedID(arg) {
+			known, takesValue := downloadCommandFlag(command, arg)
+			ambiguous := known && !takesValue
+			items = append(items, adminDownloadArg{values: []string{arg}, position: true, ambiguous: ambiguous})
+			positionCount, encodedCount = positionCount+1, encodedCount+1
+			if ambiguous {
+				ambiguousCount++
+			}
+			continue
+		}
+		if arg == "-" || !strings.HasPrefix(arg, "-") {
+			items = append(items, adminDownloadArg{values: []string{arg}, position: true})
+			positionCount++
+			continue
+		}
+		known, takesValue := downloadCommandFlag(command, arg)
+		if !known {
+			return nil
+		}
+		item := adminDownloadArg{values: []string{arg}}
+		if takesValue {
+			if i+1 >= len(commandArgs) {
+				return nil
+			}
+			i++
+			item.values = append(item.values, commandArgs[i])
+		}
+		items = append(items, item)
+	}
+	if needed := positionCount - 2; needed > 0 && ambiguousCount == needed {
+		for i := len(items) - 1; positionCount > 2 && i >= 0; i-- {
+			if items[i].ambiguous {
+				items[i].position = false
+				positionCount, encodedCount = positionCount-1, encodedCount-1
+			}
+		}
+	}
+	if encodedCount == 0 {
+		return nil
+	}
+	result := []string{"admin", "products", "files", "download"}
+	for _, item := range items {
+		if !item.position {
+			result = append(result, item.values...)
+		}
+	}
+	result = append(result, "--")
+	for _, item := range items {
+		if item.position {
+			result = append(result, item.values...)
+		}
+	}
+	return result
+}
+
+func downloadCommandFlag(command *cobra.Command, arg string) (bool, bool) {
+	if strings.HasPrefix(arg, "--") {
+		name, _, hasValue := strings.Cut(strings.TrimPrefix(arg, "--"), "=")
+		flag := command.Flag(name)
+		return flag != nil, flag != nil && !hasValue && flag.NoOptDefVal == ""
+	}
+	for i := 1; i < len(arg); i++ {
+		flag := command.Flags().ShorthandLookup(string(arg[i]))
+		if flag == nil {
+			flag = command.InheritedFlags().ShorthandLookup(string(arg[i]))
+		}
+		if flag == nil {
+			return false, false
+		}
+		if flag.NoOptDefVal != "" && i+1 < len(arg) && arg[i+1] == '=' {
+			return true, false
+		}
+		if flag.NoOptDefVal == "" {
+			return true, i == len(arg)-1
+		}
+	}
+	return true, false
+}
+
+func exactEncodedID(s string) bool {
+	decoded, err := base64.URLEncoding.DecodeString(s)
+	if err != nil {
+		decoded, err = base64.RawURLEncoding.DecodeString(s)
+	}
+	return err == nil && len(decoded) == 16
 }
 
 // looksLikeEncodedID returns true if s looks like a base64-encoded Gumroad ID

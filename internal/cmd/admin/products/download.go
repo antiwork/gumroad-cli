@@ -2,6 +2,7 @@ package products
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,10 +11,8 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"time"
-	"unicode"
 
 	"github.com/antiwork/gumroad-cli/internal/adminapi"
 	"github.com/antiwork/gumroad-cli/internal/admincmd"
@@ -23,42 +22,35 @@ import (
 )
 
 type fileDownloadURLResponse struct {
-	SignedURL    string      `json:"signed_url"`
-	ExternalLink bool        `json:"external_link"`
-	File         productFile `json:"file"`
+	SignedURL    string          `json:"signed_url"`
+	ExternalLink bool            `json:"external_link"`
+	File         json.RawMessage `json:"file"`
 }
+type fileDownloadOutput struct {
+	Success bool            `json:"success"`
+	Path    string          `json:"path"`
+	File    json.RawMessage `json:"file"`
+}
+
+const reviewDirectoryName, maxReviewFileIDLength = "gumroad-review", 80
 
 func newFilesDownloadCmd() *cobra.Command {
 	var outputPath string
 	var force bool
-
 	cmd := &cobra.Command{
 		Use:   "download <product-id> <file-id>",
 		Short: "Download a product file for content review",
-		Long: "Download a product file's actual contents through the admin API, so content review (malware reports, piracy verification, TOS review) does not need a real purchase.\n\n" +
-			"The file id comes from `gumroad admin products view <product-id>`, which lists every file including soft-deleted ones — deleted files can still be downloaded, because the content under review is often the removed prior version.\n\n" +
-			"Files whose \"file\" is an external link have no stored bytes; the command prints the link instead of fetching a third-party host.\n\n" +
-			"Every download is audit-logged server-side and requires per-actor admin auth.",
-		Args: cmdutil.ExactArgs(2),
-		Example: `  gumroad admin products files download abc123 f_1
-  gumroad admin products files download abc123 f_1 -o review.zip
-  gumroad admin products files download abc123 f_1 -o - | shasum
-  gumroad admin products files download abc123 f_1 --json`,
+		Long:  "Download a product file's actual contents through the admin API, so content review does not need a real purchase.\n\nGet file ids with `gumroad admin products view <product-id> --json --jq '.product.files[] | [.id, .display_name]'`. The result includes soft-deleted files, which can still be downloaded because reviews often concern a removed prior version.\n\nExternal links have no stored bytes, so the command prints the link without fetching its host.\n\nJSON output reports the path and file metadata without exposing the temporary signed URL.\n\nEvery download is audit-logged and requires per-actor admin auth.",
+		Args:  cmdutil.ExactArgs(2),
 		RunE: func(c *cobra.Command, args []string) error {
 			opts := cmdutil.OptionsFrom(c)
 			productID, fileID := args[0], args[1]
-
-			if outputPath == "-" && opts.UsesJSONOutput() {
-				return cmdutil.InvalidInputErrorf("--json/--jq cannot be combined with -o - (both write to stdout); use -o <path> to keep the file")
-			}
-			if err := checkDownloadDestinationWritable(outputPath, force); err != nil {
+			if err := output.ValidateJQExpression(opts.JQExpr); err != nil {
 				return err
 			}
-
 			fetchOpts := opts
 			fetchOpts.JSONOutput = false
 			fetchOpts.JQExpr = ""
-
 			path := cmdutil.JoinPath("products", productID, "files", fileID, "download_url")
 			return admincmd.Run(fetchOpts, "Fetching download URL...", func(client *adminapi.Client) (json.RawMessage, error) {
 				return client.Get(path, url.Values{})
@@ -68,95 +60,202 @@ func newFilesDownloadCmd() *cobra.Command {
 					return err
 				}
 				if resp.ExternalLink {
-					return cmdutil.InvalidInputErrorf("file %s is an external link, not a stored file — open it directly: %s", fileID, resp.SignedURL)
+					return cmdutil.InvalidInputErrorf("file %s is an external link, not a stored file — open it directly: %s", output.EscapePlainField(fileID), output.EscapePlainField(resp.SignedURL))
+				}
+				if outputPath == "-" && opts.UsesJSONOutput() {
+					return cmdutil.InvalidInputErrorf("--json/--jq cannot be combined with -o - (both write to stdout); use -o <path> to keep the file")
+				}
+				if err := validateFileDownloadSupport(outputPath); err != nil {
+					return err
+				}
+				if err := checkDownloadDestinationWritable(outputPath, force); err != nil {
+					return err
 				}
 				if resp.SignedURL == "" {
 					return cmdutil.InvalidInputErrorf("the server did not return a download URL for file %s", fileID)
 				}
-
-				dest := downloadDestination(outputPath, resp.File, fileID)
-				if err := downloadToFile(opts, resp.SignedURL, dest, force); err != nil {
+				file, err := cmdutil.DecodeJSON[productFile](resp.File)
+				if err != nil {
 					return err
 				}
-				if opts.UsesJSONOutput() {
-					return cmdutil.PrintJSONResponse(opts, data)
+				dest, err := downloadDestination(outputPath, fileID)
+				if err != nil {
+					return err
 				}
-				return renderDownloadSuccess(opts, resp.File, dest)
+				if err := checkDownloadDestinationWritable(dest, force); err != nil {
+					return err
+				}
+				var stagingDir string
+				installDest := dest
+				var stagedDownload *os.File
+				var stagingDirLock io.Closer
+				if dest != "-" {
+					stagingDir, stagingDirLock, stagedDownload, err = prepareDownloadStaging(dest)
+					if err != nil {
+						return err
+					}
+					installDest = filepath.Join(filepath.Dir(stagingDir), filepath.Base(dest))
+					defer func() {
+						stagedDownload.Close()
+						os.Remove(stagedDownload.Name())
+						stagingDirLock.Close()
+						os.Remove(stagingDir)
+					}()
+				}
+				machineOutput, err := stageDownloadOutput(opts, resp.File, stagingDir, dest)
+				if err != nil {
+					return err
+				}
+				if machineOutput != nil {
+					defer func() {
+						machineOutput.Close()
+						os.Remove(machineOutput.Name())
+					}()
+				}
+				if err := downloadToFile(opts, resp.SignedURL, stagedDownload, installDest, force); err != nil {
+					return err
+				}
+				if machineOutput != nil {
+					_, err := io.Copy(opts.Out(), machineOutput)
+					return err
+				}
+				return renderDownloadSuccess(opts, file, dest)
 			})
 		},
 	}
-
-	cmd.Flags().StringVarP(&outputPath, "output", "o", "", "Write the file to this path (- for stdout; defaults to the file's own name)")
+	cmd.Flags().StringVarP(&outputPath, "output", "o", "", "Write the file to this path (- for stdout; defaults to a private gumroad-review path)")
 	cmd.Flags().BoolVar(&force, "force", false, "Overwrite the output file if it already exists")
-
 	return cmd
 }
-
-// checkDownloadDestinationWritable is only an early exit before the API call
-// is spent; the binding no-overwrite check happens when the finished file is
-// installed (see installDownloadedFile), since the default destination is
-// only known after the response arrives.
 func checkDownloadDestinationWritable(dest string, force bool) error {
-	if dest == "" || dest == "-" || force {
+	if dest == "" || dest == "-" {
 		return nil
 	}
-	if _, err := os.Stat(dest); err == nil {
+	if os.IsPathSeparator(dest[len(dest)-1]) {
+		return cmdutil.InvalidInputErrorf("%s is a directory path; use -o with a file path", dest)
+	}
+	if info, err := os.Stat(dest); err == nil && info.IsDir() {
+		return cmdutil.InvalidInputErrorf("%s is a directory; use -o with a file path", dest)
+	} else if err == nil && !force {
 		return downloadDestinationExistsError(dest)
 	}
 	return nil
 }
-
 func downloadDestinationExistsError(dest string) error {
 	return cmdutil.InvalidInputErrorf("%s already exists (use --force to overwrite, or -o to pick another path)", dest)
 }
-
-// downloadDestination picks the implicit output path from the server-provided
-// file name. The name is seller-controlled, so only its base name is used —
-// a name like "../evil.pdf" must not write outside the working directory —
-// and control characters are stripped so the name can't smuggle terminal
-// escape sequences into the success output or the shell.
-func downloadDestination(outputPath string, file productFile, fileID string) string {
+func downloadDestination(outputPath, fileID string) (string, error) {
 	if outputPath != "" {
-		return outputPath
+		return outputPath, nil
 	}
-	name := strings.Map(func(r rune) rune {
-		// unicode.IsControl covers C0, DEL, and the C1 range (U+0080–U+009F)
-		// — U+009B is a single-rune CSI that would otherwise survive a
-		// bytes-below-0x20 check and reach the terminal.
-		if unicode.IsControl(r) {
-			return -1
-		}
-		return r
-	}, strings.TrimSpace(file.FileName))
-	name = filepath.Base(name)
-	if name == "" || name == "." || name == ".." || name == string(filepath.Separator) {
-		return fileID
+	if err := preparePrivateDirectory(reviewDirectoryName); err != nil {
+		return "", err
 	}
-	return name
+	return filepath.Join(reviewDirectoryName, trustedReviewFilename(fileID)), nil
 }
-
-// downloadStallTimeout bounds how long the signed-URL transfer may go without
-// delivering any bytes (a total-transfer deadline would break large files on
-// slow links). Variable so tests can shrink it.
-var downloadStallTimeout = 2 * time.Minute
-
-// downloadToFile streams the signed URL to dest via a temporary file in the
-// same directory, moving it into place only after the whole download has been
-// written. The destination is never touched on a failed or partial write, and
-// --force is enforced at the moment the file is actually installed. The temp
-// file keeps os.CreateTemp's 0600 mode: downloads are privileged seller
-// content pulled for review, so they stay owner-private, unlike the public
-// storefront HTML written by `pages pull`.
-func downloadToFile(opts cmdutil.Options, signedURL, dest string, force bool) error {
-	ctx, cancel := context.WithCancel(opts.Context)
-	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, signedURL, nil)
+func prepareDownloadStaging(dest string) (string, io.Closer, *os.File, error) {
+	parentLock, parent, err := lockPrivateDirectory(filepath.Dir(dest), false)
+	if err != nil {
+		return "", nil, nil, err
+	}
+	defer parentLock.Close()
+	var suffix [16]byte
+	if _, err := rand.Read(suffix[:]); err != nil {
+		return "", nil, nil, err
+	}
+	dir := filepath.Join(parent, fmt.Sprintf(".gumroad-download-%x", suffix))
+	if err := createPrivateDirectory(dir); err != nil {
+		return "", nil, nil, err
+	}
+	lock, lockedDir, err := lockPrivateDirectory(dir, true)
+	if err != nil {
+		os.Remove(dir)
+		return "", nil, nil, err
+	}
+	dir = lockedDir
+	if err := makeOpenPathPrivate(lock, 0o700); err != nil {
+		lock.Close()
+		os.Remove(dir)
+		return "", nil, nil, err
+	}
+	staged, err := createPrivateFile(filepath.Join(dir, "download"))
+	if err != nil {
+		lock.Close()
+		os.Remove(dir)
+		return "", nil, nil, err
+	}
+	if err := makeOpenPathPrivate(staged, 0o600); err != nil {
+		staged.Close()
+		os.Remove(staged.Name())
+		lock.Close()
+		os.Remove(dir)
+		return "", nil, nil, err
+	}
+	return dir, lock, staged, nil
+}
+func preparePrivateDirectory(path string) error {
+	parentLock, parent, err := lockPrivateDirectory(filepath.Dir(path), false)
 	if err != nil {
 		return err
 	}
+	defer parentLock.Close()
+	path = filepath.Join(parent, filepath.Base(path))
+	if err := createPrivateDirectory(path); err != nil && !errors.Is(err, os.ErrExist) {
+		return err
+	}
+	info, err := os.Lstat(path)
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return cmdutil.InvalidInputErrorf("%s exists but is not a directory", path)
+	}
+	lock, _, err := lockPrivateDirectory(path, true)
+	if err != nil {
+		return err
+	}
+	defer lock.Close()
+	return makeOpenPathPrivate(lock, 0o700)
+}
+func trustedReviewFilename(fileID string) string {
+	var name strings.Builder
+	for _, r := range fileID {
+		if name.Len() >= maxReviewFileIDLength {
+			break
+		}
+		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' || r == '_' {
+			name.WriteRune(r)
+		} else {
+			name.WriteByte('_')
+		}
+	}
+	id := strings.Trim(name.String(), "_-")
+	if id == "" {
+		id = "unknown"
+	}
+	return "file-" + id + ".download"
+}
+
+var downloadStallTimeout, downloadHTTPClient = 2 * time.Minute, &http.Client{CheckRedirect: refuseDownloadRedirects}
+
+func refuseDownloadRedirects(_ *http.Request, _ []*http.Request) error {
+	return http.ErrUseLastResponse
+}
+func downloadToFile(opts cmdutil.Options, signedURL string, staged *os.File, dest string, force bool) error {
+	downloadURL, err := url.Parse(signedURL)
+	if err != nil || downloadURL.Scheme != "https" || downloadURL.Host == "" || downloadURL.User != nil {
+		return cmdutil.InvalidInputErrorf("the server returned an invalid secure download URL")
+	}
+	ctx, cancel := context.WithCancel(opts.Context)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, downloadURL.String(), nil)
+	if err != nil {
+		return cmdutil.InvalidInputErrorf("the server returned an invalid secure download URL")
+	}
+	req.Header.Set("Accept-Encoding", "identity")
 	stallTimer := time.AfterFunc(downloadStallTimeout, cancel)
-	defer stallTimer.Stop()
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := downloadHTTPClient.Do(req)
+	stallTimer.Stop()
 	if err != nil {
 		return stallAwareDownloadError(ctx, opts.Context, err)
 	}
@@ -164,105 +263,115 @@ func downloadToFile(opts cmdutil.Options, signedURL, dest string, force bool) er
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("downloading the file failed: storage returned HTTP %d", resp.StatusCode)
 	}
-	body := &stallResetReader{r: resp.Body, timer: stallTimer}
-
+	body := &stallTimeoutReader{r: resp.Body, cancel: cancel}
 	if dest == "-" {
 		if _, err := io.Copy(opts.Out(), body); err != nil {
 			return stallAwareDownloadError(ctx, opts.Context, err)
 		}
 		return nil
 	}
-
-	tmp, err := os.CreateTemp(filepath.Dir(dest), ".gumroad-download-*")
-	if err != nil {
-		return err
-	}
-	tmpName := tmp.Name()
-	if _, err := io.Copy(tmp, body); err != nil {
-		tmp.Close()
-		os.Remove(tmpName)
+	if _, err := io.Copy(staged, body); err != nil {
 		return stallAwareDownloadError(ctx, opts.Context, err)
 	}
-	if err := tmp.Close(); err != nil {
-		os.Remove(tmpName)
+	return installDownloadedFile(staged, dest, force)
+}
+func installDownloadedFile(staged *os.File, dest string, force bool) error {
+	if err := staged.Sync(); err != nil {
 		return err
 	}
-	return installDownloadedFile(tmpName, dest, force)
-}
-
-// installDownloadedFile moves the finished temp file into place. Without
-// --force it links the temp file to dest, which the OS refuses atomically if
-// dest exists — a plain stat-then-rename check would let a file created in
-// that window be silently replaced. Filesystems without hard links fall back
-// to an O_EXCL copy, which keeps the no-overwrite guarantee at the cost of a
-// non-atomic write (a failure mid-copy removes the partial destination).
-func installDownloadedFile(tmpName, dest string, force bool) error {
+	sourceInfo, err := staged.Stat()
+	if err != nil {
+		return err
+	}
+	tmpName := staged.Name()
+	if err := staged.Close(); err != nil {
+		return err
+	}
+	linked := false
 	if !force {
-		switch err := os.Link(tmpName, dest); {
-		case err == nil:
-			return os.Remove(tmpName)
-		case errors.Is(err, os.ErrExist):
-			os.Remove(tmpName)
-			return downloadDestinationExistsError(dest)
-		default:
-			return copyNoReplace(tmpName, dest)
+		err = installNoReplace(tmpName, dest)
+		if err != nil && !errors.Is(err, os.ErrExist) {
+			err = os.Link(tmpName, dest)
+			if err == nil {
+				linked = true
+			}
 		}
-	}
-	if err := os.Rename(tmpName, dest); err != nil {
-		os.Remove(tmpName)
+		if err != nil {
+			if errors.Is(err, os.ErrExist) {
+				return downloadDestinationExistsError(dest)
+			}
+			return err
+		}
+	} else if err := os.Rename(tmpName, dest); err != nil {
 		return err
+	}
+	destInfo, err := os.Stat(dest)
+	if err != nil || !os.SameFile(sourceInfo, destInfo) {
+		return fmt.Errorf("the installed download path changed during installation")
+	}
+	if linked {
+		return os.Remove(tmpName)
 	}
 	return nil
 }
-
-func copyNoReplace(tmpName, dest string) error {
-	defer os.Remove(tmpName)
-	src, err := os.Open(tmpName)
-	if err != nil {
-		return err
-	}
-	defer src.Close()
-	dst, err := os.OpenFile(dest, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
-	if err != nil {
-		if errors.Is(err, os.ErrExist) {
-			return downloadDestinationExistsError(dest)
-		}
-		return err
-	}
-	if _, err := io.Copy(dst, src); err != nil {
-		dst.Close()
-		os.Remove(dest)
-		return err
-	}
-	if err := dst.Close(); err != nil {
-		os.Remove(dest)
-		return err
-	}
-	return nil
-}
-
-// stallAwareDownloadError distinguishes a stall-timer cancellation from the
-// user's own Ctrl-C, which shares the same context error.
 func stallAwareDownloadError(ctx, parent context.Context, err error) error {
 	if ctx.Err() != nil && parent.Err() == nil {
 		return fmt.Errorf("downloading the file failed: storage sent no data for %s", downloadStallTimeout)
 	}
+	var urlErr *url.Error
+	for errors.As(err, &urlErr) && urlErr.Err != nil {
+		err = urlErr.Err
+		urlErr = nil
+	}
 	return fmt.Errorf("downloading the file failed: %w", err)
 }
-
-type stallResetReader struct {
-	r     io.Reader
-	timer *time.Timer
+func stageDownloadOutput(opts cmdutil.Options, file json.RawMessage, stagingDir, dest string) (*os.File, error) {
+	if !opts.UsesJSONOutput() {
+		return nil, nil
+	}
+	data, err := json.Marshal(fileDownloadOutput{
+		Success: true,
+		Path:    dest,
+		File:    file,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("could not encode download output: %w", err)
+	}
+	staged, err := createPrivateFile(filepath.Join(stagingDir, "output"))
+	if err != nil {
+		return nil, err
+	}
+	if err := makeOpenPathPrivate(staged, 0o600); err != nil {
+		staged.Close()
+		os.Remove(staged.Name())
+		return nil, err
+	}
+	stagedOpts := opts
+	stagedOpts.Stdout = staged
+	if err := cmdutil.PrintJSONResponse(stagedOpts, data); err != nil {
+		staged.Close()
+		os.Remove(staged.Name())
+		return nil, err
+	}
+	if _, err := staged.Seek(0, io.SeekStart); err != nil {
+		staged.Close()
+		os.Remove(staged.Name())
+		return nil, err
+	}
+	return staged, nil
 }
 
-func (s *stallResetReader) Read(p []byte) (int, error) {
+type stallTimeoutReader struct {
+	r      io.Reader
+	cancel context.CancelFunc
+}
+
+func (s *stallTimeoutReader) Read(p []byte) (int, error) {
+	timer := time.AfterFunc(downloadStallTimeout, s.cancel)
 	n, err := s.r.Read(p)
-	if n > 0 {
-		s.timer.Reset(downloadStallTimeout)
-	}
+	timer.Stop()
 	return n, err
 }
-
 func renderDownloadSuccess(opts cmdutil.Options, file productFile, dest string) error {
 	if dest == "-" {
 		return nil
@@ -273,23 +382,20 @@ func renderDownloadSuccess(opts cmdutil.Options, file productFile, dest string) 
 	if opts.Quiet {
 		return nil
 	}
-
 	style := opts.Style()
 	name := fileDisplayNameWithDeleted(file)
 	if name == "" {
 		name = file.ID
 	}
-	if err := output.Writeln(opts.Out(), style.Bold(fmt.Sprintf("Downloaded %s → %s (%s)", output.EscapePlainField(name), output.EscapePlainField(dest), formatFileSize(int(file.FileSize))))); err != nil {
+	return output.Writeln(opts.Out(), style.Bold(fmt.Sprintf("Downloaded %s → %s (%s)", output.EscapePlainField(name), output.EscapePlainField(dest), formatFileSize(int(file.FileSize)))))
+}
+func verifyPrivateMode(file *os.File, mode os.FileMode) error {
+	info, err := file.Stat()
+	if err != nil {
 		return err
 	}
-	return output.Writef(opts.Out(), "Inspect it locally, e.g. `unzip -l %s` or your scanner of choice.\n", quotePathForShell(dest))
-}
-
-func quotePathForShell(path string) string {
-	if plainDownloadPathPattern.MatchString(path) {
-		return path
+	if info.Mode().Perm() != mode.Perm() {
+		return fmt.Errorf("%s does not support private file permissions", file.Name())
 	}
-	return "'" + strings.ReplaceAll(path, "'", `'\''`) + "'"
+	return nil
 }
-
-var plainDownloadPathPattern = regexp.MustCompile(`^[A-Za-z0-9._/-]+$`)

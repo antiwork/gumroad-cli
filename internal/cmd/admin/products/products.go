@@ -11,14 +11,14 @@ func NewProductsCmd() *cobra.Command {
   gumroad admin products list --email seller@example.com --page 2 --per-page 25
   gumroad admin products list --email seller@example.com --json
   gumroad admin products view abc123
-  gumroad admin products files download abc123 f_1
-  gumroad admin products files download abc123 f_1 -o review.zip
   gumroad admin products flag-for-tos-violation abc123 --user-id 2245593582708`,
 	}
 
+	files := &cobra.Command{Use: "files", Short: "Work with a product's files"}
+	files.AddCommand(newFilesDownloadCmd())
 	cmd.AddCommand(newListCmd())
 	cmd.AddCommand(newViewCmd())
-	cmd.AddCommand(newFilesCmd())
+	cmd.AddCommand(files)
 	cmd.AddCommand(newFlagForTOSViolationCmd())
 
 	return cmd

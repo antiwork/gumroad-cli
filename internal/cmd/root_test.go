@@ -1002,6 +1002,33 @@ func TestInsertDoubleDashBeforeArg(t *testing.T) {
 	}
 }
 
+func TestRewriteAdminDownloadArgs(t *testing.T) {
+	root := NewRootCmd()
+	id := "-cGksPcArAUU8j_XTYsrnQ=="
+	tests := []struct {
+		name       string
+		args, want []string
+	}{
+		{"short flag cluster", []string{"admin", "products", "files", "download", id, "file", "-qo", "/tmp/out"}, []string{"admin", "products", "files", "download", "-qo", "/tmp/out", "--", id, "file"}},
+		{"inherited flag between commands", []string{"admin", "--no-color", "products", "files", "download", "product", id, "--output", "download"}, []string{"admin", "products", "files", "download", "--no-color", "--output", "download", "--", "product", id}},
+		{"two dash IDs and assigned output", []string{"admin", "products", "files", "download", id, id, "--output=/tmp/x"}, []string{"admin", "products", "files", "download", "--output=/tmp/x", "--", id, id}},
+		{"attached output resembles ID", []string{"admin", "products", "files", "download", id, "file", "-oAAAAAAAAAAAAAAAAAAAA"}, []string{"admin", "products", "files", "download", "-oAAAAAAAAAAAAAAAAAAAA", "--", id, "file"}},
+		{"multiple attached ambiguities", []string{"admin", "products", "files", "download", "-oAAAAAAAAAAAAAAAAAAAA", "-oBBBBBBBBBBBBBBBBBBBB", "file"}, []string{"admin", "products", "files", "download", "--", "-oAAAAAAAAAAAAAAAAAAAA", "-oBBBBBBBBBBBBBBBBBBBB", "file"}},
+		{"explicit empty output", []string{"admin", "products", "files", "download", "--output=", id, "file"}, []string{"admin", "products", "files", "download", "--output=", "--", id, "file"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got := rewriteAdminDownloadArgs(root, test.args)
+			if fmt.Sprint(got) != fmt.Sprint(test.want) {
+				t.Fatalf("got %v; want %v", got, test.want)
+			}
+		})
+	}
+	if rewriteAdminDownloadArgs(root, []string{"admin", "products", "files", "download", id, "file", "-non-interactive"}) != nil {
+		t.Fatal("unknown flag was retried")
+	}
+}
+
 func TestExecuteRootCommand_RetriesDashPrefixedID(t *testing.T) {
 	var gotArgs []string
 	simArgs := []string{"gumroad", "view", "-dAsh1D=="}

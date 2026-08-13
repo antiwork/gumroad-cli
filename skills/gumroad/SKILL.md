@@ -113,7 +113,6 @@ Most responses are wrapped in `{"success": true, ...}` with resource-specific ke
 - `admin purchases search` → `.purchases[]`, `.has_more`, `.limit`
 - `admin purchases lookup` → `.purchases[]`
 - `admin products list` → `.products[]`, `admin products view` → `.product`
-- `admin products files download` → `.signed_url`, `.external_link`, `.file` (with `--json`; the file is still written locally first)
 
 Admin pagination models differ by command:
 
@@ -274,15 +273,8 @@ gumroad admin purchases refund <purchase-id> --email buyer@example.com --amount 
 gumroad admin products list --email seller@example.com --page 2 --per-page 25 --json --non-interactive --no-input
 gumroad admin products view <product-id> --with-fraud-context --json --non-interactive --no-input
 
-# Download a product file's actual contents for content review (malware reports,
-# piracy verification, TOS review) without buying the product. The file id comes
-# from `admin products view`, which lists soft-deleted files too — those can
-# still be downloaded, since the content under review is often the removed prior
-# version. Every download is audit-logged server-side. External-link "files"
-# have no stored bytes; the command prints the link instead of fetching it.
+gumroad admin products view <product-id> --json --jq '.product.files[] | [.id, .display_name]' --non-interactive --no-input
 gumroad admin products files download <product-id> <file-id> --non-interactive --no-input
-gumroad admin products files download <product-id> <file-id> -o review.zip --force --non-interactive --no-input
-
 # Watchlist state does not pause payouts or change user risk state
 gumroad admin users watch --user-id 2245593582708 --expected-email seller@example.com --revenue-threshold 200 --note "Review next buyers" --yes --json --non-interactive --no-input
 gumroad admin users update-watch --user-id 2245593582708 --expected-email seller@example.com --revenue-threshold 500 --yes --json --non-interactive --no-input
