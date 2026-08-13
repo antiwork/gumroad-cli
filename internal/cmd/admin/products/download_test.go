@@ -22,9 +22,7 @@ func downloadURLPayload(signedURL string, mutators ...func(map[string]any)) map[
 	payload := map[string]any{
 		"signed_url":    signedURL,
 		"external_link": false,
-		"file": map[string]any{
-			"id": "f_1", "display_name": "Big Guide", "file_name": "big-guide.pdf", "extension": "PDF", "filegroup": "document", "file_size": 11, "created_at": "2026-05-01T12:00:00Z", "deleted_at": nil,
-		},
+		"file":          map[string]any{"id": "f_1", "display_name": "Big Guide", "file_name": "big-guide.pdf", "extension": "PDF", "filegroup": "document", "file_size": 11, "created_at": "2026-05-01T12:00:00Z", "deleted_at": nil},
 	}
 	for _, mutate := range mutators {
 		mutate(payload)
@@ -97,14 +95,10 @@ func TestFilesDownloadWritesTrustedPrivateDestination(t *testing.T) {
 	check(t, gotPath == "/internal/admin/products/abc123/files/f_1/download_url", "unexpected admin path: %s", gotPath)
 	data, err := os.ReadFile(filepath.Join(reviewDirectoryName, "file-f_1.download"))
 	check(t, err == nil && string(data) == "hello bytes", "unexpected downloaded file: %q, %v", data, err)
-	downloaded, err := os.Open(implicitDownloadPath())
-	must(t, err)
-	must(t, verifyPrivateMode(downloaded, 0o600))
-	downloaded.Close()
-	reviewDir, err := os.Open(reviewDirectoryName)
-	must(t, err)
-	must(t, verifyPrivateMode(reviewDir, 0o700))
-	reviewDir.Close()
+	downloaded, err := os.Stat(implicitDownloadPath())
+	check(t, err == nil && downloaded.Mode().Perm() == 0o600, "download mode was not private: %v", err)
+	reviewDir, err := os.Stat(reviewDirectoryName)
+	check(t, err == nil && reviewDir.Mode().Perm() == 0o700, "review directory mode was not private: %v", err)
 	_, err = os.Stat("sitecustomize.py")
 	check(t, err != nil, "seller filename was used as executable local path")
 }
@@ -160,9 +154,8 @@ func TestDownloadFileHelpers(t *testing.T) {
 	must(t, renderDownloadSuccess(cmdutil.Options{Stdout: io.Discard}, productFile{ID: "id"}, "dest"))
 	check(t, renderDownloadSuccess(cmdutil.Options{Stdout: closedWriter{}}, productFile{}, "dest") != nil, "expected output error")
 	closed, err := os.Open(dest)
-	must(t, err)
-	check(t, verifyPrivateMode(closed, 0o700) != nil, "expected a private-mode mismatch")
-	closed.Close()
+	check(t, err == nil && verifyPrivateMode(closed, 0o700) != nil, "expected a private-mode mismatch: %v", err)
+	must(t, closed.Close())
 	check(t, installDownloadedFile(closed, filepath.Join(dir, "unused"), false) != nil, "expected closed-file error")
 	check(t, verifyPrivateMode(closed, 0o600) != nil && makeOpenPathPrivate(closed, 0o600) != nil, "expected closed-file errors")
 	check(t, preparePrivateDirectory(dest) != nil, "expected a non-directory review path error")

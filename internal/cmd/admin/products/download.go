@@ -1,6 +1,7 @@
 package products
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/json"
@@ -54,7 +55,7 @@ func newFilesDownloadCmd() *cobra.Command {
 			path := cmdutil.JoinPath("products", productID, "files", fileID, "download_url")
 			return admincmd.Run(fetchOpts, "Fetching download URL...", func(client *adminapi.Client) (json.RawMessage, error) {
 				return client.Get(path, url.Values{})
-			}, func(data json.RawMessage) error {
+			}, func(data json.RawMessage) (err error) {
 				resp, err := cmdutil.DecodeJSON[fileDownloadURLResponse](data)
 				if err != nil {
 					return err
@@ -96,7 +97,7 @@ func newFilesDownloadCmd() *cobra.Command {
 					}
 					installDest = filepath.Join(filepath.Dir(stagingDir), filepath.Base(dest))
 					defer func() {
-						stagedDownload.Close()
+						err = errors.Join(err, closeDownloadFile(stagedDownload))
 						os.Remove(stagedDownload.Name())
 						stagingDirLock.Close()
 						os.Remove(stagingDir)
@@ -106,17 +107,11 @@ func newFilesDownloadCmd() *cobra.Command {
 				if err != nil {
 					return err
 				}
-				if machineOutput != nil {
-					defer func() {
-						machineOutput.Close()
-						os.Remove(machineOutput.Name())
-					}()
-				}
 				if err := downloadToFile(opts, resp.SignedURL, stagedDownload, installDest, force); err != nil {
 					return err
 				}
 				if machineOutput != nil {
-					_, err := io.Copy(opts.Out(), machineOutput)
+					_, err := io.Copy(opts.Out(), bytes.NewReader(machineOutput))
 					return err
 				}
 				return renderDownloadSuccess(opts, file, dest)
@@ -185,7 +180,7 @@ func prepareDownloadStaging(dest string) (string, io.Closer, *os.File, error) {
 		return "", nil, nil, err
 	}
 	if err := makeOpenPathPrivate(staged, 0o600); err != nil {
-		staged.Close()
+		err = errors.Join(err, closeDownloadFile(staged))
 		os.Remove(staged.Name())
 		lock.Close()
 		os.Remove(dir)
@@ -240,6 +235,13 @@ var downloadStallTimeout, downloadHTTPClient = 2 * time.Minute, &http.Client{Che
 
 func refuseDownloadRedirects(_ *http.Request, _ []*http.Request) error {
 	return http.ErrUseLastResponse
+}
+func closeDownloadFile(file *os.File) error {
+	err := file.Close()
+	if errors.Is(err, os.ErrClosed) {
+		return nil
+	}
+	return err
 }
 func downloadToFile(opts cmdutil.Options, signedURL string, staged *os.File, dest string, force bool) error {
 	downloadURL, err := url.Parse(signedURL)
@@ -325,7 +327,7 @@ func stallAwareDownloadError(ctx, parent context.Context, err error) error {
 	}
 	return fmt.Errorf("downloading the file failed: %w", err)
 }
-func stageDownloadOutput(opts cmdutil.Options, file json.RawMessage, stagingDir, dest string) (*os.File, error) {
+func stageDownloadOutput(opts cmdutil.Options, file json.RawMessage, stagingDir, dest string) (output []byte, err error) {
 	if !opts.UsesJSONOutput() {
 		return nil, nil
 	}
@@ -341,24 +343,23 @@ func stageDownloadOutput(opts cmdutil.Options, file json.RawMessage, stagingDir,
 	if err != nil {
 		return nil, err
 	}
-	if err := makeOpenPathPrivate(staged, 0o600); err != nil {
-		staged.Close()
+	defer func() {
+		err = errors.Join(err, closeDownloadFile(staged))
 		os.Remove(staged.Name())
+	}()
+	if err = makeOpenPathPrivate(staged, 0o600); err != nil {
 		return nil, err
 	}
 	stagedOpts := opts
 	stagedOpts.Stdout = staged
-	if err := cmdutil.PrintJSONResponse(stagedOpts, data); err != nil {
-		staged.Close()
-		os.Remove(staged.Name())
+	if err = cmdutil.PrintJSONResponse(stagedOpts, data); err != nil {
 		return nil, err
 	}
-	if _, err := staged.Seek(0, io.SeekStart); err != nil {
-		staged.Close()
-		os.Remove(staged.Name())
+	if err = staged.Close(); err != nil {
 		return nil, err
 	}
-	return staged, nil
+	output, err = os.ReadFile(staged.Name())
+	return output, err
 }
 
 type stallTimeoutReader struct {

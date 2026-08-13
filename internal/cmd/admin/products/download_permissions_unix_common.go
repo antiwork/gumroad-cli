@@ -12,7 +12,6 @@ import (
 )
 
 func validateFileDownloadSupport(string) error { return nil }
-
 func lockPrivateDirectory(path string, _ bool) (*os.File, string, error) {
 	path, err := filepath.Abs(path)
 	if err != nil {

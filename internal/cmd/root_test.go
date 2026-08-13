@@ -1013,6 +1013,7 @@ func TestRewriteAdminDownloadArgs(t *testing.T) {
 		{"inherited flag between commands", []string{"admin", "--no-color", "products", "files", "download", "product", id, "--output", "download"}, []string{"admin", "products", "files", "download", "--no-color", "--output", "download", "--", "product", id}},
 		{"two dash IDs and assigned output", []string{"admin", "products", "files", "download", id, id, "--output=/tmp/x"}, []string{"admin", "products", "files", "download", "--output=/tmp/x", "--", id, id}},
 		{"attached output resembles ID", []string{"admin", "products", "files", "download", id, "file", "-oAAAAAAAAAAAAAAAAAAAA"}, []string{"admin", "products", "files", "download", "-oAAAAAAAAAAAAAAAAAAAA", "--", id, "file"}},
+		{"ordinary ID contains shorthand", []string{"admin", "products", "files", "download", "AoAAAAAAAAAAAAAAAAAAAA", "file", "-oAAAAAAAAAAAAAAAAAAAA"}, []string{"admin", "products", "files", "download", "-oAAAAAAAAAAAAAAAAAAAA", "--", "AoAAAAAAAAAAAAAAAAAAAA", "file"}},
 		{"multiple attached ambiguities", []string{"admin", "products", "files", "download", "-oAAAAAAAAAAAAAAAAAAAA", "-oBBBBBBBBBBBBBBBBBBBB", "file"}, []string{"admin", "products", "files", "download", "--", "-oAAAAAAAAAAAAAAAAAAAA", "-oBBBBBBBBBBBBBBBBBBBB", "file"}},
 		{"explicit empty output", []string{"admin", "products", "files", "download", "--output=", id, "file"}, []string{"admin", "products", "files", "download", "--output=", "--", id, "file"}},
 	}

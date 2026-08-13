@@ -362,6 +362,9 @@ func rewriteAdminDownloadArgs(root *cobra.Command, args []string) []string {
 }
 
 func downloadCommandFlag(command *cobra.Command, arg string) (bool, bool) {
+	if !strings.HasPrefix(arg, "-") {
+		return false, false
+	}
 	if strings.HasPrefix(arg, "--") {
 		name, _, hasValue := strings.Cut(strings.TrimPrefix(arg, "--"), "=")
 		flag := command.Flag(name)
