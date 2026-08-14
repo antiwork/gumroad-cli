@@ -1,9 +1,7 @@
 package products
 
 import (
-	"github.com/antiwork/gumroad-cli/internal/cmdutil"
 	"github.com/antiwork/gumroad-cli/internal/richcontent"
-	"github.com/spf13/cobra"
 )
 
 const defaultFileRichContentTitle = richcontent.DefaultFileTitle
@@ -19,7 +17,6 @@ func buildFileRichContent(fileRefs []richContentFileRef) []map[string]any {
 }
 
 func buildProductUpdateRichContent(
-	cmd *cobra.Command,
 	existingRichContent []map[string]any,
 	existingFiles []existingProductFile,
 	fileRefs []richContentFileRef,
@@ -28,15 +25,11 @@ func buildProductUpdateRichContent(
 		return nil, false, nil
 	}
 
-	richContent, err := rollFileEmbeds(existingRichContent, existingFiles, fileRefs)
+	richContent, err := richcontent.AppendFileEmbeds(existingRichContent, preservedProductFileIDs(existingFiles), fileRefs)
 	if err != nil {
-		return nil, false, cmdutil.UsageErrorf(cmd, "%s; pass one --file per existing file embed, or use products content get/set for structural content changes", err.Error())
+		return nil, false, err
 	}
 	return richContent, true, nil
-}
-
-func rollFileEmbeds(richContent []map[string]any, preserved []existingProductFile, fileRefs []richContentFileRef) ([]map[string]any, error) {
-	return richcontent.RollFileEmbeds(richContent, preservedProductFileIDs(preserved), fileRefs)
 }
 
 func preservedProductFileIDs(files []existingProductFile) []string {
