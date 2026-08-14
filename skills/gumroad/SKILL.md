@@ -665,7 +665,7 @@ gumroad variants delete <var_id> --product <id> --category <cat_id> --yes --json
 
 **All subcommands require** `--product` and `--category`.
 
-**Update flags:** `--name`, `--description`, `--price-difference`, `--max-purchase-count`, `--file` (repeatable), `--file-name`, `--file-description`. Use `variants update --file` only for products with per-variant Content; for shared Content, add files at the product level with `products update --file`.
+**Update flags:** `--name`, `--description`, `--price-difference`, `--max-purchase-count`, `--file` (repeatable), `--file-name`, `--file-description`. Use `variants update --file` only for products with per-variant Content. It appends each new file embed to the variant's existing page and leaves prior embeds intact. For shared Content, add files at the product level with `products update --file`.
 
 ### custom-fields — Manage custom fields
 
