@@ -90,33 +90,6 @@ func AppendFileEmbeds(richContent []map[string]any, preservedFileIDs []string, f
 	return cloned, nil
 }
 
-func RollFileEmbeds(richContent []map[string]any, preservedFileIDs []string, fileRefs []FileRef) ([]map[string]any, error) {
-	if len(fileRefs) == 0 {
-		return Clone(richContent)
-	}
-
-	existingIDs := FileEmbedIDs(richContent)
-	if len(existingIDs) == 0 {
-		return AppendFileEmbeds(richContent, preservedFileIDs, fileRefs)
-	}
-	if len(existingIDs) != len(fileRefs) {
-		return nil, fmt.Errorf("rich_content has %d file embeds; got %d replacement files", len(existingIDs), len(fileRefs))
-	}
-
-	cloned, err := Clone(richContent)
-	if err != nil {
-		return nil, err
-	}
-	nextRef := 0
-	for _, page := range cloned {
-		replaceFileEmbedRefsInNode(page["description"], fileRefs, &nextRef)
-	}
-	if nextRef != len(fileRefs) {
-		return nil, fmt.Errorf("could not replace all file embeds in rich_content")
-	}
-	return cloned, nil
-}
-
 func Clone(richContent []map[string]any) ([]map[string]any, error) {
 	data, err := json.Marshal(richContent)
 	if err != nil {
@@ -237,37 +210,6 @@ func collectFileEmbedIDs(node any, ids *[]string) {
 			collectFileEmbedIDs(child, ids)
 		}
 	}
-}
-
-func replaceFileEmbedRefsInNode(node any, fileRefs []FileRef, nextRef *int) {
-	current, ok := node.(map[string]any)
-	if !ok {
-		return
-	}
-	children, ok := current["content"].([]any)
-	if !ok {
-		return
-	}
-
-	for _, child := range children {
-		childMap, ok := child.(map[string]any)
-		if !ok {
-			continue
-		}
-		if _, ok := fileEmbedID(childMap); ok {
-			rollFileEmbedNode(childMap, fileRefs[*nextRef])
-			*nextRef += 1
-			continue
-		}
-		replaceFileEmbedRefsInNode(childMap, fileRefs, nextRef)
-	}
-	current["content"] = children
-}
-
-func rollFileEmbedNode(node map[string]any, ref FileRef) {
-	attrs, _ := node["attrs"].(map[string]any)
-	attrs["id"] = ref.FileID
-	attrs["uid"] = ref.EmbedUID
 }
 
 func fileEmbedID(node map[string]any) (string, bool) {
