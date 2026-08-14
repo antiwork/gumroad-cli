@@ -388,7 +388,7 @@ In custom HTML, use Gumroad data attributes for live product values and checkout
 
 **Update flags:** `--name`, `--price`, `--currency`, `--description`, `--custom-summary`, `--custom-permalink`, `--custom-receipt`, `--max-purchase-count`, `--category`, `--taxonomy-id`, `--tag` (repeatable), `--custom-html`, `--file` (repeatable), `--file-name`, `--file-description`, `--cover-image`, `--preview-image` (repeatable), `--preview-video` (repeatable), `--thumbnail`. Prefer `products page preview/publish/clear/url` for custom HTML page workflows; `products update --custom-html` remains supported as a low-level product update flag.
 
-Use `products update --file` for shared product Content. It replaces existing rich content file embeds in place when they exist, or creates file embeds when the document has none; pass one `--file` per existing file embed and use `products content get/set` for structural content edits. For products with per-variant Content, use `variants update ... --file` for the specific variant you want to change.
+Use `products update --file` for shared product Content. It appends each new file embed to the existing page and leaves prior embeds intact. Use `products content get/set` for structural content edits. For products with per-variant Content, use `variants update ... --file` for the specific variant you want to change.
 
 Use `--cover-image` for the primary cover, repeat `--preview-image` for additional gallery/preview images, repeat `--preview-video` for video previews (MP4, MOV, M4V, MPEG, WMV, or WebM), and `--thumbnail` for the card/library thumbnail. When multiple media flags are combined, covers attach in a fixed order: cover image first, then preview images (in flag order), then preview videos (in flag order) — images and videos cannot be interleaved in a single command. These media flags run the required two-step API flow: direct upload first, then attach by signed blob ID. For an existing product, `products thumbnail set --url` asks Gumroad to download and attach a public HTTP(S) image directly.
 
@@ -665,7 +665,7 @@ gumroad variants delete <var_id> --product <id> --category <cat_id> --yes --json
 
 **All subcommands require** `--product` and `--category`.
 
-**Update flags:** `--name`, `--description`, `--price-difference`, `--max-purchase-count`, `--file` (repeatable), `--file-name`, `--file-description`. Use `variants update --file` only for products with per-variant Content; for shared Content, roll files at the product level with `products update --file`.
+**Update flags:** `--name`, `--description`, `--price-difference`, `--max-purchase-count`, `--file` (repeatable), `--file-name`, `--file-description`. Use `variants update --file` only for products with per-variant Content; for shared Content, add files at the product level with `products update --file`.
 
 ### custom-fields — Manage custom fields
 

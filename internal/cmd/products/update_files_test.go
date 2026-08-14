@@ -515,7 +515,7 @@ func TestUpdate_FileUploadUsesExternalIDForNewFiles(t *testing.T) {
 	}
 }
 
-func TestUpdate_FileRollsExistingRichContentEmbed(t *testing.T) {
+func TestUpdate_FileAppendsToExistingRichContentEmbed(t *testing.T) {
 	srv := newProductUpdateFileServers(t)
 	srv.existingFiles = []existingProductFile{
 		{ID: "file_old", Name: "Old Pack.zip"},
@@ -574,12 +574,15 @@ func TestUpdate_FileRollsExistingRichContentEmbed(t *testing.T) {
 	if got := richContent[0]["id"]; got != "page_1" {
 		t.Fatalf("rich_content page id = %#v, want page_1", got)
 	}
-	if got := firstRichContentFileEmbedID(t, richContent[0]); got != newFileID {
-		t.Fatalf("fileEmbed id = %q, want new file id %q", got, newFileID)
+	if got := firstRichContentFileEmbedID(t, richContent[0]); got != "file_old" {
+		t.Fatalf("first fileEmbed id = %q, want file_old", got)
+	}
+	if ids := fileEmbedIDs(richContent); !reflect.DeepEqual(ids, []string{"file_old", newFileID}) {
+		t.Fatalf("rich_content fileEmbed ids = %#v, want existing embed plus new upload", ids)
 	}
 }
 
-func TestUpdate_FileRollsBeforeTrailingParagraph(t *testing.T) {
+func TestUpdate_FileAppendsBeforeTrailingParagraph(t *testing.T) {
 	srv := newProductUpdateFileServers(t)
 	srv.existingFiles = []existingProductFile{
 		{ID: "file_old", Name: "Old Pack.zip"},
@@ -611,15 +614,15 @@ func TestUpdate_FileRollsBeforeTrailingParagraph(t *testing.T) {
 		t.Fatalf("files payload len = %d, want 2", len(files))
 	}
 	newFileID := productUpdateNewUploadExternalID(t, files[1], "files[1]")
-	if ids := richContentFileEmbedIDsFromBody(t, srv.putJSON); !reflect.DeepEqual(ids, []string{newFileID}) {
-		t.Fatalf("rich_content fileEmbed ids = %#v, want new upload only", ids)
+	if ids := richContentFileEmbedIDsFromBody(t, srv.putJSON); !reflect.DeepEqual(ids, []string{"file_old", newFileID}) {
+		t.Fatalf("rich_content fileEmbed ids = %#v, want existing embed plus new upload", ids)
 	}
-	if types := firstRichContentNodeTypesFromBody(t, srv.putJSON); !reflect.DeepEqual(types, []string{"fileEmbed", "paragraph"}) {
-		t.Fatalf("rich_content node types = %#v, want file embed then one trailing paragraph", types)
+	if types := firstRichContentNodeTypesFromBody(t, srv.putJSON); !reflect.DeepEqual(types, []string{"fileEmbed", "fileEmbed", "paragraph"}) {
+		t.Fatalf("rich_content node types = %#v, want existing embed, new embed, then trailing paragraph", types)
 	}
 }
 
-func TestUpdate_FileRollsOnPageWithExistingEmbed(t *testing.T) {
+func TestUpdate_FileAppendsOnPageWithExistingEmbed(t *testing.T) {
 	srv := newProductUpdateFileServers(t)
 	srv.existingFiles = []existingProductFile{
 		{ID: "file_old", Name: "Old Pack.zip"},
@@ -672,18 +675,18 @@ func TestUpdate_FileRollsOnPageWithExistingEmbed(t *testing.T) {
 	if ids := fileEmbedIDs([]map[string]any{richContent[0]}); len(ids) != 0 {
 		t.Fatalf("page 1 fileEmbed ids = %#v, want none", ids)
 	}
-	if ids := fileEmbedIDs([]map[string]any{richContent[1]}); !reflect.DeepEqual(ids, []string{newFileID}) {
-		t.Fatalf("page 2 fileEmbed ids = %#v, want new upload only", ids)
+	if ids := fileEmbedIDs([]map[string]any{richContent[1]}); !reflect.DeepEqual(ids, []string{"file_old", newFileID}) {
+		t.Fatalf("page 2 fileEmbed ids = %#v, want existing embed plus new upload", ids)
 	}
 	if types := richContentNodeTypes(t, richContent[0]); !reflect.DeepEqual(types, []string{"paragraph", "paragraph"}) {
 		t.Fatalf("page 1 node types = %#v, want unchanged paragraphs", types)
 	}
-	if types := richContentNodeTypes(t, richContent[1]); !reflect.DeepEqual(types, []string{"fileEmbed", "paragraph"}) {
-		t.Fatalf("page 2 node types = %#v, want file embed then one trailing paragraph", types)
+	if types := richContentNodeTypes(t, richContent[1]); !reflect.DeepEqual(types, []string{"fileEmbed", "fileEmbed", "paragraph"}) {
+		t.Fatalf("page 2 node types = %#v, want existing embed, new embed, then trailing paragraph", types)
 	}
 }
 
-func TestUpdate_FileRollsMultipleEmbedsInsideExistingFileEmbedGroup(t *testing.T) {
+func TestUpdate_FileAppendsInsideExistingFileEmbedGroup(t *testing.T) {
 	srv := newProductUpdateFileServers(t)
 	srv.existingFiles = []existingProductFile{
 		{ID: "file_a", Name: "Old A.zip"},
@@ -737,8 +740,8 @@ func TestUpdate_FileRollsMultipleEmbedsInsideExistingFileEmbedGroup(t *testing.T
 		t.Fatalf("first rich_content node = %#v, want fileEmbedGroup", content[0])
 	}
 	groupIDs := fileEmbedIDs([]map[string]any{{"description": group}})
-	if !reflect.DeepEqual(groupIDs, []string{firstNewFileID, secondNewFileID}) {
-		t.Fatalf("fileEmbedGroup ids = %#v, want new upload ids", groupIDs)
+	if !reflect.DeepEqual(groupIDs, []string{"file_a", "file_b", firstNewFileID, secondNewFileID}) {
+		t.Fatalf("fileEmbedGroup ids = %#v, want existing embeds plus new upload ids", groupIDs)
 	}
 }
 
@@ -779,16 +782,16 @@ func TestUpdate_FilePreservesAuthoredTrailingParagraph(t *testing.T) {
 		t.Fatalf("files payload len = %d, want 2", len(files))
 	}
 	newFileID := productUpdateNewUploadExternalID(t, files[1], "files[1]")
-	if ids := richContentFileEmbedIDsFromBody(t, srv.putJSON); !reflect.DeepEqual(ids, []string{newFileID}) {
-		t.Fatalf("rich_content fileEmbed ids = %#v, want new upload only", ids)
+	if ids := richContentFileEmbedIDsFromBody(t, srv.putJSON); !reflect.DeepEqual(ids, []string{"file_old", newFileID}) {
+		t.Fatalf("rich_content fileEmbed ids = %#v, want existing embed plus new upload", ids)
 	}
 
 	richContent := productUpdateJSONRichContent(t, srv.putJSON)
-	if types := richContentNodeTypes(t, richContent[0]); !reflect.DeepEqual(types, []string{"fileEmbed", "paragraph"}) {
-		t.Fatalf("rich_content node types = %#v, want file embed then authored paragraph", types)
+	if types := richContentNodeTypes(t, richContent[0]); !reflect.DeepEqual(types, []string{"fileEmbed", "fileEmbed", "paragraph"}) {
+		t.Fatalf("rich_content node types = %#v, want existing embed, new embed, then authored paragraph", types)
 	}
 	content := richContentPageContent(t, richContent[0])
-	paragraph := content[1].(map[string]any)
+	paragraph := content[2].(map[string]any)
 	textNodes, ok := paragraph["content"].([]any)
 	if !ok || len(textNodes) != 1 {
 		t.Fatalf("trailing paragraph content = %#v, want one text node", paragraph["content"])
@@ -799,7 +802,7 @@ func TestUpdate_FilePreservesAuthoredTrailingParagraph(t *testing.T) {
 	}
 }
 
-func TestUpdate_FileAmbiguousEmbeddedReplacementErrorsBeforeUpload(t *testing.T) {
+func TestUpdate_FileAppendsWhenEmbedCountDiffers(t *testing.T) {
 	srv := newProductUpdateFileServers(t)
 	srv.existingFiles = []existingProductFile{
 		{ID: "file_a", Name: "Old A.zip"},
@@ -824,18 +827,21 @@ func TestUpdate_FileAmbiguousEmbeddedReplacementErrorsBeforeUpload(t *testing.T)
 		"prod1",
 		"--file", path,
 	})
-	err := cmd.Execute()
-	if err == nil {
-		t.Fatal("expected ambiguous rich_content replacement error")
+	testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	if srv.s3Calls.Load() != 1 {
+		t.Fatalf("S3 calls = %d, want 1", srv.s3Calls.Load())
 	}
-	if !strings.Contains(err.Error(), "rich_content has 2 file embeds") || !strings.Contains(err.Error(), "pass one --file per existing file embed") {
-		t.Fatalf("expected rich_content count error, got %v", err)
+	if srv.putCalls.Load() != 1 {
+		t.Fatalf("PUT calls = %d, want 1", srv.putCalls.Load())
 	}
-	if srv.s3Calls.Load() != 0 {
-		t.Fatalf("unexpected S3 calls: %d", srv.s3Calls.Load())
+	files := productUpdateJSONFiles(t, srv.putJSON)
+	if len(files) != 3 {
+		t.Fatalf("files payload len = %d, want 3", len(files))
 	}
-	if srv.putCalls.Load() != 0 {
-		t.Fatalf("unexpected PUT calls: %d", srv.putCalls.Load())
+	newFileID := productUpdateNewUploadExternalID(t, files[2], "files[2]")
+	if ids := richContentFileEmbedIDsFromBody(t, srv.putJSON); !reflect.DeepEqual(ids, []string{"file_a", "file_b", newFileID}) {
+		t.Fatalf("rich_content fileEmbed ids = %#v, want existing embeds plus new upload", ids)
 	}
 }
 
@@ -927,8 +933,8 @@ func TestUpdate_FileDryRunPrefetchesButDoesNotUploadOrPut(t *testing.T) {
 	}
 	newFileID := productUpdateNewUploadExternalID(t, files[2], "files[2]")
 	richContent := productUpdateJSONRichContent(t, payload.Request.Body)
-	if ids := fileEmbedIDs(richContent); !reflect.DeepEqual(ids, []string{newFileID}) {
-		t.Fatalf("dry-run fileEmbed ids = %#v, want new upload only", ids)
+	if ids := fileEmbedIDs(richContent); !reflect.DeepEqual(ids, []string{"file_a", newFileID}) {
+		t.Fatalf("dry-run fileEmbed ids = %#v, want existing embed plus new upload", ids)
 	}
 }
 

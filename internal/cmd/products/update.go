@@ -229,7 +229,7 @@ func newUpdateCmd() *cobra.Command {
 					args[0], args[0])
 			}
 
-			richContent, includeRichContent, err := buildProductUpdateRichContent(c, existingState.RichContent, existingState.Files, fileRefs)
+			richContent, includeRichContent, err := buildProductUpdateRichContent(existingState.RichContent, existingState.Files, fileRefs)
 			if err != nil {
 				return err
 			}
@@ -283,7 +283,7 @@ func newUpdateCmd() *cobra.Command {
 	cmd.Flags().StringVar(&category, "category", "", "New product category path (for example: design/ui-and-web/figma)")
 	cmd.Flags().StringVar(&taxonomyID, "taxonomy-id", "", "New numeric taxonomy/category ID")
 	cmd.Flags().StringArrayVar(&tags, "tag", nil, "Tag (repeatable, replaces all existing tags)")
-	cmd.Flags().StringArrayVar(&files, "file", nil, "Roll a local file into rich content file embeds (repeatable)")
+	cmd.Flags().StringArrayVar(&files, "file", nil, "Add a local file to product content without replacing existing embeds (repeatable)")
 	cmd.Flags().StringArrayVar(&fileNames, "file-name", nil, "Display name for the matching --file (repeatable)")
 	cmd.Flags().StringArrayVar(&fileDescriptions, "file-description", nil, "Description for the matching --file (repeatable)")
 	cmd.Flags().StringVar(&coverImage, "cover-image", "", "Local JPEG, PNG, or GIF cover image to upload")
