@@ -8,11 +8,23 @@ CLI for the [Gumroad API](https://app.gumroad.com/api). Designed for humans and 
 brew install antiwork/cli/gumroad
 ```
 
+On Windows, download [`gumroad-cli_windows_amd64.zip`](https://github.com/antiwork/gumroad-cli/releases/latest/download/gumroad-cli_windows_amd64.zip) or [`gumroad-cli_windows_arm64.zip`](https://github.com/antiwork/gumroad-cli/releases/latest/download/gumroad-cli_windows_arm64.zip), unzip it, and put `gumroad.exe` on your PATH. In PowerShell:
+
+```powershell
+Invoke-WebRequest https://github.com/antiwork/gumroad-cli/releases/latest/download/gumroad-cli_windows_amd64.zip -OutFile gumroad-cli.zip
+Expand-Archive .\gumroad-cli.zip -DestinationPath "$env:LOCALAPPDATA\gumroad"
+$env:Path = "$env:LOCALAPPDATA\gumroad;$env:Path"
+[Environment]::SetEnvironmentVariable("Path", "$env:LOCALAPPDATA\gumroad;" + [Environment]::GetEnvironmentVariable("Path", "User"), "User")
+gumroad auth login
+```
+
+Use Windows Terminal or PowerShell. Quote paths that contain spaces (`& "$env:LOCALAPPDATA\gumroad\gumroad.exe"`). If SmartScreen blocks `gumroad.exe`, choose More info → Run anyway. Homebrew and the curl installer do not apply to stock PowerShell.
+
 <details>
 <summary>Other installation methods</summary>
 
 ```sh
-# Shell script
+# Shell script (macOS, Linux, and Windows Git Bash / MSYS2)
 curl -fsSL https://gumroad.com/install-cli.sh | bash
 
 # Go
