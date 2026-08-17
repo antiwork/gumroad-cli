@@ -70,7 +70,7 @@ Most responses are wrapped in `{"success": true, ...}` with resource-specific ke
 - `sales view` → `.sale` (includes `.currency`, the ISO code the sale is priced in — the same currency a refund amount is read in)
 - `sales export` → `.status`, `.recipient_email`
 - `sales summary` → `.gross_cents`, `.net_cents`, `.breakdown[]`
-- `emails list` → `.emails[]`, `emails view/create/send/schedule` → `.email`, `emails send-preview` → `.preview_url`, `emails delete/unschedule` → `.message`
+- `emails list` → `.emails[]`, `emails view/create/send/schedule/unschedule` → `.email`, `emails send-preview` → `.preview_url`, `emails delete` → `.message`
 - `workflows list` → `.workflows[]`, `workflows view` → `.workflow`, `workflows add-email/update-email` → `.email`
 - `payouts list` → `.payouts[]`, `payouts view/upcoming` → `.payout`
 - `subscribers list` → `.subscribers[]`, `subscribers view` → `.subscriber`
@@ -442,7 +442,7 @@ gumroad emails view <id> --json --no-input
 gumroad emails list --state draft --json --no-input
 gumroad emails list --state published --all --json --no-input
 
-# Send, schedule, or unschedule. Options taking --yes are confirmation-gated; agents must pass --yes.
+# Send, schedule, unschedule, or delete. Confirmation-gated verbs require --yes.
 gumroad emails send <id> --yes --json --no-input
 gumroad emails schedule <id> --at "2026-06-18T14:00:00Z" --json --no-input
 gumroad emails unschedule <id> --json --no-input
@@ -453,17 +453,7 @@ gumroad emails delete <id> --yes --json --no-input
 **List flags:** `--state` (published|scheduled|draft), `--all`, `--page-key`.
 **Schedule flags:** `--at` (required; RFC3339 timestamp, e.g. `2026-06-18T14:00:00Z`).
 
-Use `--dry-run --json --no-input` to inspect create params without calling the API. Passing `--send` blasts the audience immediately; prefer the draft → `send-preview` URL → `send` workflow. `send-preview` emails a copy to the seller.
-
-Schedule or unschedule a draft email:
-
-```sh
-# Schedule a draft to send at an absolute RFC3339 time; re-run with a new --at to reschedule.
-gumroad emails schedule <id> --at "2026-06-18T14:00:00Z" --json --no-input
-
-# Return a scheduled email to draft.
-gumroad emails unschedule <id> --json --no-input
-```
+Use `--dry-run --json --no-input` to inspect create params without calling the API. Passing `--send` blasts the audience immediately; prefer the draft → `send-preview` URL → `send` workflow. `send-preview` emails a copy to the seller. Schedule a draft with `emails schedule <id> --at <timestamp>` (re-running with a new `--at` reschedules); `emails unschedule <id>` returns a scheduled email to draft.
 
 ### workflows — Manage email workflows
 

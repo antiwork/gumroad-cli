@@ -48,6 +48,11 @@ again with a different --at reschedules the email.`,
 					return nil
 				}
 				style := opts.Style()
+				timeText := emailDisplayDate(item)
+				if timeText != "" {
+					return output.Writef(opts.Out(), "%s %s (%s) [%s] at %s\n",
+						style.Bold("Scheduled email:"), item.Subject, style.Dim(item.ID), item.State, timeText)
+				}
 				return output.Writef(opts.Out(), "%s %s (%s) [%s]\n",
 					style.Bold("Scheduled email:"), item.Subject, style.Dim(item.ID), item.State)
 			})

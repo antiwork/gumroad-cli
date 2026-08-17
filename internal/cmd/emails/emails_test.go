@@ -1041,7 +1041,7 @@ func TestSchedule_InvalidAtReturnsUsageError(t *testing.T) {
 	cmd.SetArgs([]string{"email_123", "--at", "not-a-time"})
 	err := cmd.Execute()
 
-	assertUsageError(t, err, "--at")
+	assertUsageError(t, err, "--at \"not-a-time\" is not a valid RFC3339 timestamp")
 }
 
 func TestSchedule_PlainOutputPrintsScheduledRow(t *testing.T) {
@@ -1081,5 +1081,26 @@ func TestUnschedule_PostsUnscheduleEndpoint(t *testing.T) {
 	}
 	if !strings.Contains(out, "Email email_123 unscheduled.") {
 		t.Fatalf("unexpected unschedule output: %q", out)
+	}
+}
+
+func TestUnschedule_JSONExposesEmailAtTopLevel(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		draft := completeEmailPayload("email_123", "Launch", "draft")
+		draft["published_at"] = ""
+		draft["scheduled_at"] = ""
+		testutil.JSON(t, w, map[string]any{"email": draft})
+	})
+
+	cmd := testutil.Command(newUnscheduleCmd(), testutil.JSONOutput())
+	cmd.SetArgs([]string{"email_123"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	var resp map[string]any
+	if err := json.Unmarshal([]byte(out), &resp); err != nil {
+		t.Fatalf("not valid JSON: %v\n%s", err, out)
+	}
+	if _, ok := resp["email"]; !ok {
+		t.Fatalf("JSON response must expose .email at top level, got keys: %v", resp)
 	}
 }

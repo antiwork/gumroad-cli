@@ -17,7 +17,7 @@ func newUnscheduleCmd() *cobra.Command {
 		Args: cmdutil.ExactArgs(1),
 		RunE: func(c *cobra.Command, args []string) error {
 			opts := cmdutil.OptionsFrom(c)
-			return cmdutil.RunRequestWithSuccess(opts, "Unscheduling email...", "POST", cmdutil.JoinPath("emails", args[0], "unschedule"), url.Values{}, args[0], "Email "+args[0]+" unscheduled.")
+			return cmdutil.RunRequestWithResource(opts, "Unscheduling email...", "POST", cmdutil.JoinPath("emails", args[0], "unschedule"), url.Values{}, "", "Email "+args[0]+" unscheduled.")
 		},
 	}
 }
