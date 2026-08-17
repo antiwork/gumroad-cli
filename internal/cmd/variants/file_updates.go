@@ -179,15 +179,12 @@ func runVariantUpdateWithFiles(
 	}
 	productBody["files"] = buildVariantProductFilesPayload(productState.Files, plannedUploads, uploadedURLs, fileRefs)
 
-	if _, err := client.PutJSON(productPath, productBody); err != nil {
-		return wrapVariantPartialUploadError(err, uploadedURLs)
-	}
-
-	createdIDs, err := createdProductFileIDs(client, productID, productState.Files)
+	productData, err := client.PutJSON(productPath, productBody)
 	if err != nil {
 		return wrapVariantPartialUploadError(err, uploadedURLs)
 	}
-	replacements, err := fileIDReplacements(fileRefs, createdIDs)
+
+	replacements, err := resolveCreatedFileIDs(client, productID, productData, productState.Files, fileRefs)
 	if err != nil {
 		return wrapVariantPartialUploadError(err, uploadedURLs)
 	}
@@ -238,6 +235,46 @@ func createdProductFileIDs(client *api.Client, productID string, before []varian
 		return nil, err
 	}
 	return newFileIDsSince(before, after.Files), nil
+}
+
+type productFileIDMappingsResponse struct {
+	FileIDMappings map[string]string `json:"file_id_mappings"`
+}
+
+func resolveCreatedFileIDs(
+	client *api.Client,
+	productID string,
+	productPutData json.RawMessage,
+	before []variantExistingProductFile,
+	fileRefs []richcontent.FileRef,
+) (map[string]string, error) {
+	resp, err := cmdutil.DecodeJSON[productFileIDMappingsResponse](productPutData)
+	if err != nil {
+		return nil, err
+	}
+	if mappings := completeFileIDMappings(fileRefs, resp.FileIDMappings); mappings != nil {
+		return mappings, nil
+	}
+	createdIDs, err := createdProductFileIDs(client, productID, before)
+	if err != nil {
+		return nil, err
+	}
+	return fileIDReplacements(fileRefs, createdIDs)
+}
+
+func completeFileIDMappings(refs []richcontent.FileRef, mappings map[string]string) map[string]string {
+	if len(refs) == 0 || len(mappings) == 0 {
+		return nil
+	}
+	complete := make(map[string]string, len(refs))
+	for _, ref := range refs {
+		mapped := mappings[ref.FileID]
+		if mapped == "" {
+			return nil
+		}
+		complete[ref.FileID] = mapped
+	}
+	return complete
 }
 
 func newFileIDsSince(before, after []variantExistingProductFile) []string {

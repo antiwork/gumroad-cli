@@ -38,3 +38,14 @@ func TestFileIDReplacementsRequiresMatchingCount(t *testing.T) {
 		t.Fatalf("replacements = %#v", got)
 	}
 }
+
+func TestCompleteFileIDMappingsRequiresEveryRef(t *testing.T) {
+	refs := []richcontent.FileRef{{FileID: "cli-upload-1"}, {FileID: "cli-upload-2"}}
+	if got := completeFileIDMappings(refs, map[string]string{"cli-upload-1": "file_a"}); got != nil {
+		t.Fatalf("partial mappings = %#v, want nil", got)
+	}
+	got := completeFileIDMappings(refs, map[string]string{"cli-upload-1": "file_a", "cli-upload-2": "file_b", "extra": "ignored"})
+	if got["cli-upload-1"] != "file_a" || got["cli-upload-2"] != "file_b" {
+		t.Fatalf("complete mappings = %#v", got)
+	}
+}
