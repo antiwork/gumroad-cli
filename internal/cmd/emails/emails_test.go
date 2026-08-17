@@ -988,3 +988,98 @@ func TestDelete_CancelledOutputUsesSharedFormat(t *testing.T) {
 		t.Fatalf("unexpected cancel output: %q", out.String())
 	}
 }
+
+func TestSchedule_PostsScheduleEndpoint(t *testing.T) {
+	var gotMethod, gotPath string
+	var gotForm url.Values
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
+		gotPath = r.URL.Path
+		if err := r.ParseForm(); err != nil {
+			t.Fatalf("ParseForm failed: %v", err)
+		}
+		gotForm = r.PostForm
+		scheduled := completeEmailPayload("email_123", "Launch", "scheduled")
+		scheduled["published_at"] = ""
+		scheduled["scheduled_at"] = "2026-06-18T14:00:00Z"
+		testutil.JSON(t, w, map[string]any{"email": scheduled})
+	})
+
+	cmd := testutil.Command(newScheduleCmd(), testutil.Quiet(false))
+	cmd.SetArgs([]string{"email_123", "--at", "2026-06-18T14:00:00Z"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	if gotMethod != http.MethodPost || gotPath != "/emails/email_123/schedule" {
+		t.Fatalf("got %s %s, want POST /emails/email_123/schedule", gotMethod, gotPath)
+	}
+	if gotForm.Get("to_be_published_at") != "2026-06-18T14:00:00Z" {
+		t.Fatalf("to_be_published_at = %q", gotForm.Get("to_be_published_at"))
+	}
+	if !strings.Contains(out, "Scheduled email:") || !strings.Contains(out, "scheduled") {
+		t.Fatalf("unexpected schedule output: %q", out)
+	}
+}
+
+func TestSchedule_MissingAtReturnsUsageError(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("API must not be called without --at")
+	})
+
+	cmd := testutil.Command(newScheduleCmd())
+	cmd.SetArgs([]string{"email_123"})
+	err := cmd.Execute()
+
+	assertUsageError(t, err, "--at")
+}
+
+func TestSchedule_InvalidAtReturnsUsageError(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("API must not be called with an invalid timestamp")
+	})
+
+	cmd := testutil.Command(newScheduleCmd())
+	cmd.SetArgs([]string{"email_123", "--at", "not-a-time"})
+	err := cmd.Execute()
+
+	assertUsageError(t, err, "--at")
+}
+
+func TestSchedule_PlainOutputPrintsScheduledRow(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		scheduled := completeEmailPayload("email_123", "Launch", "scheduled")
+		scheduled["published_at"] = ""
+		scheduled["scheduled_at"] = "2026-06-18T14:00:00Z"
+		testutil.JSON(t, w, map[string]any{"email": scheduled})
+	})
+
+	cmd := testutil.Command(newScheduleCmd(), testutil.PlainOutput())
+	cmd.SetArgs([]string{"email_123", "--at", "2026-06-18T14:00:00Z"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	if out != "email_123\tLaunch\tscheduled\t2026-06-18T14:00:00Z\n" {
+		t.Fatalf("got %q, want scheduled plain row", out)
+	}
+}
+
+func TestUnschedule_PostsUnscheduleEndpoint(t *testing.T) {
+	var gotMethod, gotPath string
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
+		gotPath = r.URL.Path
+		draft := completeEmailPayload("email_123", "Launch", "draft")
+		draft["published_at"] = ""
+		draft["scheduled_at"] = ""
+		testutil.JSON(t, w, map[string]any{"email": draft})
+	})
+
+	cmd := testutil.Command(newUnscheduleCmd(), testutil.Quiet(false))
+	cmd.SetArgs([]string{"email_123"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	if gotMethod != http.MethodPost || gotPath != "/emails/email_123/unschedule" {
+		t.Fatalf("got %s %s, want POST /emails/email_123/unschedule", gotMethod, gotPath)
+	}
+	if !strings.Contains(out, "Email email_123 unscheduled.") {
+		t.Fatalf("unexpected unschedule output: %q", out)
+	}
+}
