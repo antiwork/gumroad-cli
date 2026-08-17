@@ -451,7 +451,7 @@ gumroad emails delete <id> --yes --json --no-input
 
 **Create flags:** `--subject` (required), `--body` (required HTML file path, or `-` for stdin), `--audience` (all|customers|followers|product, default all), `--product` (required for product audience), `--send` (publish and send immediately).
 **List flags:** `--state` (published|scheduled|draft), `--all`, `--page-key`.
-**Schedule flags:** `--at` (required; RFC3339 timestamp, e.g. `2026-06-18T14:00:00Z`).
+**Schedule flags:** `--at` (required; RFC3339 e.g. `2026-06-18T14:00:00Z`, or a naive seller-timezone time e.g. `2026-06-18 14:00` which the API resolves in the seller's timezone). `--to-be-published-at` is an alias for `--at`.
 
 Use `--dry-run --json --no-input` to inspect create params without calling the API. Passing `--send` blasts the audience immediately; prefer the draft → `send-preview` URL → `send` workflow. `send-preview` emails a copy to the seller. Schedule a draft with `emails schedule <id> --at <timestamp>` (re-running with a new `--at` reschedules); `emails unschedule <id>` returns a scheduled email to draft.
 

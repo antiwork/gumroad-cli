@@ -19,20 +19,22 @@ func newScheduleCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "schedule <id> --at <timestamp>",
 		Short: "Schedule an audience email",
-		Long: `Schedule an audience email to send at an absolute time.
+		Long: `Schedule an audience email to send at a future time.
 
-The timestamp must be RFC3339 (e.g. 2026-06-18T14:00:00Z). Calling schedule
-again with a different --at reschedules the email.`,
+The timestamp may be RFC3339 (e.g. 2026-06-18T14:00:00Z) or a naive
+seller-timezone time (e.g. 2026-06-18 14:00); the API resolves the latter in
+the seller's timezone. Calling schedule again with a different timestamp
+reschedules the email.`,
 		Example: `  gumroad emails schedule <id> --at "2026-06-18T14:00:00Z"
-  gumroad emails schedule <id> --at "2026-06-18T09:00:00-05:00"
+  gumroad emails schedule <id> --to-be-published-at "2026-06-18 14:00"
   gumroad emails schedule <id> --at "2026-06-18T14:00:00Z" --json`,
 		Args: cmdutil.ExactArgs(1),
 		RunE: func(c *cobra.Command, args []string) error {
 			if at == "" {
 				return cmdutil.MissingFlagError(c, "--at")
 			}
-			if _, err := time.Parse(time.RFC3339, at); err != nil {
-				return cmdutil.UsageErrorf(c, "--at %q is not a valid RFC3339 timestamp (e.g. 2026-06-18T14:00:00Z)", at)
+			if !isValidScheduleTime(at) {
+				return cmdutil.UsageErrorf(c, "--at %q is not a valid timestamp (e.g. 2026-06-18T14:00:00Z or 2026-06-18 14:00)", at)
 			}
 
 			opts := cmdutil.OptionsFrom(c)
@@ -59,7 +61,25 @@ again with a different --at reschedules the email.`,
 		},
 	}
 
-	cmd.Flags().StringVar(&at, "at", "", "When to send the email (required; RFC3339 timestamp)")
+	cmd.Flags().StringVar(&at, "at", "", "When to send the email (required; RFC3339 or seller-timezone timestamp)")
+	cmd.Flags().StringVar(&at, "to-be-published-at", "", "Alias for --at")
 
 	return cmd
+}
+
+// isValidScheduleTime reports whether value parses as a timestamp, accepting
+// both RFC3339 and the naive seller-timezone form the API documents.
+func isValidScheduleTime(value string) bool {
+	layouts := []string{
+		time.RFC3339,
+		"2006-01-02T15:04",
+		"2006-01-02 15:04",
+		"2006-01-02",
+	}
+	for _, layout := range layouts {
+		if _, err := time.Parse(layout, value); err == nil {
+			return true
+		}
+	}
+	return false
 }
