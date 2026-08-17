@@ -45,7 +45,7 @@ Always follow these rules:
 - Storefront pages (slugged pages serving at `<username>.gumroad.com/<slug>`) use `gumroad pages list`, `gumroad pages create --title <title> [--slug <slug>] [path]` (with an HTML path or `-` the page is created as custom HTML; without one it starts empty for the in-app editor), `gumroad pages pull <slug>` to download a page's existing custom HTML so pull → edit → push is a real round trip (writes `<slug>.html`; `-o <path>` to choose, `-o -` for stdout; refuses to overwrite without `--force`; errors with a hint when the page has no custom HTML), `gumroad pages scaffold <slug>` to generate starter HTML for a rich-text page or a default profile from a static snapshot of its current render (same flags as pull; pushing the scaffold converts the page to custom HTML and replaces the dynamic storefront/editor experience), `gumroad pages push <slug> ./page.html` to replace a page with custom HTML, and `gumroad pages preview ./page.html` to run the backend sanitizer without publishing. The loop for going custom: `pull` (or `scaffold` when there's no custom HTML yet) → edit → `preview` → `push`. `--json`/`--jq` on `pull`/`scaffold` still write the file and additionally print the raw API response; combining them with `-o -` is rejected since both would own stdout. The special slug `profile` targets the profile landing page (`pull profile` downloads your published custom HTML, `scaffold profile` snapshots the default storefront render when none is published; push uses the same endpoints as `user page publish`). Custom HTML pages require the seller's `custom_html_pages` feature to be enabled; without it writes fail with an access message. Writes to slugged pages (`pages create`/`pages push <slug>`) also require the token to carry the `edit_profile` scope — tokens minted before the CLI requested that scope get a 403 telling them to re-run `gumroad auth login`.
 - Product rich content uses `gumroad products content list <id> --json --no-input` to inspect page IDs, `gumroad products content get <id> --json --no-input` to dump the shared `rich_content` page array, and `gumroad products content set <id> content.json --dry-run --json --no-input` to preview a whole-document replacement. Without an explicit path, whole-document `set` reads `./content.json`; `set --page` reads `./page.json`. Use `--page <page_id>` with `get`/`set` to edit one matching page object; `set --page` still sends a merged whole-document PUT. For per-variant content, pass both `--variant <variant_id>` and `--category <cat_id>`. Whole-document `set` deletes existing pages omitted from the JSON.
 - Custom HTML pages can use `data-gumroad-field="name"`, `data-gumroad-field="price"`, `data-gumroad-field="description"`, and `data-gumroad-action="buy"`. To preselect checkout state, add `data-gumroad-option="<variant name>"`, `data-gumroad-quantity="<integer>"`, `data-gumroad-price="<decimal>"`, or `data-gumroad-recurrence="monthly|quarterly|biannually|yearly|every_two_years"`. Production validates these values and falls back to product defaults when invalid. Prefer anchors for buy CTAs so production can add a checkout href; non-anchor buy elements also post to checkout.
-- Audience emails are created as drafts by default. Use `gumroad emails send-preview <id> --json --no-input` and inspect `.preview_url` before `gumroad emails send <id> --yes --json --no-input`. Creating with `--send` publishes and blasts immediately, so use `--dry-run` first and require explicit human approval.
+- Audience emails are created as drafts by default. Use `gumroad emails send-preview <id> --json --no-input` and inspect `.preview_url` before `gumroad emails send <id> --yes --json --no-input`. Creating with `--send` publishes and blasts immediately, so use `--dry-run` first and require explicit human approval. To schedule a send instead of blasting immediately, create the draft then `gumroad emails schedule <id> --at "<RFC3339>" --json --no-input`; `gumroad emails unschedule <id>` returns a scheduled email to draft.
 - Workflow email writes do not change the workflow publication state. Adding a step to a published workflow can schedule eligible past recipients. Changing a delay can reschedule recipients. Use `--dry-run` before each write.
 - If a command fails with a seller auth error, run `gumroad auth status --json --no-input` first. Agents can start seller auth with `gumroad auth login --no-input` and hand the printed approval URL to a human, or use an existing seller token via `GUMROAD_ACCESS_TOKEN` or `gumroad auth login --with-token`.
 - For admin commands in agents/CI, pass `--non-interactive` and set `GUMROAD_ADMIN_TOKEN`; interactive shells can store an admin token with `gumroad auth login --web`.
@@ -70,7 +70,7 @@ Most responses are wrapped in `{"success": true, ...}` with resource-specific ke
 - `sales view` → `.sale` (includes `.currency`, the ISO code the sale is priced in — the same currency a refund amount is read in)
 - `sales export` → `.status`, `.recipient_email`
 - `sales summary` → `.gross_cents`, `.net_cents`, `.breakdown[]`
-- `emails list` → `.emails[]`, `emails view/create/send` → `.email`, `emails send-preview` → `.preview_url`, `emails delete` → `.message`
+- `emails list` → `.emails[]`, `emails view/create/send/schedule/unschedule` → `.email`, `emails send-preview` → `.preview_url`, `emails delete` → `.message`
 - `workflows list` → `.workflows[]`, `workflows view` → `.workflow`, `workflows add-email/update-email` → `.email`
 - `payouts list` → `.payouts[]`, `payouts view/upcoming` → `.payout`
 - `subscribers list` → `.subscribers[]`, `subscribers view` → `.subscriber`
@@ -442,15 +442,18 @@ gumroad emails view <id> --json --no-input
 gumroad emails list --state draft --json --no-input
 gumroad emails list --state published --all --json --no-input
 
-# Send or delete. Both are confirmation-gated; agents must pass --yes.
+# Send, schedule, unschedule, or delete. Confirmation-gated verbs require --yes.
 gumroad emails send <id> --yes --json --no-input
+gumroad emails schedule <id> --at "2026-06-18T14:00:00Z" --json --no-input
+gumroad emails unschedule <id> --json --no-input
 gumroad emails delete <id> --yes --json --no-input
 ```
 
 **Create flags:** `--subject` (required), `--body` (required HTML file path, or `-` for stdin), `--audience` (all|customers|followers|product, default all), `--product` (required for product audience), `--send` (publish and send immediately).
 **List flags:** `--state` (published|scheduled|draft), `--all`, `--page-key`.
+**Schedule flags:** `--at` (required; RFC3339 e.g. `2026-06-18T14:00:00Z`, or a naive seller-timezone time e.g. `2026-06-18 14:00` which the API resolves in the seller's timezone). `--to-be-published-at` is an alias for `--at`.
 
-Use `--dry-run --json --no-input` to inspect create params without calling the API. Passing `--send` blasts the audience immediately; prefer the draft → `send-preview` URL → `send` workflow. `send-preview` emails a copy to the seller. Scheduled emails can only be created in the web UI; the CLI can list and view them (`--state scheduled`) but not create them.
+Use `--dry-run --json --no-input` to inspect create params without calling the API. Passing `--send` blasts the audience immediately; prefer the draft → `send-preview` URL → `send` workflow. `send-preview` emails a copy to the seller. Schedule a draft with `emails schedule <id> --at <timestamp>` (re-running with a new `--at` reschedules); `emails unschedule <id>` returns a scheduled email to draft.
 
 ### workflows — Manage email workflows
 
