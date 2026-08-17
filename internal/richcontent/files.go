@@ -110,6 +110,20 @@ func FileEmbedIDs(richContent []map[string]any) []string {
 	return ids
 }
 
+func ReplaceFileEmbedIDs(richContent []map[string]any, replacements map[string]string) ([]map[string]any, error) {
+	if len(replacements) == 0 {
+		return Clone(richContent)
+	}
+	cloned, err := Clone(richContent)
+	if err != nil {
+		return nil, err
+	}
+	for _, page := range cloned {
+		replaceFileEmbedIDsInNode(page["description"], replacements)
+	}
+	return cloned, nil
+}
+
 func refsForExistingFiles(fileIDs []string) ([]FileRef, error) {
 	refs := make([]FileRef, len(fileIDs))
 	for i, fileID := range fileIDs {
@@ -194,6 +208,24 @@ func fileEmbedNode(ref FileRef) map[string]any {
 			"uid":       ref.EmbedUID,
 			"collapsed": false,
 		},
+	}
+}
+
+func replaceFileEmbedIDsInNode(node any, replacements map[string]string) {
+	current, ok := node.(map[string]any)
+	if !ok {
+		return
+	}
+	if id, ok := fileEmbedID(current); ok {
+		if next, found := replacements[id]; found {
+			attrs, _ := current["attrs"].(map[string]any)
+			attrs["id"] = next
+		}
+	}
+	if children, ok := current["content"].([]any); ok {
+		for _, child := range children {
+			replaceFileEmbedIDsInNode(child, replacements)
+		}
 	}
 }
 

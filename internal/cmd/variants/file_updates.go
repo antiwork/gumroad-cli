@@ -182,6 +182,21 @@ func runVariantUpdateWithFiles(
 	if _, err := client.PutJSON(productPath, productBody); err != nil {
 		return wrapVariantPartialUploadError(err, uploadedURLs)
 	}
+
+	createdIDs, err := createdProductFileIDs(client, productID, productState.Files)
+	if err != nil {
+		return wrapVariantPartialUploadError(err, uploadedURLs)
+	}
+	replacements, err := fileIDReplacements(fileRefs, createdIDs)
+	if err != nil {
+		return wrapVariantPartialUploadError(err, uploadedURLs)
+	}
+	richContent, err = richcontent.ReplaceFileEmbedIDs(richContent, replacements)
+	if err != nil {
+		return wrapVariantPartialUploadError(err, uploadedURLs)
+	}
+	variantBody = buildVariantUpdateJSONBody(params, richContent)
+
 	data, err := client.PutJSON(variantPath, variantBody)
 	if err != nil {
 		return wrapVariantPartialUploadError(err, uploadedURLs)
@@ -215,6 +230,47 @@ func fetchVariantProductFileState(client *api.Client, productID string) (variant
 		return variantProductFileState{}, err
 	}
 	return resp.Product, nil
+}
+
+func createdProductFileIDs(client *api.Client, productID string, before []variantExistingProductFile) ([]string, error) {
+	after, err := fetchVariantProductFileState(client, productID)
+	if err != nil {
+		return nil, err
+	}
+	return newFileIDsSince(before, after.Files), nil
+}
+
+func newFileIDsSince(before, after []variantExistingProductFile) []string {
+	seen := make(map[string]struct{}, len(before))
+	for _, file := range before {
+		if file.ID == "" {
+			continue
+		}
+		seen[file.ID] = struct{}{}
+	}
+	var created []string
+	for _, file := range after {
+		if file.ID == "" {
+			continue
+		}
+		if _, ok := seen[file.ID]; ok {
+			continue
+		}
+		created = append(created, file.ID)
+		seen[file.ID] = struct{}{}
+	}
+	return created
+}
+
+func fileIDReplacements(refs []richcontent.FileRef, created []string) (map[string]string, error) {
+	if len(created) != len(refs) {
+		return nil, fmt.Errorf("expected %d new product file id(s) after upload, got %d; not writing unresolved upload placeholders into variant content", len(refs), len(created))
+	}
+	replacements := make(map[string]string, len(refs))
+	for i, ref := range refs {
+		replacements[ref.FileID] = created[i]
+	}
+	return replacements, nil
 }
 
 func fetchVariantRichContentState(client *api.Client, variantPath string) (variantRichContentState, error) {
