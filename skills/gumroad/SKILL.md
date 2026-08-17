@@ -450,7 +450,17 @@ gumroad emails delete <id> --yes --json --no-input
 **Create flags:** `--subject` (required), `--body` (required HTML file path, or `-` for stdin), `--audience` (all|customers|followers|product, default all), `--product` (required for product audience), `--send` (publish and send immediately).
 **List flags:** `--state` (published|scheduled|draft), `--all`, `--page-key`.
 
-Use `--dry-run --json --no-input` to inspect create params without calling the API. Passing `--send` blasts the audience immediately; prefer the draft → `send-preview` URL → `send` workflow. `send-preview` emails a copy to the seller. Scheduled emails can only be created in the web UI; the CLI can list and view them (`--state scheduled`) but not create them.
+Use `--dry-run --json --no-input` to inspect create params without calling the API. Passing `--send` blasts the audience immediately; prefer the draft → `send-preview` URL → `send` workflow. `send-preview` emails a copy to the seller.
+
+Schedule or unschedule a draft email:
+
+```sh
+# Schedule a draft to send at an absolute RFC3339 time; re-run with a new --at to reschedule.
+gumroad emails schedule <id> --at "2026-06-18T14:00:00Z" --json --no-input
+
+# Return a scheduled email to draft.
+gumroad emails unschedule <id> --json --no-input
+```
 
 ### workflows — Manage email workflows
 

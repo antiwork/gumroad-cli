@@ -21,11 +21,10 @@ func newScheduleCmd() *cobra.Command {
 		Short: "Schedule an audience email",
 		Long: `Schedule an audience email to send at an absolute time.
 
-The timestamp is passed through to the API verbatim and must be a parseable
-form (e.g. RFC3339 like 2026-06-18T14:00:00Z). Calling schedule again with a
-different --at reschedules the email.`,
+The timestamp must be RFC3339 (e.g. 2026-06-18T14:00:00Z). Calling schedule
+again with a different --at reschedules the email.`,
 		Example: `  gumroad emails schedule <id> --at "2026-06-18T14:00:00Z"
-  gumroad emails schedule <id> --at "2026-06-18 14:00"
+  gumroad emails schedule <id> --at "2026-06-18T09:00:00-05:00"
   gumroad emails schedule <id> --at "2026-06-18T14:00:00Z" --json`,
 		Args: cmdutil.ExactArgs(1),
 		RunE: func(c *cobra.Command, args []string) error {
