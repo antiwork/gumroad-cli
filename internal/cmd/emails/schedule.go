@@ -32,7 +32,7 @@ again with a different --at reschedules the email.`,
 				return cmdutil.MissingFlagError(c, "--at")
 			}
 			if _, err := time.Parse(time.RFC3339, at); err != nil {
-				return cmdutil.UsageErrorf(c, "--at: %v", err)
+				return cmdutil.UsageErrorf(c, "--at %q is not a valid RFC3339 timestamp (e.g. 2026-06-18T14:00:00Z)", at)
 			}
 
 			opts := cmdutil.OptionsFrom(c)
