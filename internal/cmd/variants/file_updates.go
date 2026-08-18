@@ -179,9 +179,21 @@ func runVariantUpdateWithFiles(
 	}
 	productBody["files"] = buildVariantProductFilesPayload(productState.Files, plannedUploads, uploadedURLs, fileRefs)
 
-	if _, err := client.PutJSON(productPath, productBody); err != nil {
+	productData, err := client.PutJSON(productPath, productBody)
+	if err != nil {
 		return wrapVariantPartialUploadError(err, uploadedURLs)
 	}
+
+	replacements, err := resolveCreatedFileIDs(productData, fileRefs)
+	if err != nil {
+		return wrapVariantPartialUploadError(err, uploadedURLs)
+	}
+	richContent, err = richcontent.ReplaceFileEmbedIDs(richContent, replacements)
+	if err != nil {
+		return wrapVariantPartialUploadError(err, uploadedURLs)
+	}
+	variantBody = buildVariantUpdateJSONBody(params, richContent)
+
 	data, err := client.PutJSON(variantPath, variantBody)
 	if err != nil {
 		return wrapVariantPartialUploadError(err, uploadedURLs)
@@ -215,6 +227,33 @@ func fetchVariantProductFileState(client *api.Client, productID string) (variant
 		return variantProductFileState{}, err
 	}
 	return resp.Product, nil
+}
+
+type productFileIDMappingsResponse struct {
+	FileIDMappings map[string]string `json:"file_id_mappings"`
+}
+
+func resolveCreatedFileIDs(
+	productPutData json.RawMessage,
+	fileRefs []richcontent.FileRef,
+) (map[string]string, error) {
+	resp, err := cmdutil.DecodeJSON[productFileIDMappingsResponse](productPutData)
+	if err != nil {
+		return nil, err
+	}
+	return completeFileIDMappings(fileRefs, resp.FileIDMappings)
+}
+
+func completeFileIDMappings(refs []richcontent.FileRef, mappings map[string]string) (map[string]string, error) {
+	complete := make(map[string]string, len(refs))
+	for _, ref := range refs {
+		mapped := mappings[ref.FileID]
+		if mapped == "" {
+			return nil, fmt.Errorf("product update response did not map uploaded file %s to a created product file id; not writing unresolved upload placeholders into variant content", ref.FileID)
+		}
+		complete[ref.FileID] = mapped
+	}
+	return complete, nil
 }
 
 func fetchVariantRichContentState(client *api.Client, variantPath string) (variantRichContentState, error) {

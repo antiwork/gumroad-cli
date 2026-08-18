@@ -46,6 +46,7 @@ type variantFileAttachServers struct {
 	s3 *httptest.Server
 
 	sharedContent      bool
+	omitFileIDMappings bool
 	productJSON        map[string]any
 	variantJSON        map[string]any
 	variantRichContent []map[string]any
@@ -117,7 +118,26 @@ func (s *variantFileAttachServers) dispatch(t *testing.T) http.HandlerFunc {
 				if err := json.NewDecoder(r.Body).Decode(&s.productJSON); err != nil {
 					t.Fatalf("decode product JSON body: %v", err)
 				}
-				testutil.JSON(t, w, map[string]any{"product": map[string]any{"id": "p1"}})
+				resp := map[string]any{"product": map[string]any{"id": "p1"}}
+				if !s.omitFileIDMappings {
+					mappings := map[string]string{}
+					if files, ok := s.productJSON["files"].([]any); ok {
+						n := 0
+						for _, raw := range files {
+							file, ok := raw.(map[string]any)
+							if !ok {
+								continue
+							}
+							externalID, _ := file["external_id"].(string)
+							if strings.HasPrefix(externalID, "cli-upload-") {
+								n++
+								mappings[externalID] = fmt.Sprintf("file_uploaded_%d", n)
+							}
+						}
+					}
+					resp["file_id_mappings"] = mappings
+				}
+				testutil.JSON(t, w, resp)
 			default:
 				t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
 				http.Error(w, "unexpected", http.StatusMethodNotAllowed)
@@ -1012,8 +1032,15 @@ func TestUpdate_FileAppendsToVariantRichContent(t *testing.T) {
 	if richContentPages[0]["id"] != "page_1" {
 		t.Fatalf("rich_content page id = %#v, want page_1", richContentPages[0]["id"])
 	}
-	if ids := richcontent.FileEmbedIDs(richContentPages); !reflect.DeepEqual(ids, []string{"file_existing", newFileID}) {
-		t.Fatalf("variant rich_content fileEmbed ids = %#v, want existing embed plus new upload", ids)
+	ids := richcontent.FileEmbedIDs(richContentPages)
+	if !reflect.DeepEqual(ids, []string{"file_existing", "file_uploaded_1"}) {
+		t.Fatalf("variant rich_content fileEmbed ids = %#v, want existing embed plus created file id", ids)
+	}
+	if strings.HasPrefix(ids[len(ids)-1], "cli-upload-") {
+		t.Fatalf("variant embed still used upload placeholder %q", ids[len(ids)-1])
+	}
+	if srv.productGetCalls.Load() != 1 {
+		t.Fatalf("product GET calls = %d, want 1 (no recount after PUT)", srv.productGetCalls.Load())
 	}
 }
 
@@ -1060,8 +1087,8 @@ func TestUpdate_FileAppendsWhenEmbedCountDiffers(t *testing.T) {
 	}
 
 	richContentPages := variantUpdateJSONRichContent(t, srv.variantJSON)
-	if ids := richcontent.FileEmbedIDs(richContentPages); !reflect.DeepEqual(ids, []string{"file_a", "file_b", newFileID}) {
-		t.Fatalf("variant rich_content fileEmbed ids = %#v, want existing embeds plus new upload", ids)
+	if ids := richcontent.FileEmbedIDs(richContentPages); !reflect.DeepEqual(ids, []string{"file_a", "file_b", "file_uploaded_1"}) {
+		t.Fatalf("variant rich_content fileEmbed ids = %#v, want existing embeds plus created file id", ids)
 	}
 }
 
@@ -1094,8 +1121,83 @@ func TestUpdate_FileCreatesVariantRichContentWhenEmpty(t *testing.T) {
 	}
 
 	richContentPages := variantUpdateJSONRichContent(t, srv.variantJSON)
-	if ids := richcontent.FileEmbedIDs(richContentPages); !reflect.DeepEqual(ids, []string{newFileID}) {
-		t.Fatalf("variant rich_content fileEmbed ids = %#v, want new upload only", ids)
+	if ids := richcontent.FileEmbedIDs(richContentPages); !reflect.DeepEqual(ids, []string{"file_uploaded_1"}) {
+		t.Fatalf("variant rich_content fileEmbed ids = %#v, want created file id only", ids)
+	}
+}
+
+func TestUpdate_FileUsesProductPutMappings(t *testing.T) {
+	srv := newVariantFileAttachServers(t)
+	testutil.Setup(t, srv.dispatch(t))
+
+	path := writeVariantUploadFixture(t, "license bytes")
+	cmd := testutil.Command(newUpdateCmd(), testutil.Yes(true))
+	cmd.SetArgs([]string{
+		"v1",
+		"--product", "p1",
+		"--category", "vc1",
+		"--file", path,
+		"--file-name", "License.pdf",
+	})
+	testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	if srv.productGetCalls.Load() != 1 {
+		t.Fatalf("product GET calls = %d, want 1 (no recount after PUT)", srv.productGetCalls.Load())
+	}
+	richContentPages := variantUpdateJSONRichContent(t, srv.variantJSON)
+	if ids := richcontent.FileEmbedIDs(richContentPages); !reflect.DeepEqual(ids, []string{"file_existing", "file_uploaded_1"}) {
+		t.Fatalf("variant rich_content fileEmbed ids = %#v, want mapping from product PUT", ids)
+	}
+}
+
+func TestUpdate_FileRefusesVariantPutWhenMappingsMissing(t *testing.T) {
+	srv := newVariantFileAttachServers(t)
+	srv.omitFileIDMappings = true
+	testutil.Setup(t, srv.dispatch(t))
+
+	path := writeVariantUploadFixture(t, "license bytes")
+	cmd := testutil.Command(newUpdateCmd(), testutil.Yes(true))
+	cmd.SetArgs([]string{
+		"v1",
+		"--product", "p1",
+		"--category", "vc1",
+		"--file", path,
+	})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected missing file id mapping error")
+	}
+	if !strings.Contains(err.Error(), "did not map uploaded file") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if srv.productPutCalls.Load() != 1 {
+		t.Fatalf("product PUT calls = %d, want 1", srv.productPutCalls.Load())
+	}
+	if srv.variantPutCalls.Load() != 0 {
+		t.Fatalf("variant PUT calls = %d, want 0", srv.variantPutCalls.Load())
+	}
+}
+
+func TestUpdate_FileMapsTwoUploadsInOrder(t *testing.T) {
+	srv := newVariantFileAttachServers(t)
+	srv.variantRichContent = []map[string]any{}
+	testutil.Setup(t, srv.dispatch(t))
+
+	first := writeVariantUploadFixture(t, "english")
+	second := writeVariantUploadFixture(t, "spanish")
+	cmd := testutil.Command(newUpdateCmd(), testutil.Yes(true))
+	cmd.SetArgs([]string{
+		"v1",
+		"--product", "p1",
+		"--category", "vc1",
+		"--file", first,
+		"--file", second,
+	})
+	testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	richContentPages := variantUpdateJSONRichContent(t, srv.variantJSON)
+	if ids := richcontent.FileEmbedIDs(richContentPages); !reflect.DeepEqual(ids, []string{"file_uploaded_1", "file_uploaded_2"}) {
+		t.Fatalf("variant rich_content fileEmbed ids = %#v, want created file ids in upload order", ids)
 	}
 }
 
