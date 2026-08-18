@@ -184,7 +184,7 @@ func runVariantUpdateWithFiles(
 		return wrapVariantPartialUploadError(err, uploadedURLs)
 	}
 
-	replacements, err := resolveCreatedFileIDs(client, productID, productData, productState.Files, fileRefs)
+	replacements, err := resolveCreatedFileIDs(productData, fileRefs)
 	if err != nil {
 		return wrapVariantPartialUploadError(err, uploadedURLs)
 	}
@@ -229,85 +229,31 @@ func fetchVariantProductFileState(client *api.Client, productID string) (variant
 	return resp.Product, nil
 }
 
-func createdProductFileIDs(client *api.Client, productID string, before []variantExistingProductFile) ([]string, error) {
-	after, err := fetchVariantProductFileState(client, productID)
-	if err != nil {
-		return nil, err
-	}
-	return newFileIDsSince(before, after.Files), nil
-}
-
 type productFileIDMappingsResponse struct {
 	FileIDMappings map[string]string `json:"file_id_mappings"`
 }
 
 func resolveCreatedFileIDs(
-	client *api.Client,
-	productID string,
 	productPutData json.RawMessage,
-	before []variantExistingProductFile,
 	fileRefs []richcontent.FileRef,
 ) (map[string]string, error) {
 	resp, err := cmdutil.DecodeJSON[productFileIDMappingsResponse](productPutData)
 	if err != nil {
 		return nil, err
 	}
-	if mappings := completeFileIDMappings(fileRefs, resp.FileIDMappings); mappings != nil {
-		return mappings, nil
-	}
-	createdIDs, err := createdProductFileIDs(client, productID, before)
-	if err != nil {
-		return nil, err
-	}
-	return fileIDReplacements(fileRefs, createdIDs)
+	return completeFileIDMappings(fileRefs, resp.FileIDMappings)
 }
 
-func completeFileIDMappings(refs []richcontent.FileRef, mappings map[string]string) map[string]string {
-	if len(refs) == 0 || len(mappings) == 0 {
-		return nil
-	}
+func completeFileIDMappings(refs []richcontent.FileRef, mappings map[string]string) (map[string]string, error) {
 	complete := make(map[string]string, len(refs))
 	for _, ref := range refs {
 		mapped := mappings[ref.FileID]
 		if mapped == "" {
-			return nil
+			return nil, fmt.Errorf("product update response did not map uploaded file %s to a created product file id; not writing unresolved upload placeholders into variant content", ref.FileID)
 		}
 		complete[ref.FileID] = mapped
 	}
-	return complete
-}
-
-func newFileIDsSince(before, after []variantExistingProductFile) []string {
-	seen := make(map[string]struct{}, len(before))
-	for _, file := range before {
-		if file.ID == "" {
-			continue
-		}
-		seen[file.ID] = struct{}{}
-	}
-	var created []string
-	for _, file := range after {
-		if file.ID == "" {
-			continue
-		}
-		if _, ok := seen[file.ID]; ok {
-			continue
-		}
-		created = append(created, file.ID)
-		seen[file.ID] = struct{}{}
-	}
-	return created
-}
-
-func fileIDReplacements(refs []richcontent.FileRef, created []string) (map[string]string, error) {
-	if len(created) != len(refs) {
-		return nil, fmt.Errorf("expected %d new product file id(s) after upload, got %d; not writing unresolved upload placeholders into variant content", len(refs), len(created))
-	}
-	replacements := make(map[string]string, len(refs))
-	for i, ref := range refs {
-		replacements[ref.FileID] = created[i]
-	}
-	return replacements, nil
+	return complete, nil
 }
 
 func fetchVariantRichContentState(client *api.Client, variantPath string) (variantRichContentState, error) {
