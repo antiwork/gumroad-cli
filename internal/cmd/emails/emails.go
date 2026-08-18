@@ -34,11 +34,13 @@ func NewEmailsCmd() *cobra.Command {
 		Use:   "emails",
 		Short: "Manage audience emails",
 		Long: "Manage Gumroad audience emails.\n\n" +
-			"Draft, preview, send, list, view, and delete broadcast emails. " +
+			"Draft, preview, send, schedule, unschedule, list, view, and delete broadcast emails. " +
 			"New emails are created as drafts by default; use `gumroad emails send-preview <id>` to review the preview URL before `gumroad emails send <id>`.",
 		Example: `  gumroad emails create --subject "New release" --body ./email.html
   gumroad emails create --subject "Product update" --body ./email.html --audience product --product <id>
   gumroad emails send-preview <id>
+  gumroad emails schedule <id> --at "2026-06-18T14:00:00Z"
+  gumroad emails unschedule <id>
   gumroad emails list --state draft --json
   gumroad emails view <id>
   gumroad emails send <id> --yes
@@ -50,6 +52,8 @@ func NewEmailsCmd() *cobra.Command {
 	cmd.AddCommand(newListCmd())
 	cmd.AddCommand(newViewCmd())
 	cmd.AddCommand(newSendCmd())
+	cmd.AddCommand(newScheduleCmd())
+	cmd.AddCommand(newUnscheduleCmd())
 	cmd.AddCommand(newDeleteCmd())
 
 	return cmd
