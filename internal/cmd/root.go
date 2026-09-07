@@ -17,6 +17,7 @@ import (
 	"github.com/antiwork/gumroad-cli/internal/cmd/emails"
 	"github.com/antiwork/gumroad-cli/internal/cmd/files"
 	"github.com/antiwork/gumroad-cli/internal/cmd/licenses"
+	"github.com/antiwork/gumroad-cli/internal/cmd/mcp"
 	"github.com/antiwork/gumroad-cli/internal/cmd/media"
 	"github.com/antiwork/gumroad-cli/internal/cmd/offercodes"
 	"github.com/antiwork/gumroad-cli/internal/cmd/pages"
@@ -63,6 +64,9 @@ func NewRootCmd() *cobra.Command {
   # List products and sales
   gumroad products list
   gumroad sales list --json --jq '.sales[0].id'
+
+  # Connect an MCP client over stdio
+  gumroad mcp
 
   # Verify a license without incrementing uses
   echo "$LICENSE_KEY" | gumroad licenses verify --product <id> --no-increment`,
@@ -140,6 +144,7 @@ func NewRootCmd() *cobra.Command {
 	cmd.AddCommand(webhooks.NewWebhooksCmd())
 	cmd.AddCommand(completion.NewCompletionCmd())
 	cmd.AddCommand(skill.NewSkillCmd())
+	cmd.AddCommand(mcp.NewMcpCmd(NewRootCmd))
 	cmd.AddCommand(newUpdateCheckRefreshCmd())
 	cmdutil.PropagateExamples(cmd)
 

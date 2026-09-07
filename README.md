@@ -114,6 +114,8 @@ Paginated commands (`sales list`, `payouts list`, `subscribers list`) accept `--
 
 `gumroad` is built to work with AI agents. The `--json`, `--jq`, `--no-input`, and `--non-interactive` flags make it easy to query Gumroad data programmatically. Agents can start fresh seller auth with `gumroad auth login` and hand the printed approval URL to a human, or use `GUMROAD_ACCESS_TOKEN` for a no-persistence auth path when a token already exists.
 
+For MCP clients, run `gumroad mcp`. See [connection setup and safety notes](skills/gumroad/SKILL.md#connect-from-claude-desktop--cursor--claude-code).
+
 An [agent skill](skills/gumroad/SKILL.md) is included. Run `gumroad skill` to install or refresh it.
 
 ## Development

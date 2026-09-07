@@ -50,6 +50,23 @@ Always follow these rules:
 - If a command fails with a seller auth error, run `gumroad auth status --json --no-input` first. Agents can start seller auth with `gumroad auth login --no-input` and hand the printed approval URL to a human, or use an existing seller token via `GUMROAD_ACCESS_TOKEN` or `gumroad auth login --with-token`.
 - For admin commands in agents/CI, pass `--non-interactive` and set `GUMROAD_ADMIN_TOKEN`; interactive shells can store an admin token with `gumroad auth login --web`.
 
+## Connect from Claude Desktop / Cursor / Claude Code
+
+- Run `gumroad mcp` to serve the public CLI commands as MCP tools over stdio.
+- Log in first with `gumroad auth login`, or pass `GUMROAD_ACCESS_TOKEN` in the MCP server environment. The server starts without a token, but calls return a login hint until credentials are available.
+
+Add this to your client's MCP configuration (use the absolute path to `gumroad` if it is not on the client's PATH):
+
+```json
+{"mcpServers":{"gumroad":{"command":"gumroad","args":["mcp"]}}}
+```
+
+Tools follow CLI leaf command paths with underscores, including hyphens converted to underscores: `products_list`, `products_view`, `offer_codes_list`, `sales_refund`. Input keys are the original long flag names; repeatable flags take arrays of strings, and positional arguments go in `args` (for example, `{"args":["<product-id>"]}`). Defaults stay with the CLI, and its validators report missing arguments or flags. Runnable groups such as `gumroad user` are exposed too (`user` reads the account); use `user` or `products_list` as a connection check.
+
+Every call uses a fresh command with `--json --no-input --quiet` and automatically passes `--yes` where available. Mutations run immediately, without interactive confirmation; require approval in the MCP client before sending a mutating call. Use `dry-run: true` when supported to preview requests. Auth, admin, completion, skill, help, MCP itself, and hidden/deprecated commands are excluded. The server uses only the seller token, never the admin token.
+
+Only connect trusted clients: tools have the same local file access as the CLI, including uploads and downloads. File paths are on the machine running the server. Stdin-based content input is unavailable; provide file paths or explicit flags instead. HTTP transport is not supported. Annotations are conservative: list/view/get/preview/pull/download-style commands are marked read-only; every other tool (including `licenses_verify`, which increments uses unless `no-increment` is true, `pages_push` and `emails_send`) carries `destructiveHint` so clients ask before running it. They describe the command category, not a security boundary (downloads still write local files).
+
 ## Response shapes
 
 Most responses are wrapped in `{"success": true, ...}` with resource-specific keys:
