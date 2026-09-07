@@ -101,12 +101,12 @@ func TestEnumerationAndMetadata(t *testing.T) {
 			t.Errorf("empty description for %s", name)
 		}
 	}
-	for _, name := range []string{"products_list", "products_view", "licenses_verify", "pages_pull"} {
+	for _, name := range []string{"products_list", "products_view", "pages_pull"} {
 		if tools[name] == nil || !tools[name].Annotations.ReadOnlyHint {
 			t.Errorf("missing read-only hint: %s", name)
 		}
 	}
-	for _, name := range []string{"sales_refund", "products_delete", "files_abort"} {
+	for _, name := range []string{"sales_refund", "products_delete", "files_abort", "licenses_verify", "pages_push", "emails_send", "products_create"} {
 		a := tools[name].Annotations
 		if a.DestructiveHint == nil || !*a.DestructiveHint {
 			t.Errorf("missing destructive hint: %s", name)

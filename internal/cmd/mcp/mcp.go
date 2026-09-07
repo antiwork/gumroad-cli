@@ -146,16 +146,21 @@ func commandTool(c *cobra.Command, path []string, flags *pflag.FlagSet) *sdk.Too
 		description += "\nRuns without interactive confirmation."
 	}
 	description += "\nAlways runs with --json --no-input --quiet; stdin is unavailable."
+	// Hints are conservative: anything not clearly a read is flagged destructive, because
+	// calls pass --yes and MCP clients gate their own confirmation on these flags.
+	// `verify` stays out of the read-only set: `licenses verify` increments the use count
+	// unless --no-increment is passed.
 	annotations := &sdk.ToolAnnotations{}
 	switch c.Name() {
-	case "list", "view", "get", "show", "status", "verify", "preview", "pull", "url", "search", "download":
+	case "list", "view", "get", "show", "status", "preview", "pull", "url", "search", "download":
 		annotations.ReadOnlyHint = true
-	case "delete", "remove", "abort", "refund", "clear", "unassign", "revoke":
+	default:
 		value := true
 		annotations.DestructiveHint = &value
 	}
 	if c.Annotations["readOnlyHint"] == "true" {
 		annotations.ReadOnlyHint = true
+		annotations.DestructiveHint = nil
 	}
 	return &sdk.Tool{
 		Name:        strings.ReplaceAll(strings.Join(path, "_"), "-", "_"),
