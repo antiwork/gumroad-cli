@@ -1,6 +1,7 @@
 package users
 
 import (
+	"encoding/json"
 	"fmt"
 	"strconv"
 
@@ -11,7 +12,17 @@ import (
 )
 
 type socialConnectionsResponse struct {
-	SocialConnections []socialConnection `json:"social_connections"`
+	SocialConnections      []socialConnection      `json:"social_connections"`
+	LatestShadowEvaluation *socialShadowEvaluation `json:"latest_shadow_evaluation"`
+}
+
+type socialShadowEvaluation struct {
+	EvaluatedOn       string          `json:"evaluated_on"`
+	RecordedAt        string          `json:"recorded_at"`
+	Score             int             `json:"score"`
+	WouldHaveReleased bool            `json:"would_have_released"`
+	HoldSource        string          `json:"hold_source"`
+	Signals           json.RawMessage `json:"signals"`
 }
 
 type socialConnection struct {
@@ -36,7 +47,11 @@ func newSocialConnectionsCmd() *cobra.Command {
 verification timestamps, audience history, and shared identities. Historical
 verification is not proof of a current connection. Missing counts are unknown,
 not zero. This read-only command does not refresh providers, score eligibility,
-mark a seller compliant, or release payouts.`,
+mark a seller compliant, or release payouts. When available, it also shows the
+latest dated historical SHADOW evaluation, not current eligibility or payout
+authorization. Missing or null evaluations mean no snapshot was supplied, not a
+negative score. --plain keeps connection-only rows; use --json or --jq for the
+shadow snapshot.`,
 		Example: `  gumroad admin users social-connections --user-id 2245593582708
   gumroad admin users social-connections --email seller@example.com --json`,
 		Args: cmdutil.ExactArgs(0),
@@ -69,7 +84,10 @@ func renderSocialConnections(opts cmdutil.Options, resp socialConnectionsRespons
 		return nil
 	}
 	if len(rows) == 0 {
-		return cmdutil.PrintInfo(opts, "No stored social verification evidence.")
+		if err := cmdutil.PrintInfo(opts, "No stored social verification evidence."); err != nil {
+			return err
+		}
+		return renderSocialShadowEvaluation(opts, resp.LatestShadowEvaluation)
 	}
 	if err := output.Writeln(opts.Out(), "Stored social evidence (not payout approval):"); err != nil {
 		return err
@@ -82,6 +100,29 @@ func renderSocialConnections(opts cmdutil.Options, resp socialConnectionsRespons
 			}
 		}
 		if err := output.Writeln(opts.Out(), ""); err != nil {
+			return err
+		}
+	}
+	return renderSocialShadowEvaluation(opts, resp.LatestShadowEvaluation)
+}
+
+func renderSocialShadowEvaluation(opts cmdutil.Options, evaluation *socialShadowEvaluation) error {
+	if evaluation == nil {
+		return output.Writeln(opts.Out(), "No stored shadow evaluation supplied (not a negative score).")
+	}
+	if err := output.Writeln(opts.Out(), "Historical SHADOW evaluation (not current eligibility or payout authorization):"); err != nil {
+		return err
+	}
+	rows := [][2]string{
+		{"Evaluated on", fallback(evaluation.EvaluatedOn, "unknown")},
+		{"Recorded at", fallback(evaluation.RecordedAt, "unknown")},
+		{"Stored score", strconv.Itoa(evaluation.Score)},
+		{"Would have released at evaluation time (shadow only)", strconv.FormatBool(evaluation.WouldHaveReleased)},
+		{"Hold source at evaluation time", fallback(evaluation.HoldSource, "unknown")},
+		{"Stored signals", fallback(string(evaluation.Signals), "unknown")},
+	}
+	for _, row := range rows {
+		if err := output.Writef(opts.Out(), "%s: %s\n", row[0], output.EscapePlainField(row[1])); err != nil {
 			return err
 		}
 	}
