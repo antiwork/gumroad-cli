@@ -74,7 +74,6 @@ func renderSocialConnections(opts cmdutil.Options, resp socialConnectionsRespons
 	if err := output.Writeln(opts.Out(), "Stored social evidence (not payout approval):"); err != nil {
 		return err
 	}
-	// One field per line keeps timestamps and identity evidence readable in narrow terminals.
 	labels := []string{"Platform", "Identity", "Handle", "Currently linked", "Last verified", "Account created", "Followers", "Posts", "Last posted", "Other users sharing identity"}
 	for _, row := range rows {
 		for i, value := range row {
