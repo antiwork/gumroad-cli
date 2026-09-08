@@ -108,12 +108,26 @@ func TestSocialConnectionsEmptyAndEscaping(t *testing.T) {
 	}
 }
 
+func TestSocialConnectionsPlainEscaping(t *testing.T) {
+	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.RawJSON(t, w, strings.Replace(socialEvidenceFixture, `"seller"`, `"seller\tline\n\u001b[31m"`, 1))
+	})
+	var out bytes.Buffer
+	cmd := testutil.Command(newSocialConnectionsCmd(), testutil.Stdout(&out), testutil.PlainOutput())
+	cmd.SetArgs([]string{"--username", "seller"})
+	testutil.MustExecute(t, cmd)
+	if strings.Count(out.String(), "\n") != 1 || len(strings.Split(strings.TrimSuffix(out.String(), "\n"), "\t")) != 10 || strings.Contains(out.String(), "\x1b") {
+		t.Fatalf("invalid TSV row: %q", out.String())
+	}
+}
+
 func TestSocialConnectionsErrors(t *testing.T) {
 	t.Run("missing lookup", func(t *testing.T) {
 		testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) { t.Error("unexpected request") })
 		cmd := testutil.Command(newSocialConnectionsCmd())
-		if cmd.Execute() == nil {
-			t.Fatal("expected missing target error")
+		cmd.SetArgs([]string{})
+		if err := cmd.Execute(); err == nil || !strings.Contains(err.Error(), "supply --email, --user-id, or --username") {
+			t.Fatalf("expected missing target error, got %v", err)
 		}
 	})
 	t.Run("server refusal", func(t *testing.T) {
