@@ -11,7 +11,7 @@ import (
 	"github.com/antiwork/gumroad-cli/internal/testutil"
 )
 
-const shadowFixture = `{"mode":"historical_shadow","notice":"Stored shadow evidence only; not current eligibility or payout authorization.","evaluated_on":"2026-09-02","recorded_at":"2026-09-03T12:00:00Z","score":70,"would_have_released":true,"hold_source":"risk_state_not_reviewed","signals":{"platform":"twitter","components":{"followers":25}},"future_field":"preserved"}`
+const shadowFixture = `{"mode":"historical_shadow","notice":"Stored shadow evidence only; not current eligibility or payout authorization.","evaluated_on":"2026-09-02","recorded_at":"2026-09-03T12:00:00Z","score":70,"unpaid_balance_cents":10000,"would_have_released":true,"hold_source":"risk_state_not_reviewed","signals":{"platform":"twitter","components":{"followers":25}},"future_field":"preserved"}`
 
 func TestSocialShadowOutput(t *testing.T) {
 	for _, state := range []string{"missing", "null", "present", "no connections", "zero", "escaping", "null fields", "missing fields"} {
@@ -30,15 +30,18 @@ func TestSocialShadowOutput(t *testing.T) {
 				}
 				if state == "zero" {
 					shadow["score"] = float64(0)
+					shadow["unpaid_balance_cents"] = float64(0)
 					shadow["would_have_released"] = false
 					shadow["signals"] = nil
 				}
 				if state == "null fields" {
 					shadow["score"] = nil
+					shadow["unpaid_balance_cents"] = nil
 					shadow["would_have_released"] = nil
 				}
 				if state == "missing fields" {
 					delete(shadow, "score")
+					delete(shadow, "unpaid_balance_cents")
 					delete(shadow, "would_have_released")
 				}
 				if state == "escaping" {
@@ -117,14 +120,14 @@ func TestSocialShadowOutput(t *testing.T) {
 									t.Fatalf("missing %q: %s", want, out.String())
 								}
 							}
-							score, outcome := "70", "true"
+							score, unpaid, outcome := "70", "10000", "true"
 							if state == "null fields" || state == "missing fields" {
-								score, outcome = "unknown", "unknown"
+								score, unpaid, outcome = "unknown", "unknown", "unknown"
 							}
 							if state == "zero" {
-								score, outcome = "0", "false"
+								score, unpaid, outcome = "0", "0", "false"
 							}
-							if !strings.Contains(out.String(), "Stored score: "+score) || !strings.Contains(out.String(), "Would have released at evaluation time (shadow only): "+outcome) {
+							if !strings.Contains(out.String(), "Stored score: "+score) || !strings.Contains(out.String(), "Unpaid balance at evaluation time (cents): "+unpaid) || !strings.Contains(out.String(), "Would have released at evaluation time (shadow only): "+outcome) {
 								t.Fatal(out.String())
 							}
 							if strings.Contains(out.String(), "\x1b[31m") || strings.Contains(out.String(), "bad\n") {
