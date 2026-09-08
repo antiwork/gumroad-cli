@@ -111,7 +111,7 @@ Most responses are wrapped in `{"success": true, ...}` with resource-specific ke
 - Not every `products` write verb is flat: `create`, `update`, `unpublish`, and `delete` return top-level fields, but `covers add`, `thumbnail set`, and `content set` still wrap their payload in the `{success, …, result}` envelope — read those under `.result`
 - `webhooks list` → `.resource_subscriptions[]`
 - `admin users info` → `.user` (includes `.user.stripe` Stripe Connect state — `connected`, and when connected `stripe_connect_account_id`, `stripe_dashboard_url`, and a `verification` block of flags/counts or an `error` subfield when the live Stripe lookup failed — and `.user.admin_links` impersonate/user/purchases/stripe-dashboard URLs)
-- `admin users social-connections` → `.social_connections[]` (stored verification, `currently_linked`, timestamps, nullable audience counts, and `shared_identity_user_count`) and optional `.latest_shadow_evaluation` (null or missing without a supplied snapshot; otherwise `mode: historical_shadow`, `evaluated_on`, `recorded_at`, stored `score`, `would_have_released`, `hold_source`, `signals`). Historical shadow evidence is not current eligibility or payout authorization.
+- `admin users social-connections` → `.social_connections[]` (stored verification, `currently_linked`, timestamps, nullable audience counts, and `shared_identity_user_count`) and optional `.latest_shadow_evaluation` (null or missing without a supplied snapshot; otherwise `mode: historical_shadow`, `evaluated_on`, `recorded_at`, stored `score`, `unpaid_balance_cents`, `would_have_released`, `hold_source`, `signals`). Historical shadow evidence is not current eligibility or payout authorization.
 - `admin users affiliates` → `.affiliates[]`
 - `admin users comments list` → `.comments[]`
 - `admin users comments add` → `.comment`
@@ -253,7 +253,8 @@ gumroad admin users social-connections --email seller@example.com --json --non-i
 # --plain columns: platform, uid, handle, currently_linked, last_verified_at,
 # account_created_at, follower_count, post_count, last_posted_at, shared_identity_user_count.
 # Historical disconnected rows remain evidence, not a live link. This command does not
-# refresh providers or expose shadow scores; use normal identity/risk review before release.
+# refresh providers or authorize payouts; human mode may show a Stored score from a
+# historical shadow snapshot only. Use normal identity/risk review before release.
 
 # Find related accounts by risk signals
 gumroad admin users related --email seller@example.com --signal ip --signal payment_address --json --non-interactive --no-input

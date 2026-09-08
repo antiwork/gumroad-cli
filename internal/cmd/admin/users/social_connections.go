@@ -1,11 +1,13 @@
 package users
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"strconv"
 
 	"github.com/antiwork/gumroad-cli/internal/admincmd"
+	"github.com/antiwork/gumroad-cli/internal/api"
 	"github.com/antiwork/gumroad-cli/internal/cmdutil"
 	"github.com/antiwork/gumroad-cli/internal/output"
 	"github.com/spf13/cobra"
@@ -19,8 +21,8 @@ type socialConnectionsResponse struct {
 type socialShadowEvaluation struct {
 	EvaluatedOn        string          `json:"evaluated_on"`
 	RecordedAt         string          `json:"recorded_at"`
-	Score              *int64          `json:"score"`
-	UnpaidBalanceCents *int64          `json:"unpaid_balance_cents"`
+	Score              *api.JSONInt    `json:"score"`
+	UnpaidBalanceCents *api.JSONInt    `json:"unpaid_balance_cents"`
 	WouldHaveReleased  *bool           `json:"would_have_released"`
 	HoldSource         string          `json:"hold_source"`
 	Signals            json.RawMessage `json:"signals"`
@@ -121,11 +123,11 @@ func renderSocialShadowEvaluation(opts cmdutil.Options, evaluation *socialShadow
 	rows := [][2]string{
 		{"Evaluated on", fallback(evaluation.EvaluatedOn, "unknown")},
 		{"Recorded at", fallback(evaluation.RecordedAt, "unknown")},
-		{"Stored score", socialCount(evaluation.Score)},
-		{"Unpaid balance at evaluation time (cents)", socialCount(evaluation.UnpaidBalanceCents)},
+		{"Stored score", socialNullableInt(evaluation.Score)},
+		{"Unpaid balance at evaluation time (cents)", socialNullableInt(evaluation.UnpaidBalanceCents)},
 		{"Would have released at evaluation time (shadow only)", outcome},
 		{"Hold source at evaluation time", fallback(evaluation.HoldSource, "unknown")},
-		{"Stored signals", fallback(string(evaluation.Signals), "unknown")},
+		{"Stored signals", socialSignals(evaluation.Signals)},
 	}
 	for _, row := range rows {
 		if err := output.Writef(opts.Out(), "%s: %s\n", row[0], output.EscapePlainField(row[1])); err != nil {
@@ -140,4 +142,19 @@ func socialCount(value *int64) string {
 		return "unknown"
 	}
 	return fmt.Sprint(*value)
+}
+
+func socialNullableInt(value *api.JSONInt) string {
+	if value == nil {
+		return "unknown"
+	}
+	return fmt.Sprint(int(*value))
+}
+
+func socialSignals(raw json.RawMessage) string {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
+		return "unknown"
+	}
+	return string(trimmed)
 }

@@ -126,6 +126,9 @@ func TestSocialShadowOutput(t *testing.T) {
 							}
 							if state == "zero" {
 								score, unpaid, outcome = "0", "0", "false"
+								if !strings.Contains(out.String(), "Stored signals: unknown\n") {
+									t.Fatalf("null signals not rendered as unknown: %s", out.String())
+								}
 							}
 							if !strings.Contains(out.String(), "Stored score: "+score) || !strings.Contains(out.String(), "Unpaid balance at evaluation time (cents): "+unpaid) || !strings.Contains(out.String(), "Would have released at evaluation time (shadow only): "+outcome) {
 								t.Fatal(out.String())
