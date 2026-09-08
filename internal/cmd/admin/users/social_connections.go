@@ -19,8 +19,8 @@ type socialConnectionsResponse struct {
 type socialShadowEvaluation struct {
 	EvaluatedOn       string          `json:"evaluated_on"`
 	RecordedAt        string          `json:"recorded_at"`
-	Score             int             `json:"score"`
-	WouldHaveReleased bool            `json:"would_have_released"`
+	Score             *int64          `json:"score"`
+	WouldHaveReleased *bool           `json:"would_have_released"`
 	HoldSource        string          `json:"hold_source"`
 	Signals           json.RawMessage `json:"signals"`
 }
@@ -113,11 +113,15 @@ func renderSocialShadowEvaluation(opts cmdutil.Options, evaluation *socialShadow
 	if err := output.Writeln(opts.Out(), "Historical SHADOW evaluation (not current eligibility or payout authorization):"); err != nil {
 		return err
 	}
+	outcome := "unknown"
+	if evaluation.WouldHaveReleased != nil {
+		outcome = strconv.FormatBool(*evaluation.WouldHaveReleased)
+	}
 	rows := [][2]string{
 		{"Evaluated on", fallback(evaluation.EvaluatedOn, "unknown")},
 		{"Recorded at", fallback(evaluation.RecordedAt, "unknown")},
-		{"Stored score", strconv.Itoa(evaluation.Score)},
-		{"Would have released at evaluation time (shadow only)", strconv.FormatBool(evaluation.WouldHaveReleased)},
+		{"Stored score", socialCount(evaluation.Score)},
+		{"Would have released at evaluation time (shadow only)", outcome},
 		{"Hold source at evaluation time", fallback(evaluation.HoldSource, "unknown")},
 		{"Stored signals", fallback(string(evaluation.Signals), "unknown")},
 	}

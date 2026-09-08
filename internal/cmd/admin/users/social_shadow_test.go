@@ -14,7 +14,7 @@ import (
 const shadowFixture = `{"mode":"historical_shadow","notice":"Stored shadow evidence only; not current eligibility or payout authorization.","evaluated_on":"2026-09-02","recorded_at":"2026-09-03T12:00:00Z","score":70,"would_have_released":true,"hold_source":"risk_state_not_reviewed","signals":{"platform":"twitter","components":{"followers":25}},"future_field":"preserved"}`
 
 func TestSocialShadowOutput(t *testing.T) {
-	for _, state := range []string{"missing", "null", "present", "no connections", "zero", "escaping"} {
+	for _, state := range []string{"missing", "null", "present", "no connections", "zero", "escaping", "null fields", "missing fields"} {
 		t.Run(state, func(t *testing.T) {
 			payload := map[string]any{}
 			if err := json.Unmarshal([]byte(socialEvidenceFixture), &payload); err != nil {
@@ -32,6 +32,14 @@ func TestSocialShadowOutput(t *testing.T) {
 					shadow["score"] = float64(0)
 					shadow["would_have_released"] = false
 					shadow["signals"] = nil
+				}
+				if state == "null fields" {
+					shadow["score"] = nil
+					shadow["would_have_released"] = nil
+				}
+				if state == "missing fields" {
+					delete(shadow, "score")
+					delete(shadow, "would_have_released")
 				}
 				if state == "escaping" {
 					shadow["hold_source"] = "bad\n\x1b[31m"
@@ -110,6 +118,9 @@ func TestSocialShadowOutput(t *testing.T) {
 								}
 							}
 							score, outcome := "70", "true"
+							if state == "null fields" || state == "missing fields" {
+								score, outcome = "unknown", "unknown"
+							}
 							if state == "zero" {
 								score, outcome = "0", "false"
 							}
