@@ -17,13 +17,13 @@ type socialConnectionsResponse struct {
 }
 
 type socialShadowEvaluation struct {
-	EvaluatedOn         string          `json:"evaluated_on"`
-	RecordedAt          string          `json:"recorded_at"`
-	Score               *int64          `json:"score"`
-	UnpaidBalanceCents  *int64          `json:"unpaid_balance_cents"`
-	WouldHaveReleased   *bool           `json:"would_have_released"`
-	HoldSource          string          `json:"hold_source"`
-	Signals             json.RawMessage `json:"signals"`
+	EvaluatedOn        string          `json:"evaluated_on"`
+	RecordedAt         string          `json:"recorded_at"`
+	Score              *int64          `json:"score"`
+	UnpaidBalanceCents *int64          `json:"unpaid_balance_cents"`
+	WouldHaveReleased  *bool           `json:"would_have_released"`
+	HoldSource         string          `json:"hold_source"`
+	Signals            json.RawMessage `json:"signals"`
 }
 
 type socialConnection struct {
