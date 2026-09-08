@@ -13,6 +13,7 @@ func NewUsersCmd() *cobra.Command {
 		Example: `  gumroad admin users info --email user@example.com
   gumroad admin users info --user-id 2245593582708
   gumroad admin users info --username sellerone
+  gumroad admin users social-connections --user-id 2245593582708
   gumroad admin users affiliates --user-id 2245593582708 --direction granted
   gumroad admin users comments list --user-id 2245593582708
   gumroad admin users comments add --user-id 2245593582708 --content "VAT exempt confirmed"
@@ -37,6 +38,7 @@ func NewUsersCmd() *cobra.Command {
 	}
 
 	cmd.AddCommand(newInfoCmd())
+	cmd.AddCommand(newSocialConnectionsCmd())
 	cmd.AddCommand(newAffiliatesCmd())
 	cmd.AddCommand(usercomments.NewCommentsCmd())
 	cmd.AddCommand(newComplianceCmd())

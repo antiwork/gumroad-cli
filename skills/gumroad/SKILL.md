@@ -111,6 +111,7 @@ Most responses are wrapped in `{"success": true, ...}` with resource-specific ke
 - Not every `products` write verb is flat: `create`, `update`, `unpublish`, and `delete` return top-level fields, but `covers add`, `thumbnail set`, and `content set` still wrap their payload in the `{success, …, result}` envelope — read those under `.result`
 - `webhooks list` → `.resource_subscriptions[]`
 - `admin users info` → `.user` (includes `.user.stripe` Stripe Connect state — `connected`, and when connected `stripe_connect_account_id`, `stripe_dashboard_url`, and a `verification` block of flags/counts or an `error` subfield when the live Stripe lookup failed — and `.user.admin_links` impersonate/user/purchases/stripe-dashboard URLs)
+- `admin users social-connections` → `.social_connections[]` (stored verification, `currently_linked`, timestamps, nullable audience counts, and `shared_identity_user_count`; not a payout approval)
 - `admin users affiliates` → `.affiliates[]`
 - `admin users comments list` → `.comments[]`
 - `admin users comments add` → `.comment`
@@ -242,6 +243,14 @@ gumroad admin users radar --username sellerone --limit 50 --json --non-interacti
 gumroad admin users purchases --user-id 2245593582708 --status successful --has-early-fraud-warning=false --limit 50 --json --non-interactive --no-input
 gumroad admin users purchases --username sellerone --status successful --limit 50 --json --non-interactive --no-input
 gumroad admin users suspension --username sellerone --json --non-interactive --no-input
+
+# Stored social evidence is optional positive context, never payout approval.
+# Check currently_linked and last_verified_at; missing audience counts are unknown.
+gumroad admin users social-connections --email seller@example.com --json --non-interactive --no-input
+# --plain columns: platform, uid, handle, currently_linked, last_verified_at,
+# account_created_at, follower_count, post_count, last_posted_at, shared_identity_user_count.
+# Historical disconnected rows remain evidence, not a live link. This command does not
+# refresh providers or expose shadow scores; use normal identity/risk review before release.
 
 # Find related accounts by risk signals
 gumroad admin users related --email seller@example.com --signal ip --signal payment_address --json --non-interactive --no-input
