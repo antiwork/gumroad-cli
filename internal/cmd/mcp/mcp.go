@@ -152,8 +152,15 @@ func commandTool(c *cobra.Command, path []string, flags *pflag.FlagSet) *sdk.Too
 	// unless --no-increment is passed.
 	annotations := &sdk.ToolAnnotations{}
 	switch c.Name() {
-	case "list", "view", "get", "show", "status", "preview", "pull", "url", "search", "download":
+	case "list", "view", "get", "show", "status", "preview", "url", "search", "download":
 		annotations.ReadOnlyHint = true
+	case "pull":
+		if len(path) != 2 || path[0] != "pages" {
+			annotations.ReadOnlyHint = true
+		} else {
+			value := true
+			annotations.DestructiveHint = &value
+		}
 	default:
 		value := true
 		annotations.DestructiveHint = &value
