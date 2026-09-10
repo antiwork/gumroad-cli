@@ -153,6 +153,49 @@ func TestProductSchema(t *testing.T) {
 	}
 }
 
+func TestDispatchUsesOneToolAndGatesMutations(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == "GET" && r.URL.Path == "/products":
+			testutil.JSON(t, w, map[string]any{"products": []any{}})
+		case r.Method == "DELETE" && r.URL.Path == "/resource_subscriptions/opaque-id":
+			testutil.JSON(t, w, map[string]any{})
+		default:
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if command, _, err := cmd.NewRootCmd().Find([]string{"mcp-dispatch"}); err != nil || command == nil || command.Name() != "mcp-dispatch" {
+		t.Fatalf("mcp-dispatch command = %v, %v", command, err)
+	}
+	serverTransport, clientTransport := sdk.NewInMemoryTransports()
+	serverSession, err := mcpcmd.NewDispatchServer(cmd.NewRootCmd).Connect(ctx, serverTransport, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = serverSession.Close() })
+	session, err := sdk.NewClient(&sdk.Implementation{Name: "test", Version: "1"}, nil).Connect(ctx, clientTransport, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = session.Close() })
+	tools := listTools(t, session, ctx)
+	if len(tools) != 1 || tools["gumroad"] == nil {
+		t.Fatalf("tools = %+v", tools)
+	}
+	call(t, session, ctx, "gumroad", map[string]any{"operation": "products_list"}, false)
+	help := call(t, session, ctx, "gumroad", map[string]any{"operation": "help"}, false)
+	if strings.Contains(help, "mcp_dispatch") || !strings.Contains(help, "products_list") {
+		t.Fatalf("unexpected help: %s", help)
+	}
+	plan := call(t, session, ctx, "gumroad", map[string]any{"operation": "webhooks_delete", "arguments": map[string]any{"args": []string{"opaque-id"}}}, false)
+	if !strings.Contains(plan, "confirm: true") || !strings.Contains(plan, "webhooks_delete") {
+		t.Fatalf("unexpected plan: %s", plan)
+	}
+	call(t, session, ctx, "gumroad", map[string]any{"operation": "webhooks_delete", "arguments": map[string]any{"args": []string{"opaque-id"}}, "confirm": true}, false)
+}
+
 func TestProductsListAndFreshFlags(t *testing.T) {
 	const response = `{"success":true,"products":[{"id":"opaque-id","name":"Art Pack","new_field":"preserved"}]}`
 	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {

@@ -39,6 +39,24 @@ func NewMcpCmd(newRoot func() *cobra.Command) *cobra.Command {
 	}
 }
 
+// NewDispatchCmd serves the compact MCP command-dispatch interface. It exposes
+// one dispatcher tool instead of one tool per CLI command.
+func NewDispatchCmd(newRoot func() *cobra.Command) *cobra.Command {
+	return &cobra.Command{
+		Use:               "mcp-dispatch",
+		Short:             "Serve one Gumroad MCP command dispatcher over stdio",
+		Long:              "Start a compact Model Context Protocol server over stdin/stdout. The gumroad tool dispatches public CLI operations. Non-read operations require confirm: true.",
+		Args:              cobra.NoArgs,
+		PersistentPreRunE: func(*cobra.Command, []string) error { return nil },
+		RunE: func(c *cobra.Command, _ []string) error {
+			return NewDispatchServer(newRoot).Run(c.Context(), &sdk.IOTransport{
+				Reader: io.NopCloser(c.InOrStdin()),
+				Writer: writerCloser{c.OutOrStdout()},
+			})
+		},
+	}
+}
+
 type unavailableInput struct{}
 
 func (unavailableInput) Read([]byte) (int, error) {
@@ -63,20 +81,99 @@ func NewServer(newRoot func() *cobra.Command) *sdk.Server {
 			if err != nil {
 				return toolResult(err.Error(), true), nil
 			}
-			var stdout, stderr bytes.Buffer
-			cmd := newRoot()
-			cmd.SetArgs(args)
-			// Commands that read files from stdin must not consume protocol messages.
-			cmd.SetIn(unavailableInput{})
-			cmd.SetOut(&stdout)
-			cmd.SetErr(&stderr)
-			if err := cmd.ExecuteContext(ctx); err != nil {
-				return toolResult(strings.TrimSpace(stderr.String()+"\n"+err.Error()), true), nil
-			}
-			return toolResult(stdout.String(), false), nil
+			return executeCommand(ctx, newRoot, args)
 		})
 	})
 	return server
+}
+
+type dispatchOperation struct {
+	path     []string
+	flags    *pflag.FlagSet
+	readOnly bool
+}
+
+type dispatchRequest struct {
+	Operation string          `json:"operation"`
+	Arguments json.RawMessage `json:"arguments"`
+	Confirm   bool            `json:"confirm"`
+}
+
+// NewDispatchServer exposes a single command-dispatch tool. Use operation "help"
+// to discover callable operation names without loading a schema per command.
+func NewDispatchServer(newRoot func() *cobra.Command) *sdk.Server {
+	root := newRoot()
+	server := sdk.NewServer(&sdk.Implementation{Name: "gumroad", Version: root.Version}, &sdk.ServerOptions{Instructions: "Use the gumroad tool with operation: help to discover CLI operations. Reads execute immediately. Other operations return a plan until confirm: true is supplied. File paths refer to the machine running the server; stdin is unavailable."})
+	operations := map[string]dispatchOperation{}
+	walk(root, nil, func(c *cobra.Command, path []string) {
+		name := strings.ReplaceAll(strings.Join(path, "_"), "-", "_")
+		operations[name] = dispatchOperation{path: append([]string(nil), path...), flags: commandFlags(c), readOnly: dispatchReadOnly(c, path)}
+	})
+	server.AddTool(&sdk.Tool{
+		Name:        "gumroad",
+		Description: "Dispatch a Gumroad CLI operation. Use operation: help to list operations. Non-read operations require confirm: true.",
+		InputSchema: map[string]any{"type": "object", "properties": map[string]any{
+			"operation": map[string]any{"type": "string", "description": "An operation from help, such as products_list."},
+			"arguments": map[string]any{"type": "object", "description": "CLI positional args and flags for the selected operation."},
+			"confirm":   map[string]any{"type": "boolean", "description": "Required to execute an operation that is not read-only."},
+		}, "required": []string{"operation"}, "additionalProperties": false},
+	}, func(ctx context.Context, req *sdk.CallToolRequest) (*sdk.CallToolResult, error) {
+		var input dispatchRequest
+		if err := json.Unmarshal(req.Params.Arguments, &input); err != nil || input.Operation == "" {
+			return toolResult("operation must be a non-empty string", true), nil
+		}
+		if input.Operation == "help" {
+			names := make([]string, 0, len(operations))
+			for name := range operations {
+				names = append(names, name)
+			}
+			sort.Strings(names)
+			return toolResult(strings.Join(names, "\n"), false), nil
+		}
+		op, ok := operations[input.Operation]
+		if !ok {
+			return toolResult(fmt.Sprintf("unknown operation %q; use operation: help", input.Operation), true), nil
+		}
+		if !op.readOnly && !input.Confirm {
+			return toolResult(fmt.Sprintf("Plan for %s. Review arguments, then call again with confirm: true to execute.", input.Operation), false), nil
+		}
+		if _, err := config.ResolveToken(); err != nil {
+			return toolResult("Authentication unavailable. Run `gumroad auth login` or set GUMROAD_ACCESS_TOKEN.", true), nil
+		}
+		args, err := commandArgs(op.path, op.flags, input.Arguments)
+		if err != nil {
+			return toolResult(err.Error(), true), nil
+		}
+		return executeCommand(ctx, newRoot, args)
+	})
+	return server
+}
+
+func dispatchReadOnly(c *cobra.Command, path []string) bool {
+	if len(path) == 2 && path[0] == "pages" && path[1] == "pull" {
+		return false
+	}
+	if c.Annotations["readOnlyHint"] == "true" {
+		return true
+	}
+	switch c.Name() {
+	case "list", "view", "get", "show", "status", "preview", "pull", "url", "search", "download":
+		return true
+	}
+	return false
+}
+
+func executeCommand(ctx context.Context, newRoot func() *cobra.Command, args []string) (*sdk.CallToolResult, error) {
+	var stdout, stderr bytes.Buffer
+	cmd := newRoot()
+	cmd.SetArgs(args)
+	cmd.SetIn(unavailableInput{})
+	cmd.SetOut(&stdout)
+	cmd.SetErr(&stderr)
+	if err := cmd.ExecuteContext(ctx); err != nil {
+		return toolResult(strings.TrimSpace(stderr.String()+"\n"+err.Error()), true), nil
+	}
+	return toolResult(stdout.String(), false), nil
 }
 
 func walk(c *cobra.Command, path []string, visit func(*cobra.Command, []string)) {
@@ -95,7 +192,7 @@ func walk(c *cobra.Command, path []string, visit func(*cobra.Command, []string))
 
 func excludedCommand(name string) bool {
 	switch name {
-	case "auth", "completion", "skill", "mcp", "admin", "help":
+	case "auth", "completion", "skill", "mcp", "mcp-dispatch", "admin", "help":
 		return true
 	}
 	return false

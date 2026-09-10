@@ -53,6 +53,7 @@ Always follow these rules:
 ## Connect from Claude Desktop / Cursor / Claude Code
 
 - Run `gumroad mcp` to serve the public CLI commands as MCP tools over stdio.
+- Run `gumroad mcp-dispatch` for the compact server: it exposes one `gumroad` dispatcher tool. Call it with `{"operation":"help"}` to discover operations, then pass the selected operation's CLI flags and positional `args` under `arguments`. Non-read operations return a plan until the exact same call includes `"confirm":true`; `pages_pull` also requires confirmation because it writes a local file.
 - Log in first with `gumroad auth login`, or pass `GUMROAD_ACCESS_TOKEN` in the MCP server environment. The server starts without a token, but calls return a login hint until credentials are available.
 
 Add this to your client's MCP configuration (use the absolute path to `gumroad` if it is not on the client's PATH):
