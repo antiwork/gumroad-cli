@@ -36,6 +36,20 @@ var pngBytes = []byte{
 	0x89,
 }
 
+type roundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripperFunc) RoundTrip(r *http.Request) (*http.Response, error) {
+	return f(r)
+}
+
+func timingOutDirectUploadClient(calls *atomic.Int32) *http.Client {
+	return &http.Client{Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+		calls.Add(1)
+		<-r.Context().Done()
+		return nil, r.Context().Err()
+	})}
+}
+
 type mediaServers struct {
 	s3      *httptest.Server
 	s3Calls atomic.Int32
@@ -737,14 +751,8 @@ func TestPutDirectUpload_RetriesTransientFailureWithFreshBody(t *testing.T) {
 
 func TestPutDirectUpload_TimesOutEachAttempt(t *testing.T) {
 	var calls atomic.Int32
-	s3 := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		calls.Add(1)
-		time.Sleep(200 * time.Millisecond)
-		w.WriteHeader(http.StatusOK)
-	}))
-	t.Cleanup(s3.Close)
 	prevClient := s3HTTPClientForTesting
-	s3HTTPClientForTesting = s3.Client()
+	s3HTTPClientForTesting = timingOutDirectUploadClient(&calls)
 	t.Cleanup(func() { s3HTTPClientForTesting = prevClient })
 	prevTimeout := directUploadAttemptTimeout
 	directUploadAttemptTimeout = 20 * time.Millisecond
@@ -754,7 +762,7 @@ func TestPutDirectUpload_TimesOutEachAttempt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("describeMediaUpload: %v", err)
 	}
-	err = putDirectUpload(cmdutil.Options{Context: context.Background()}, plan, s3.URL+"/upload", nil)
+	err = putDirectUpload(cmdutil.Options{Context: context.Background()}, plan, "https://example.com/upload", nil)
 	if err == nil || !strings.Contains(err.Error(), "after 3 attempts") {
 		t.Fatalf("err = %v, want bounded retry failure", err)
 	}
@@ -765,14 +773,8 @@ func TestPutDirectUpload_TimesOutEachAttempt(t *testing.T) {
 
 func TestMediaUpload_DirectStateUnknownCarriesRecovery(t *testing.T) {
 	var s3Calls atomic.Int32
-	s3 := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		s3Calls.Add(1)
-		time.Sleep(200 * time.Millisecond)
-		w.WriteHeader(http.StatusOK)
-	}))
-	t.Cleanup(s3.Close)
 	prevClient := s3HTTPClientForTesting
-	s3HTTPClientForTesting = s3.Client()
+	s3HTTPClientForTesting = timingOutDirectUploadClient(&s3Calls)
 	t.Cleanup(func() { s3HTTPClientForTesting = prevClient })
 	prevTimeout := directUploadAttemptTimeout
 	directUploadAttemptTimeout = 20 * time.Millisecond
@@ -787,7 +789,7 @@ func TestMediaUpload_DirectStateUnknownCarriesRecovery(t *testing.T) {
 			"signed_id": "signed-1",
 			"key":       "abc123",
 			"direct_upload": map[string]any{
-				"url": s3.URL + "/upload",
+				"url": "https://example.com/upload",
 			},
 		})
 	})
