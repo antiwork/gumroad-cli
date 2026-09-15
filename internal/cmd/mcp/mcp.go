@@ -3,6 +3,8 @@ package mcp
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
@@ -10,6 +12,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/antiwork/gumroad-cli/internal/config"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -39,13 +43,11 @@ func NewMcpCmd(newRoot func() *cobra.Command) *cobra.Command {
 	}
 }
 
-// NewDispatchCmd serves the compact MCP command-dispatch interface. It exposes
-// one dispatcher tool instead of one tool per CLI command.
 func NewDispatchCmd(newRoot func() *cobra.Command) *cobra.Command {
 	return &cobra.Command{
 		Use:               "mcp-dispatch",
 		Short:             "Serve one Gumroad MCP command dispatcher over stdio",
-		Long:              "Start a compact Model Context Protocol server over stdin/stdout. The gumroad tool dispatches public CLI operations. Non-read operations require confirm: true.",
+		Long:              "Start a compact Model Context Protocol server over stdin/stdout. The gumroad tool dispatches public CLI operations. Non-read operations require an exact-request confirmation token.",
 		Args:              cobra.NoArgs,
 		PersistentPreRunE: func(*cobra.Command, []string) error { return nil },
 		RunE: func(c *cobra.Command, _ []string) error {
@@ -88,34 +90,152 @@ func NewServer(newRoot func() *cobra.Command) *sdk.Server {
 }
 
 type dispatchOperation struct {
-	path     []string
-	flags    *pflag.FlagSet
-	readOnly bool
+	path        []string
+	flags       *pflag.FlagSet
+	readOnly    bool
+	usage       string
+	description string
+	inputSchema map[string]any
+}
+
+const (
+	dispatchConfirmationTTL        = 5 * time.Minute
+	dispatchConfirmationTokenBytes = 24
+	maxDispatchConfirmations       = 100
+)
+
+type dispatchConfirmation struct {
+	request   string
+	expiresAt time.Time
+}
+
+type dispatchConfirmations struct {
+	mu      sync.Mutex
+	pending map[string]dispatchConfirmation
+}
+
+type dispatchPlan struct {
+	Operation    string   `json:"operation"`
+	Command      []string `json:"command"`
+	Confirmation string   `json:"confirmation"`
+	ExpiresIn    string   `json:"expires_in"`
 }
 
 type dispatchRequest struct {
-	Operation string          `json:"operation"`
-	Arguments json.RawMessage `json:"arguments"`
-	Confirm   bool            `json:"confirm"`
+	Operation    string          `json:"operation"`
+	Arguments    json.RawMessage `json:"arguments"`
+	Confirm      bool            `json:"confirm"`
+	Confirmation string          `json:"confirmation"`
 }
 
-// NewDispatchServer exposes a single command-dispatch tool. Use operation "help"
-// to discover callable operation names without loading a schema per command.
+type dispatchHelpRequest struct {
+	Operation string `json:"operation"`
+}
+
+type dispatchDescription struct {
+	Operation   string         `json:"operation"`
+	Usage       string         `json:"usage"`
+	Description string         `json:"description"`
+	ReadOnly    bool           `json:"read_only"`
+	InputSchema map[string]any `json:"input_schema"`
+}
+
+func newDispatchConfirmations() *dispatchConfirmations {
+	return &dispatchConfirmations{pending: map[string]dispatchConfirmation{}}
+}
+
+func dispatchConfirmationRequest(operation string, command []string) string {
+	request, _ := json.Marshal(struct {
+		Operation string   `json:"operation"`
+		Command   []string `json:"command"`
+	}{operation, command})
+	return string(request)
+}
+
+func (confirmations *dispatchConfirmations) issue(operation string, command []string) (string, error) {
+	now := time.Now()
+	confirmations.mu.Lock()
+	defer confirmations.mu.Unlock()
+	for token, confirmation := range confirmations.pending {
+		if !confirmation.expiresAt.After(now) {
+			delete(confirmations.pending, token)
+		}
+	}
+	if len(confirmations.pending) >= maxDispatchConfirmations {
+		return "", fmt.Errorf("too many pending confirmations; retry shortly")
+	}
+	for {
+		raw := make([]byte, dispatchConfirmationTokenBytes)
+		if _, err := rand.Read(raw); err != nil {
+			return "", err
+		}
+		token := base64.RawURLEncoding.EncodeToString(raw)
+		if _, exists := confirmations.pending[token]; !exists {
+			confirmations.pending[token] = dispatchConfirmation{request: dispatchConfirmationRequest(operation, command), expiresAt: now.Add(dispatchConfirmationTTL)}
+			return token, nil
+		}
+	}
+}
+
+func (confirmations *dispatchConfirmations) consume(token, operation string, command []string) bool {
+	confirmations.mu.Lock()
+	defer confirmations.mu.Unlock()
+	confirmation, ok := confirmations.pending[token]
+	if !ok {
+		return false
+	}
+	if !confirmation.expiresAt.After(time.Now()) {
+		delete(confirmations.pending, token)
+		return false
+	}
+	if confirmation.request != dispatchConfirmationRequest(operation, command) {
+		return false
+	}
+	delete(confirmations.pending, token)
+	return true
+}
+
+func dispatchHelp(operations map[string]dispatchOperation, raw json.RawMessage) (*sdk.CallToolResult, error) {
+	if len(bytes.TrimSpace(raw)) == 0 || bytes.Equal(bytes.TrimSpace(raw), []byte("{}")) {
+		names := make([]string, 0, len(operations))
+		for name := range operations {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		return toolResult(strings.Join(names, "\n"), false), nil
+	}
+	var input dispatchHelpRequest
+	if err := json.Unmarshal(raw, &input); err != nil || input.Operation == "" {
+		return toolResult("help arguments must include a non-empty operation", true), nil
+	}
+	op, ok := operations[input.Operation]
+	if !ok {
+		return toolResult(fmt.Sprintf("unknown operation %q; use operation: help", input.Operation), true), nil
+	}
+	detail, _ := json.Marshal(dispatchDescription{Operation: input.Operation, Usage: op.usage, Description: op.description, ReadOnly: op.readOnly, InputSchema: op.inputSchema})
+	return toolResult(string(detail), false), nil
+}
+
 func NewDispatchServer(newRoot func() *cobra.Command) *sdk.Server {
 	root := newRoot()
-	server := sdk.NewServer(&sdk.Implementation{Name: "gumroad", Version: root.Version}, &sdk.ServerOptions{Instructions: "Use the gumroad tool with operation: help to discover CLI operations. Reads execute immediately. Other operations return a plan until confirm: true is supplied. File paths refer to the machine running the server; stdin is unavailable."})
+	server := sdk.NewServer(&sdk.Implementation{Name: "gumroad", Version: root.Version}, &sdk.ServerOptions{Instructions: "Use the gumroad tool with operation: help to discover CLI operations, then operation: help with arguments: {\"operation\":\"<name>\"} for a command schema. Reads execute immediately. Other operations return a plan with a short-lived confirmation token; repeat the exact request with confirm: true and the token to execute. File paths refer to the machine running the server; stdin is unavailable."})
 	operations := map[string]dispatchOperation{}
+	confirmations := newDispatchConfirmations()
 	walk(root, nil, func(c *cobra.Command, path []string) {
 		name := strings.ReplaceAll(strings.Join(path, "_"), "-", "_")
-		operations[name] = dispatchOperation{path: append([]string(nil), path...), flags: commandFlags(c), readOnly: dispatchReadOnly(c, path)}
+		flags := commandFlags(c)
+		tool := commandTool(c, path, flags)
+		readOnly := dispatchReadOnly(c, path)
+		operations[name] = dispatchOperation{path: append([]string(nil), path...), flags: flags, readOnly: readOnly, usage: c.Use, description: dispatchOperationDescription(c, readOnly), inputSchema: tool.InputSchema.(map[string]any)}
 	})
 	server.AddTool(&sdk.Tool{
 		Name:        "gumroad",
-		Description: "Dispatch a Gumroad CLI operation. Use operation: help to list operations. Non-read operations require confirm: true.",
+		Description: "Dispatch a Gumroad CLI operation. Use operation: help to list operations, then help arguments: {\"operation\":\"<name>\"} for its schema. Non-read operations require a plan confirmation token.",
 		InputSchema: map[string]any{"type": "object", "properties": map[string]any{
-			"operation": map[string]any{"type": "string", "description": "An operation from help, such as products_list."},
-			"arguments": map[string]any{"type": "object", "description": "CLI positional args and flags for the selected operation."},
-			"confirm":   map[string]any{"type": "boolean", "description": "Required to execute an operation that is not read-only."},
+			"operation":    map[string]any{"type": "string", "description": "An operation from help, such as products_list."},
+			"arguments":    map[string]any{"type": "object", "description": "CLI positional args and flags; for help, set operation to the name to describe."},
+			"confirm":      map[string]any{"type": "boolean", "description": "Required with confirmation to execute an operation that is not read-only."},
+			"confirmation": map[string]any{"type": "string", "description": "The plan confirmation token required with confirm: true."},
 		}, "required": []string{"operation"}, "additionalProperties": false},
 	}, func(ctx context.Context, req *sdk.CallToolRequest) (*sdk.CallToolResult, error) {
 		var input dispatchRequest
@@ -123,26 +243,33 @@ func NewDispatchServer(newRoot func() *cobra.Command) *sdk.Server {
 			return toolResult("operation must be a non-empty string", true), nil
 		}
 		if input.Operation == "help" {
-			names := make([]string, 0, len(operations))
-			for name := range operations {
-				names = append(names, name)
-			}
-			sort.Strings(names)
-			return toolResult(strings.Join(names, "\n"), false), nil
+			return dispatchHelp(operations, input.Arguments)
 		}
 		op, ok := operations[input.Operation]
 		if !ok {
 			return toolResult(fmt.Sprintf("unknown operation %q; use operation: help", input.Operation), true), nil
 		}
-		if !op.readOnly && !input.Confirm {
-			return toolResult(fmt.Sprintf("Plan for %s. Review arguments, then call again with confirm: true to execute.", input.Operation), false), nil
-		}
-		if _, err := config.ResolveToken(); err != nil {
-			return toolResult("Authentication unavailable. Run `gumroad auth login` or set GUMROAD_ACCESS_TOKEN.", true), nil
-		}
 		args, err := commandArgs(op.path, op.flags, input.Arguments)
 		if err != nil {
 			return toolResult(err.Error(), true), nil
+		}
+		if !op.readOnly {
+			if !input.Confirm {
+				token, err := confirmations.issue(input.Operation, args)
+				if err != nil {
+					return toolResult(err.Error(), true), nil
+				}
+				plan, _ := json.Marshal(dispatchPlan{Operation: input.Operation, Command: args, Confirmation: token, ExpiresIn: dispatchConfirmationTTL.String()})
+				return toolResult(string(plan), false), nil
+			}
+			if _, err := config.ResolveToken(); err != nil {
+				return toolResult("Authentication unavailable. Run `gumroad auth login` or set GUMROAD_ACCESS_TOKEN.", true), nil
+			}
+			if input.Confirmation == "" || !confirmations.consume(input.Confirmation, input.Operation, args) {
+				return toolResult("confirmation does not match an unexpired plan for this exact request", true), nil
+			}
+		} else if _, err := config.ResolveToken(); err != nil {
+			return toolResult("Authentication unavailable. Run `gumroad auth login` or set GUMROAD_ACCESS_TOKEN.", true), nil
 		}
 		return executeCommand(ctx, newRoot, args)
 	})
@@ -161,6 +288,14 @@ func dispatchReadOnly(c *cobra.Command, path []string) bool {
 		return true
 	}
 	return false
+}
+
+func dispatchOperationDescription(c *cobra.Command, readOnly bool) string {
+	description := commandDescription(c)
+	if !readOnly {
+		description += "\nRequires a plan confirmation token."
+	}
+	return description + "\nAlways runs with --json --no-input --quiet; stdin is unavailable."
 }
 
 func executeCommand(ctx context.Context, newRoot func() *cobra.Command, args []string) (*sdk.CallToolResult, error) {
@@ -220,6 +355,15 @@ func flagType(flag *pflag.Flag) string {
 	}
 }
 
+func commandDescription(c *cobra.Command) string {
+	description := strings.TrimSpace(c.Short + "\n" + c.Long)
+	const maxDescriptionRunes = 2000
+	if text := []rune(description); len(text) > maxDescriptionRunes {
+		return string(text[:maxDescriptionRunes]) + "…"
+	}
+	return description
+}
+
 func commandTool(c *cobra.Command, path []string, flags *pflag.FlagSet) *sdk.Tool {
 	properties := map[string]any{
 		"args": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Positional arguments in command order: " + c.Use},
@@ -234,11 +378,7 @@ func commandTool(c *cobra.Command, path []string, flags *pflag.FlagSet) *sdk.Too
 		}
 		properties[flag.Name] = property
 	})
-	description := strings.TrimSpace(c.Short + "\n" + c.Long)
-	const maxDescriptionRunes = 2000
-	if text := []rune(description); len(text) > maxDescriptionRunes {
-		description = string(text[:maxDescriptionRunes]) + "…"
-	}
+	description := commandDescription(c)
 	if flags.Lookup("yes") != nil {
 		description += "\nRuns without interactive confirmation."
 	}

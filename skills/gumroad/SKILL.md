@@ -53,7 +53,6 @@ Always follow these rules:
 ## Connect from Claude Desktop / Cursor / Claude Code
 
 - Run `gumroad mcp` to serve the public CLI commands as MCP tools over stdio.
-- Run `gumroad mcp-dispatch` for the compact server: it exposes one `gumroad` dispatcher tool. Call it with `{"operation":"help"}` to discover operations, then pass the selected operation's CLI flags and positional `args` under `arguments`. Non-read operations return a plan until the exact same call includes `"confirm":true`; `pages_pull` also requires confirmation because it writes a local file.
 - Log in first with `gumroad auth login`, or pass `GUMROAD_ACCESS_TOKEN` in the MCP server environment. The server starts without a token, but calls return a login hint until credentials are available.
 
 Add this to your client's MCP configuration (use the absolute path to `gumroad` if it is not on the client's PATH):
@@ -67,6 +66,10 @@ Tools follow CLI leaf command paths with underscores, including hyphens converte
 Every call uses a fresh command with `--json --no-input --quiet` and automatically passes `--yes` where available. Mutations run immediately, without interactive confirmation; require approval in the MCP client before sending a mutating call. Use `dry-run: true` when supported to preview requests. Auth, admin, completion, skill, help, MCP itself, and hidden/deprecated commands are excluded. The server uses only the seller token, never the admin token.
 
 Only connect trusted clients: tools have the same local file access as the CLI, including uploads and downloads. File paths are on the machine running the server. Stdin-based content input is unavailable; provide file paths or explicit flags instead. HTTP transport is not supported. Annotations are conservative: list/view/get/preview/pull/download-style commands are marked read-only; every other tool (including `licenses_verify`, which increments uses unless `no-increment` is true, `pages_push` and `emails_send`) carries `destructiveHint` so clients ask before running it. They describe the command category, not a security boundary (downloads still write local files).
+
+### Compact `gumroad mcp-dispatch`
+
+`gumroad mcp-dispatch` exposes one `gumroad` dispatcher tool. Call it with `{"operation":"help"}` to discover operations, then `{"operation":"help","arguments":{"operation":"products_list"}}` to get a selected operation's usage, description, and typed input schema. Pass CLI flags and positional `args` under `arguments`. Non-read operations return a canonical command and short-lived `confirmation` token; in the same server session, repeat the same operation and arguments with `"confirm":true` and that token to execute. `pages_pull` also requires confirmation because it writes a local file. Log in first with `gumroad auth login`, or pass `GUMROAD_ACCESS_TOKEN` in the MCP server environment. The server starts without a token; reads and confirmed operations return a login hint until credentials are available.
 
 ## Response shapes
 
