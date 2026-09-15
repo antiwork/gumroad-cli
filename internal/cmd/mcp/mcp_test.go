@@ -299,6 +299,36 @@ func TestDispatchDescribesReadAndMutationOperations(t *testing.T) {
 	}
 }
 
+func TestDispatchClassifiesGETOnlySummaryOperationsAsReadOnly(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	serverTransport, clientTransport := sdk.NewInMemoryTransports()
+	serverSession, err := mcpcmd.NewDispatchServer(cmd.NewRootCmd).Connect(ctx, serverTransport, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = serverSession.Close() })
+	session, err := sdk.NewClient(&sdk.Implementation{Name: "test", Version: "1"}, nil).Connect(ctx, clientTransport, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = session.Close() })
+	for _, operation := range []string{"payouts_upcoming", "sales_summary", "sales_buyers", "products_comps"} {
+		t.Run(operation, func(t *testing.T) {
+			text := call(t, session, ctx, "gumroad", map[string]any{"operation": "help", "arguments": map[string]any{"operation": operation}}, false)
+			var detail struct {
+				ReadOnly bool `json:"read_only"`
+			}
+			if err := json.Unmarshal([]byte(text), &detail); err != nil {
+				t.Fatal(err)
+			}
+			if !detail.ReadOnly {
+				t.Errorf("read_only = false")
+			}
+		})
+	}
+}
+
 func TestProductsListAndFreshFlags(t *testing.T) {
 	const response = `{"success":true,"products":[{"id":"opaque-id","name":"Art Pack","new_field":"preserved"}]}`
 	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
