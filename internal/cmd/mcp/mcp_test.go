@@ -154,10 +154,17 @@ func TestProductSchema(t *testing.T) {
 }
 
 func TestDispatchUsesOneToolAndGatesMutations(t *testing.T) {
+	var userFetched, skusFetched bool
 	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == "GET" && r.URL.Path == "/products":
 			testutil.JSON(t, w, map[string]any{"products": []any{}})
+		case r.Method == "GET" && r.URL.Path == "/user":
+			userFetched = true
+			testutil.JSON(t, w, map[string]any{"user": map[string]any{}})
+		case r.Method == "GET" && r.URL.Path == "/products/opaque-id/skus":
+			skusFetched = true
+			testutil.JSON(t, w, map[string]any{"skus": []any{}})
 		case r.Method == "DELETE" && r.URL.Path == "/resource_subscriptions/opaque-id":
 			testutil.JSON(t, w, map[string]any{})
 		default:
@@ -185,6 +192,14 @@ func TestDispatchUsesOneToolAndGatesMutations(t *testing.T) {
 		t.Fatalf("tools = %+v", tools)
 	}
 	call(t, session, ctx, "gumroad", map[string]any{"operation": "products_list"}, false)
+	call(t, session, ctx, "gumroad", map[string]any{"operation": "user"}, false)
+	if !userFetched {
+		t.Fatal("user returned a plan instead of making its read request")
+	}
+	call(t, session, ctx, "gumroad", map[string]any{"operation": "products_skus", "arguments": map[string]any{"args": []string{"opaque-id"}}}, false)
+	if !skusFetched {
+		t.Fatal("products_skus returned a plan instead of making its read request")
+	}
 	help := call(t, session, ctx, "gumroad", map[string]any{"operation": "help"}, false)
 	if strings.Contains(help, "mcp_dispatch") || !strings.Contains(help, "products_list") {
 		t.Fatalf("unexpected help: %s", help)
@@ -299,7 +314,7 @@ func TestDispatchDescribesReadAndMutationOperations(t *testing.T) {
 	}
 }
 
-func TestDispatchClassifiesGETOnlySummaryOperationsAsReadOnly(t *testing.T) {
+func TestDispatchClassifiesNonstandardGETOperationsAsReadOnly(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	serverTransport, clientTransport := sdk.NewInMemoryTransports()
@@ -313,7 +328,7 @@ func TestDispatchClassifiesGETOnlySummaryOperationsAsReadOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = session.Close() })
-	for _, operation := range []string{"payouts_upcoming", "sales_summary", "sales_buyers", "products_comps"} {
+	for _, operation := range []string{"user", "payouts_upcoming", "sales_summary", "sales_buyers", "products_comps", "products_skus"} {
 		t.Run(operation, func(t *testing.T) {
 			text := call(t, session, ctx, "gumroad", map[string]any{"operation": "help", "arguments": map[string]any{"operation": operation}}, false)
 			var detail struct {

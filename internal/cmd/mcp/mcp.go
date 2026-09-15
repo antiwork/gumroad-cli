@@ -286,7 +286,7 @@ func dispatchReadOnly(c *cobra.Command, path []string) bool {
 	switch c.Name() {
 	case "list", "view", "get", "show", "status", "preview", "pull", "url", "search", "download":
 		return true
-	case "upcoming", "summary", "buyers", "comps":
+	case "user", "upcoming", "summary", "buyers", "comps", "skus":
 		return true
 	}
 	return false
