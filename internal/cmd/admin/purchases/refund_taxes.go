@@ -18,6 +18,9 @@ type refundTaxesRequest struct {
 	Email         string `json:"email"`
 	Note          string `json:"note,omitempty"`
 	BusinessVATID string `json:"business_vat_id,omitempty"`
+	// Marks the subscription so renewals stop collecting EU VAT for buyers in an exempt
+	// territory (the Canary Islands) whose checkout IP geolocated to the mainland.
+	VATExemptTerritory bool `json:"vat_exempt_territory,omitempty"`
 }
 
 type refundTaxesResponse struct {
@@ -27,9 +30,10 @@ type refundTaxesResponse struct {
 
 func newRefundTaxesCmd() *cobra.Command {
 	var (
-		email         string
-		note          string
-		businessVATID string
+		email           string
+		note            string
+		businessVATID   string
+		exemptTerritory bool
 	)
 
 	cmd := &cobra.Command{
@@ -41,10 +45,15 @@ the purchase record.
 
 --note records an admin-side note alongside the tax refund. --business-vat-id
 attaches a buyer-supplied VAT ID to the refund record (commonly required
-when a B2B buyer needs the tax reversed because they self-account for VAT).`,
+when a B2B buyer needs the tax reversed because they self-account for VAT).
+--vat-exempt-territory marks the purchase's subscription as belonging to a
+buyer in an EU-VAT-exempt territory such as the Canary Islands, so every
+future renewal is charged without VAT. Use it when the buyer has no VAT ID
+to enter and their checkout connection geolocated to the mainland.`,
 		Example: `  gumroad admin purchases refund-taxes 12345 --email buyer@example.com
   gumroad admin purchases refund-taxes 12345 --email buyer@example.com --business-vat-id GB123456789
-  gumroad admin purchases refund-taxes 12345 --email buyer@example.com --note "buyer self-accounts for VAT"`,
+  gumroad admin purchases refund-taxes 12345 --email buyer@example.com --note "buyer self-accounts for VAT"
+  gumroad admin purchases refund-taxes 12345 --email buyer@example.com --vat-exempt-territory --note "Canary Islands company"`,
 		Args: cmdutil.ExactArgs(1),
 		RunE: func(c *cobra.Command, args []string) error {
 			opts := cmdutil.OptionsFrom(c)
@@ -63,9 +72,10 @@ when a B2B buyer needs the tax reversed because they self-account for VAT).`,
 			}
 
 			req := refundTaxesRequest{
-				Email:         email,
-				Note:          note,
-				BusinessVATID: businessVATID,
+				Email:              email,
+				Note:               note,
+				BusinessVATID:      businessVATID,
+				VATExemptTerritory: exemptTerritory,
 			}
 
 			if opts.DryRun {
@@ -92,6 +102,7 @@ when a B2B buyer needs the tax reversed because they self-account for VAT).`,
 	cmd.Flags().StringVar(&email, "email", "", "Buyer email (required)")
 	cmd.Flags().StringVar(&note, "note", "", "Admin note attached to the tax refund")
 	cmd.Flags().StringVar(&businessVATID, "business-vat-id", "", "Buyer's business VAT ID")
+	cmd.Flags().BoolVar(&exemptTerritory, "vat-exempt-territory", false, "Mark the subscription as an EU-VAT-exempt territory buyer so renewals are charged without VAT")
 
 	return cmd
 }
@@ -119,6 +130,9 @@ func refundTaxesDryRunParams(req refundTaxesRequest) url.Values {
 	}
 	if req.BusinessVATID != "" {
 		params.Set("business_vat_id", req.BusinessVATID)
+	}
+	if req.VATExemptTerritory {
+		params.Set("vat_exempt_territory", "true")
 	}
 	return params
 }

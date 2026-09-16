@@ -82,6 +82,9 @@ func TestRefundTaxes_OmitsOptionalFieldsWhenAbsent(t *testing.T) {
 	if _, present := bodyKeys["business_vat_id"]; present {
 		t.Errorf("business_vat_id must be omitted when not set, got body keys: %v", bodyKeys)
 	}
+	if _, present := bodyKeys["vat_exempt_territory"]; present {
+		t.Errorf("vat_exempt_territory must be omitted when not set, got body keys: %v", bodyKeys)
+	}
 	if !strings.Contains(out, "Successfully refunded taxes for purchase number 123") {
 		t.Errorf("expected success message: %q", out)
 	}
@@ -117,13 +120,35 @@ func TestRefundTaxes_ForwardsNoteAndBusinessVATID(t *testing.T) {
 	}
 }
 
+func TestRefundTaxes_ForwardsVATExemptTerritory(t *testing.T) {
+	var body refundTaxesRequest
+
+	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode body: %v", err)
+		}
+		testutil.JSON(t, w, map[string]any{
+			"message":  "ok",
+			"purchase": map[string]any{"id": "123"},
+		})
+	})
+
+	cmd := testutil.Command(newRefundTaxesCmd(), testutil.Yes(true))
+	cmd.SetArgs([]string{"123", "--email", "buyer@example.com", "--vat-exempt-territory"})
+	testutil.MustExecute(t, cmd)
+
+	if !body.VATExemptTerritory {
+		t.Errorf("expected vat_exempt_territory=true in body")
+	}
+}
+
 func TestRefundTaxes_DryRunDoesNotPost(t *testing.T) {
 	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
 		t.Error("dry-run must not POST")
 	})
 
 	cmd := testutil.Command(newRefundTaxesCmd(), testutil.DryRun(true), testutil.NoInput(true))
-	cmd.SetArgs([]string{"123", "--email", "buyer@example.com", "--business-vat-id", "GB123456789"})
+	cmd.SetArgs([]string{"123", "--email", "buyer@example.com", "--business-vat-id", "GB123456789", "--vat-exempt-territory"})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
 	if !strings.Contains(out, "POST") || !strings.Contains(out, "/internal/admin/purchases/123/refund_taxes") {
@@ -131,6 +156,9 @@ func TestRefundTaxes_DryRunDoesNotPost(t *testing.T) {
 	}
 	if !strings.Contains(out, "business_vat_id: GB123456789") {
 		t.Errorf("expected business_vat_id in dry-run preview, got: %q", out)
+	}
+	if !strings.Contains(out, "vat_exempt_territory: true") {
+		t.Errorf("expected vat_exempt_territory in dry-run preview, got: %q", out)
 	}
 }
 

@@ -128,6 +128,7 @@ Most responses are wrapped in `{"success": true, ...}` with resource-specific ke
 - `admin users refund-balance` → `.status`, `.message`, `.user_id`, `.count`, `.total_amount_cents`, `.currency`
 - `admin users refund-all-for-fraud` → `.success`, `.user_id`, `.status` (`queued`), `.message`, `.purchases_to_refund`, `.block_buyers`
 - `admin purchases view` → `.purchase`
+- `admin purchases refund-taxes` → `.message`, `.purchase`
 - `admin purchases search` → `.purchases[]`, `.has_more`, `.limit`
 - `admin purchases lookup` → `.purchases[]`
 - `admin products list` → `.products[]`, `admin products view` → `.product`
@@ -300,6 +301,15 @@ gumroad admin purchases lookup --stripe-fingerprint fp_abc --limit 25 --json --n
 # creator in the "A sale has been refunded" notification email.
 gumroad admin purchases refund <purchase-id> --email buyer@example.com --reason "Buyer reported being charged twice" --yes --json --non-interactive --no-input
 gumroad admin purchases refund <purchase-id> --email buyer@example.com --amount 5.00 --reason "Partial refund agreed with buyer" --yes --json --non-interactive --no-input
+# Refund only the Gumroad-collected taxes on a purchase, without touching the price.
+# --business-vat-id records a buyer-supplied VAT ID so later renewals self-account for
+# VAT. --vat-exempt-territory is the equivalent for a buyer in an EU-VAT-exempt territory
+# such as the Canary Islands who has no VAT ID to enter: it marks the subscription so
+# renewals are charged without VAT, which is the only lasting fix when the buyer's
+# checkout connection geolocated to the mainland and the exemption never applied.
+gumroad admin purchases refund-taxes <purchase-id> --email buyer@example.com --yes --json --non-interactive --no-input
+gumroad admin purchases refund-taxes <purchase-id> --email buyer@example.com --business-vat-id GB123456789 --yes --json --non-interactive --no-input
+gumroad admin purchases refund-taxes <purchase-id> --email buyer@example.com --vat-exempt-territory --note "Canary Islands company" --yes --json --non-interactive --no-input
 gumroad admin products list --email seller@example.com --page 2 --per-page 25 --json --non-interactive --no-input
 gumroad admin products view <product-id> --with-fraud-context --json --non-interactive --no-input
 
