@@ -82,6 +82,9 @@ func TestRefundTaxes_OmitsOptionalFieldsWhenAbsent(t *testing.T) {
 	if _, present := bodyKeys["business_vat_id"]; present {
 		t.Errorf("business_vat_id must be omitted when not set, got body keys: %v", bodyKeys)
 	}
+	if _, present := bodyKeys["vat_exempt_territory"]; present {
+		t.Errorf("vat_exempt_territory must be omitted when not set, got body keys: %v", bodyKeys)
+	}
 	if !strings.Contains(out, "Successfully refunded taxes for purchase number 123") {
 		t.Errorf("expected success message: %q", out)
 	}
@@ -114,6 +117,28 @@ func TestRefundTaxes_ForwardsNoteAndBusinessVATID(t *testing.T) {
 	}
 	if body.BusinessVATID != "GB123456789" {
 		t.Errorf("got business_vat_id %q, want GB123456789", body.BusinessVATID)
+	}
+}
+
+func TestRefundTaxes_ForwardsVATExemptTerritory(t *testing.T) {
+	var body refundTaxesRequest
+
+	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode body: %v", err)
+		}
+		testutil.JSON(t, w, map[string]any{
+			"message":  "ok",
+			"purchase": map[string]any{"id": "123"},
+		})
+	})
+
+	cmd := testutil.Command(newRefundTaxesCmd(), testutil.Yes(true))
+	cmd.SetArgs([]string{"123", "--email", "buyer@example.com", "--vat-exempt-territory"})
+	testutil.MustExecute(t, cmd)
+
+	if !body.VATExemptTerritory {
+		t.Errorf("expected vat_exempt_territory=true in body")
 	}
 }
 
