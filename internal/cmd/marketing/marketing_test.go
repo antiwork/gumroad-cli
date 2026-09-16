@@ -65,6 +65,9 @@ func TestMarketingLifecycle(t *testing.T) {
 	for _, args := range [][]string{{"recommend", "product-id"}, {"approve", "action-id"}, {"schedule", "action-id"}, {"approve", "action-id"}, {"schedule", "action-id"}, {"status", "action-id"}, {"cancel", "action-id"}} {
 		var out, preview bytes.Buffer
 		cmd := testutil.Command(NewMarketingCmd(), testutil.JSONOutput(), testutil.Yes(true), testutil.Stdout(&out), func(opts *cmdutil.Options) { opts.Stderr = &preview })
+		if args[0] == "approve" || args[0] == "schedule" {
+			args = append(args, "--confirmation-token", "preview-token")
+		}
 		cmd.SetArgs(args)
 		if err := cmd.Execute(); err != nil {
 			t.Fatal(err)

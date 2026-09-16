@@ -85,15 +85,16 @@ func newStatusCmd() *cobra.Command {
 }
 
 func newActionCmd(verb, operation string) *cobra.Command {
+	var expectedToken string
 	descriptions := map[string]string{
 		"approve":  "Approve this action without posting. Review the exact text, account handle, and link first.",
 		"schedule": "Execute an approved action now through the server's channel executor. This version does not support future dates: schedule posts immediately, not later. Approve first. Repeating it resolves the same action, never a second post.",
 		"cancel":   "Cancel an unclaimed action. A post already claimed or published cannot be recalled.",
 	}
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   verb + " <action>",
 		Short: descriptions[verb],
-		Long:  descriptions[verb] + "\n\nThe confirmation preview uses quoted strings so control characters cannot hide content. --yes explicitly confirms for scripts and MCP clients. --dry-run still fetches the action for its preview, but sends no mutation.",
+		Long:  descriptions[verb] + "\n\nThe confirmation preview uses quoted strings so control characters cannot hide content. --yes explicitly confirms for scripts and MCP clients; approve and schedule also require --confirmation-token from the preview the seller reviewed. --dry-run still fetches the action for its preview, but sends no mutation.",
 		Args:  cmdutil.ExactArgs(1),
 		RunE: func(c *cobra.Command, args []string) error {
 			opts := cmdutil.OptionsFrom(c)
@@ -112,6 +113,12 @@ func newActionCmd(verb, operation string) *cobra.Command {
 			if err := output.Writef(opts.Err(), "Account: @%s\nExact post text: %q\nLink: %q\n", output.EscapePlainField(resp.Handle), item.PostText, item.LinkURL); err != nil {
 				return err
 			}
+			if opts.Yes && !opts.DryRun && verb != "cancel" && expectedToken == "" {
+				return cmdutil.InvalidInputErrorf("With --yes, supply --confirmation-token from the recommendation or status the seller reviewed.")
+			}
+			if expectedToken != "" && expectedToken != item.ConfirmationToken {
+				return cmdutil.InvalidInputErrorf("The post changed. Review its text, account and link and confirm again.")
+			}
 			message := fmt.Sprintf("%s this action?", verb)
 			if verb == "schedule" {
 				message = "Post this approved action now?"
@@ -127,6 +134,8 @@ func newActionCmd(verb, operation string) *cobra.Command {
 			return cmdutil.RunRequestDecoded[actionResponse](opts, "Updating action...", http.MethodPost, path+"/"+operation, params, func(result actionResponse) error { return renderAction(opts, result) })
 		},
 	}
+	cmd.Flags().StringVar(&expectedToken, "confirmation-token", "", "Token from the reviewed action (required with --yes for approve and schedule)")
+	return cmd
 }
 
 func renderAction(opts cmdutil.Options, resp actionResponse) error {

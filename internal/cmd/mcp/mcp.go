@@ -144,7 +144,7 @@ func commandTool(c *cobra.Command, path []string, flags *pflag.FlagSet) *sdk.Too
 	}
 	if flags.Lookup("yes") != nil {
 		if len(path) > 0 && path[0] == "marketing" {
-			description += "\nShow the exact post text, account and link from marketing_recommend or marketing_status, then ask the seller to confirm. Supply yes=true only after confirmation."
+			description += "\nShow the exact post text, account and link from marketing_recommend or marketing_status, then ask the seller to confirm. Supply yes=true only after confirmation; approve and schedule also require confirmation-token from that reviewed preview."
 		} else {
 			description += "\nRuns without interactive confirmation."
 		}

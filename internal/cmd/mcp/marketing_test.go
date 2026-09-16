@@ -42,8 +42,17 @@ func TestMarketingToolsRequireExplicitConfirmation(t *testing.T) {
 				t.Fatalf("unconfirmed mutation or missing preview: %s", text)
 			}
 		}
+		if name != "marketing_cancel" {
+			for _, token := range []string{"", "old-preview"} {
+				before := writes
+				call(t, session, ctx, name, map[string]any{"args": []string{"action-id"}, "yes": true, "confirmation-token": token}, true)
+				if writes != before {
+					t.Fatal("posted an unreviewed preview")
+				}
+			}
+		}
 		before := writes
-		call(t, session, ctx, name, map[string]any{"args": []string{"action-id"}, "yes": true}, false)
+		call(t, session, ctx, name, map[string]any{"args": []string{"action-id"}, "yes": true, "confirmation-token": "preview-token"}, false)
 		if writes != before+1 {
 			t.Fatalf("expected one confirmed write")
 		}
