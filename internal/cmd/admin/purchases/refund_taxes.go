@@ -18,8 +18,6 @@ type refundTaxesRequest struct {
 	Email         string `json:"email"`
 	Note          string `json:"note,omitempty"`
 	BusinessVATID string `json:"business_vat_id,omitempty"`
-	// Marks the subscription so renewals stop collecting EU VAT for buyers in an exempt
-	// territory (the Canary Islands) whose checkout IP geolocated to the mainland.
 	VATExemptTerritory bool `json:"vat_exempt_territory,omitempty"`
 }
 

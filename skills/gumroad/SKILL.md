@@ -300,6 +300,13 @@ gumroad admin purchases lookup --stripe-fingerprint fp_abc --limit 25 --json --n
 # creator in the "A sale has been refunded" notification email.
 gumroad admin purchases refund <purchase-id> --email buyer@example.com --reason "Buyer reported being charged twice" --yes --json --non-interactive --no-input
 gumroad admin purchases refund <purchase-id> --email buyer@example.com --amount 5.00 --reason "Partial refund agreed with buyer" --yes --json --non-interactive --no-input
+
+# Refund only the Gumroad-collected VAT/GST and leave the price untouched. --business-vat-id stores a
+# B2B buyer's VAT ID on the subscription so renewals are exempt. --vat-exempt-territory does the same
+# for a buyer in an EU-VAT-exempt territory (Canary Islands) with no VAT ID whose checkout IP
+# geolocated to the mainland; every later renewal is then charged without VAT.
+gumroad admin purchases refund-taxes <purchase-id> --email buyer@example.com --business-vat-id GB123456789 --yes --json --non-interactive --no-input
+gumroad admin purchases refund-taxes <purchase-id> --email buyer@example.com --vat-exempt-territory --note "Canary Islands company" --yes --json --non-interactive --no-input
 gumroad admin products list --email seller@example.com --page 2 --per-page 25 --json --non-interactive --no-input
 gumroad admin products view <product-id> --with-fraud-context --json --non-interactive --no-input
 
