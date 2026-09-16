@@ -148,7 +148,7 @@ func TestRefundTaxes_DryRunDoesNotPost(t *testing.T) {
 	})
 
 	cmd := testutil.Command(newRefundTaxesCmd(), testutil.DryRun(true), testutil.NoInput(true))
-	cmd.SetArgs([]string{"123", "--email", "buyer@example.com", "--business-vat-id", "GB123456789"})
+	cmd.SetArgs([]string{"123", "--email", "buyer@example.com", "--business-vat-id", "GB123456789", "--vat-exempt-territory"})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
 	if !strings.Contains(out, "POST") || !strings.Contains(out, "/internal/admin/purchases/123/refund_taxes") {
@@ -156,6 +156,9 @@ func TestRefundTaxes_DryRunDoesNotPost(t *testing.T) {
 	}
 	if !strings.Contains(out, "business_vat_id: GB123456789") {
 		t.Errorf("expected business_vat_id in dry-run preview, got: %q", out)
+	}
+	if !strings.Contains(out, "vat_exempt_territory: true") {
+		t.Errorf("expected vat_exempt_territory in dry-run preview, got: %q", out)
 	}
 }
 
