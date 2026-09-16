@@ -63,7 +63,7 @@ Add this to your client's MCP configuration (use the absolute path to `gumroad` 
 
 Tools follow CLI leaf command paths with underscores, including hyphens converted to underscores: `products_list`, `products_view`, `offer_codes_list`, `sales_refund`. Input keys are the original long flag names; repeatable flags take arrays of strings, and positional arguments go in `args` (for example, `{"args":["<product-id>"]}`). Defaults stay with the CLI, and its validators report missing arguments or flags. Runnable groups such as `gumroad user` are exposed too (`user` reads the account); use `user` or `products_list` as a connection check.
 
-Every call uses a fresh command with `--json --no-input --quiet` and automatically passes `--yes` where available. Mutations run immediately, without interactive confirmation; require approval in the MCP client before sending a mutating call. Use `dry-run: true` when supported to preview requests. Auth, admin, completion, skill, help, MCP itself, and hidden/deprecated commands are excluded. The server uses only the seller token, never the admin token.
+Every call uses a fresh command with `--json --no-input --quiet` and automatically passes `--yes` where available, except marketing commands: those require the caller to supply `yes: true` after showing the exact text, account and link and obtaining seller confirmation. Mutations run immediately, without interactive confirmation; require approval in the MCP client before sending a mutating call. Use `dry-run: true` when supported to preview requests. Auth, admin, completion, skill, help, MCP itself, and hidden/deprecated commands are excluded. The server uses only the seller token, never the admin token.
 
 Only connect trusted clients: tools have the same local file access as the CLI, including uploads and downloads. File paths are on the machine running the server. Stdin-based content input is unavailable; provide file paths or explicit flags instead. HTTP transport is not supported. Annotations are conservative: list/view/get/preview/pull/download-style commands are marked read-only; every other tool (including `licenses_verify`, which increments uses unless `no-increment` is true, `pages_push` and `emails_send`) carries `destructiveHint` so clients ask before running it. They describe the command category, not a security boundary (downloads still write local files).
 
@@ -87,6 +87,7 @@ Most responses are wrapped in `{"success": true, ...}` with resource-specific ke
 - `sales view` → `.sale` (includes `.currency`, the ISO code the sale is priced in — the same currency a refund amount is read in)
 - `sales export` → `.status`, `.recipient_email`
 - `sales summary` → `.gross_cents`, `.net_cents`, `.breakdown[]`
+- `marketing recommend` → `.channels[]` (live entries include `.handle`, `.action.id`, `.action.idempotency_key`, `.action.confirmation_token`, `.action.post_text`, `.action.link_url`); `marketing approve/schedule/cancel/status` → `.marketing_action`, `.handle`; schedule also includes `.intent_url`, `.connect_path`. Inspect `.marketing_action.status` and `.error_code`: HTTP success is not proof of posting.
 - `emails list` → `.emails[]`, `emails view/create/send/schedule/unschedule` → `.email`, `emails send-preview` → `.preview_url`, `emails delete` → `.message`
 - `workflows list` → `.workflows[]`, `workflows view` → `.workflow`, `workflows add-email/update-email` → `.email`
 - `payouts list` → `.payouts[]`, `payouts view/upcoming` → `.payout`
@@ -149,6 +150,24 @@ When creating or updating many products:
 - Use `--dry-run --json` to preview generated requests, and ask the user to confirm before mutating more than 5 products.
 - Continue past per-product errors, collect each failure with its product/permalink, and summarize successes and failures at the end.
 - For product media failures after creation, retry with the command printed in the error, such as `gumroad products covers add <id> --image ./cover.jpg`.
+
+## Marketing launch posts
+
+Requires the seller's `auto_marketing` flag and an `edit_emails` token (or the API's legacy `account` scope). A flag-off or foreign resource returns 404. The commands reuse the same action and tagged link as the product editor's Share tab; no local marketing state is created.
+
+```sh
+gumroad marketing recommend <product-id-or-permalink> --json --no-input
+gumroad marketing status <action-id> --json --no-input
+# Show exact post_text, handle and link_url to the seller; obtain confirmation before --yes.
+gumroad marketing approve <action-id> --yes --json --no-input
+# schedule means execute NOW in this version, not at a future date. Approve first.
+gumroad marketing schedule <action-id> --yes --json --no-input
+gumroad marketing cancel <action-id> --yes --json --no-input
+```
+
+Each mutation fetches and prints the exact action preview to stderr before confirmation; quoted text escapes control characters. `--dry-run` still performs that GET but sends no POST. The CLI returns the server's opaque idempotency and confirmation keys unchanged. Copy or account changes during confirmation are refused; review again rather than silently retrying altered content. Repeating approve/schedule resolves the same action, not another post. Do not request a new recommendation to retry a completed or uncertain post.
+
+MCP exposes `marketing_recommend`, `marketing_approve`, `marketing_schedule`, `marketing_cancel`, and `marketing_status`. Unlike other mutations, marketing does not receive an implicit `--yes`: first show the preview and get approval, then supply `{"args":["<action-id>"],"yes":true}`. The server's X executor handles reconnect and unknown-result states; clients must surface `error_code` rather than claim success from HTTP 200.
 
 ## Commands
 
