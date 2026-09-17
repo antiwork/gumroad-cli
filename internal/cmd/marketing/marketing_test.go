@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"reflect"
 	"strings"
 	"testing"
 	_ "unsafe"
@@ -138,9 +139,10 @@ func TestDryRunFetchesButDoesNotWrite(t *testing.T) {
 func TestMissingPreviewRefusesMutation(t *testing.T) {
 	for _, field := range []string{"id", "idempotency_key", "confirmation_token", "post_text", "link_url", "handle"} {
 		t.Run(field, func(t *testing.T) {
+			writes := 0
 			testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
 				if r.Method != http.MethodGet {
-					t.Errorf("unexpected write")
+					writes++
 				}
 				item := actionPayload()
 				handle := "seller"
@@ -152,9 +154,17 @@ func TestMissingPreviewRefusesMutation(t *testing.T) {
 				testutil.JSON(t, w, map[string]any{"marketing_action": item, "handle": handle})
 			})
 			cmd := testutil.Command(NewMarketingCmd(), testutil.Yes(true))
-			cmd.SetArgs([]string{"approve", "action-id"})
-			if err := cmd.Execute(); err == nil {
-				t.Fatal("expected error")
+			cmd.SetArgs([]string{"approve", "action-id", "--confirmation-token", "preview-token"})
+			wantError := "The server did not return this action and its idempotency key."
+			if field == "post_text" || field == "link_url" || field == "handle" {
+				wantError = "The action is missing its account, text, or link. Connect X and request a recommendation first."
+			}
+			var inputError *cmdutil.InvalidInputError
+			if err := cmd.Execute(); !errors.As(err, &inputError) || err.Error() != wantError {
+				t.Errorf("error: %v, want %q", err, wantError)
+			}
+			if writes != 0 {
+				t.Errorf("writes with missing %s: %d", field, writes)
 			}
 		})
 	}
@@ -213,6 +223,68 @@ func TestAPIErrors(t *testing.T) {
 	}
 }
 
+func TestRecoveryLinksOutput(t *testing.T) {
+	for _, verb := range []string{"status", "schedule"} {
+		for _, mode := range []string{"human", "plain", "quiet", "json"} {
+			t.Run(verb+"/"+mode, func(t *testing.T) {
+				item := actionPayload()
+				item["status"] = "approved"
+				item["error_code"] = "x_write_permission_missing"
+				response := map[string]any{
+					"success":          true,
+					"marketing_action": item,
+					"handle":           "seller",
+					"connect_path":     "/settings/social?return_to=launch\t\n\x1b",
+					"intent_url":       "https://example.com/share?text=Launch\n\x1b",
+					"extra_field":      "preserved",
+				}
+				testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+					if verb == "schedule" && r.Method == http.MethodGet {
+						testutil.JSON(t, w, map[string]any{"marketing_action": item, "handle": "seller"})
+						return
+					}
+					testutil.JSON(t, w, response)
+				})
+				var out bytes.Buffer
+				cmd := testutil.Command(NewMarketingCmd(), testutil.Stdout(&out), testutil.Yes(true), func(opts *cmdutil.Options) {
+					opts.Quiet = mode == "quiet"
+					opts.PlainOutput = mode == "plain"
+					opts.JSONOutput = mode == "json"
+					opts.Stderr = io.Discard
+				})
+				args := []string{verb, "action-id"}
+				if verb == "schedule" {
+					args = append(args, "--confirmation-token", "preview-token")
+				}
+				cmd.SetArgs(args)
+				if err := cmd.Execute(); err != nil {
+					t.Fatal(err)
+				}
+				switch mode {
+				case "quiet":
+					if out.Len() != 0 {
+						t.Fatalf("quiet output: %q", out.String())
+					}
+				case "json":
+					var got map[string]any
+					if err := json.Unmarshal(out.Bytes(), &got); err != nil {
+						t.Fatal(err)
+					}
+					if !reflect.DeepEqual(got, response) {
+						t.Fatalf("response changed: got %#v, want %#v", got, response)
+					}
+				default:
+					want := "action-id\tapproved\tseller\t" + `Launch\n\nhttps://example.com/link` + "\thttps://example.com/link\t\tx_write_permission_missing\t" +
+						`/settings/social?return_to=launch\t\n\x1b` + "\t" + `https://example.com/share?text=Launch\n\x1b` + "\n"
+					if out.String() != want {
+						t.Fatalf("output: %q, want %q", out.String(), want)
+					}
+				}
+			})
+		}
+	}
+}
+
 func TestDeclinedConfirmation(t *testing.T) {
 	old := promptIsTerminal
 	promptIsTerminal = func(int) bool { return true }
@@ -245,20 +317,25 @@ func TestDeclinedConfirmation(t *testing.T) {
 	}
 }
 
-type brokenWriter struct{}
+type brokenWriter struct{ err error }
 
-func (brokenWriter) Write([]byte) (int, error) { return 0, errors.New("broken output") }
+func (w brokenWriter) Write([]byte) (int, error) { return 0, w.err }
 
 func TestPreviewWriteFailurePreventsMutation(t *testing.T) {
+	writes := 0
 	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
-			t.Error("unexpected write")
+			writes++
 		}
 		testutil.JSON(t, w, map[string]any{"marketing_action": actionPayload(), "handle": "seller"})
 	})
-	cmd := testutil.Command(NewMarketingCmd(), testutil.Yes(true), func(opts *cmdutil.Options) { opts.Stderr = brokenWriter{} })
-	cmd.SetArgs([]string{"approve", "action-id"})
-	if err := cmd.Execute(); err == nil {
-		t.Fatal("expected output error")
+	writeError := errors.New("broken output")
+	cmd := testutil.Command(NewMarketingCmd(), testutil.Yes(true), func(opts *cmdutil.Options) { opts.Stderr = brokenWriter{err: writeError} })
+	cmd.SetArgs([]string{"approve", "action-id", "--confirmation-token", "preview-token"})
+	if err := cmd.Execute(); !errors.Is(err, writeError) {
+		t.Errorf("error: %v, want %v", err, writeError)
+	}
+	if writes != 0 {
+		t.Errorf("writes after preview output failure: %d", writes)
 	}
 }

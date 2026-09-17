@@ -22,8 +22,10 @@ type actionRecord struct {
 }
 
 type actionResponse struct {
-	Action actionRecord `json:"marketing_action"`
-	Handle string       `json:"handle"`
+	Action      actionRecord `json:"marketing_action"`
+	Handle      string       `json:"handle"`
+	ConnectPath string       `json:"connect_path"`
+	IntentURL   string       `json:"intent_url"`
 }
 
 type recommendationsResponse struct {
@@ -94,7 +96,7 @@ func newActionCmd(verb, operation string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   verb + " <action>",
 		Short: descriptions[verb],
-		Long:  descriptions[verb] + "\n\nThe confirmation preview uses quoted strings so control characters cannot hide content. --yes explicitly confirms for scripts and MCP clients; approve and schedule also require --confirmation-token from the preview the seller reviewed. --dry-run still fetches the action for its preview, but sends no mutation.",
+		Long:  descriptions[verb] + "\n\nThe confirmation preview uses quoted strings so control characters cannot hide content. --yes explicitly confirms for scripts and MCP clients; approve and schedule also require --confirmation-token from the preview the seller reviewed. --dry-run still fetches the action for its preview, but sends no mutation. Human and plain output include the server's reconnect path and manual-share URL after the error code when available.",
 		Args:  cmdutil.ExactArgs(1),
 		RunE: func(c *cobra.Command, args []string) error {
 			opts := cmdutil.OptionsFrom(c)
@@ -143,5 +145,5 @@ func renderAction(opts cmdutil.Options, resp actionResponse) error {
 		return nil
 	}
 	item := resp.Action
-	return output.PrintPlain(opts.Out(), [][]string{{item.ID, item.Status, resp.Handle, item.PostText, item.LinkURL, item.ExternalURL, item.ErrorCode}})
+	return output.PrintPlain(opts.Out(), [][]string{{item.ID, item.Status, resp.Handle, item.PostText, item.LinkURL, item.ExternalURL, item.ErrorCode, resp.ConnectPath, resp.IntentURL}})
 }
