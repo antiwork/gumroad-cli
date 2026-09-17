@@ -101,12 +101,12 @@ func TestEnumerationAndMetadata(t *testing.T) {
 			t.Errorf("empty description for %s", name)
 		}
 	}
-	for _, name := range []string{"products_list", "products_view", "pages_pull"} {
+	for _, name := range []string{"products_list", "products_view"} {
 		if tools[name] == nil || !tools[name].Annotations.ReadOnlyHint {
 			t.Errorf("missing read-only hint: %s", name)
 		}
 	}
-	for _, name := range []string{"sales_refund", "products_delete", "files_abort", "licenses_verify", "pages_push", "emails_send", "products_create"} {
+	for _, name := range []string{"sales_refund", "products_delete", "files_abort", "licenses_verify", "pages_pull", "pages_push", "emails_send", "products_create"} {
 		a := tools[name].Annotations
 		if a.DestructiveHint == nil || !*a.DestructiveHint {
 			t.Errorf("missing destructive hint: %s", name)
@@ -150,6 +150,197 @@ func TestProductSchema(t *testing.T) {
 	}
 	if required, ok := schema["required"]; ok {
 		t.Errorf("unexpected required: %v", required)
+	}
+}
+
+func TestDispatchUsesOneToolAndGatesMutations(t *testing.T) {
+	var userFetched, skusFetched bool
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == "GET" && r.URL.Path == "/products":
+			testutil.JSON(t, w, map[string]any{"products": []any{}})
+		case r.Method == "GET" && r.URL.Path == "/user":
+			userFetched = true
+			testutil.JSON(t, w, map[string]any{"user": map[string]any{}})
+		case r.Method == "GET" && r.URL.Path == "/products/opaque-id/skus":
+			skusFetched = true
+			testutil.JSON(t, w, map[string]any{"skus": []any{}})
+		case r.Method == "DELETE" && r.URL.Path == "/resource_subscriptions/opaque-id":
+			testutil.JSON(t, w, map[string]any{})
+		default:
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if command, _, err := cmd.NewRootCmd().Find([]string{"mcp-dispatch"}); err != nil || command == nil || command.Name() != "mcp-dispatch" {
+		t.Fatalf("mcp-dispatch command = %v, %v", command, err)
+	}
+	serverTransport, clientTransport := sdk.NewInMemoryTransports()
+	serverSession, err := mcpcmd.NewDispatchServer(cmd.NewRootCmd).Connect(ctx, serverTransport, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = serverSession.Close() })
+	session, err := sdk.NewClient(&sdk.Implementation{Name: "test", Version: "1"}, nil).Connect(ctx, clientTransport, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = session.Close() })
+	tools := listTools(t, session, ctx)
+	if len(tools) != 1 || tools["gumroad"] == nil {
+		t.Fatalf("tools = %+v", tools)
+	}
+	call(t, session, ctx, "gumroad", map[string]any{"operation": "products_list"}, false)
+	call(t, session, ctx, "gumroad", map[string]any{"operation": "user"}, false)
+	if !userFetched {
+		t.Fatal("user returned a plan instead of making its read request")
+	}
+	call(t, session, ctx, "gumroad", map[string]any{"operation": "products_skus", "arguments": map[string]any{"args": []string{"opaque-id"}}}, false)
+	if !skusFetched {
+		t.Fatal("products_skus returned a plan instead of making its read request")
+	}
+	help := call(t, session, ctx, "gumroad", map[string]any{"operation": "help"}, false)
+	if strings.Contains(help, "mcp_dispatch") || !strings.Contains(help, "products_list") {
+		t.Fatalf("unexpected help: %s", help)
+	}
+	plan := call(t, session, ctx, "gumroad", map[string]any{"operation": "webhooks_delete", "arguments": map[string]any{"args": []string{"opaque-id"}}}, false)
+	var confirmation struct {
+		Confirmation string `json:"confirmation"`
+	}
+	if err := json.Unmarshal([]byte(plan), &confirmation); err != nil || confirmation.Confirmation == "" {
+		t.Fatalf("unexpected plan: %s", plan)
+	}
+	call(t, session, ctx, "gumroad", map[string]any{"operation": "webhooks_delete", "arguments": map[string]any{"args": []string{"opaque-id"}}, "confirm": true, "confirmation": confirmation.Confirmation}, false)
+}
+
+func TestDispatchRejectsChangedConfirmedArguments(t *testing.T) {
+	deleted := ""
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodDelete || !strings.HasPrefix(r.URL.Path, "/resource_subscriptions/") {
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+			return
+		}
+		deleted = strings.TrimPrefix(r.URL.Path, "/resource_subscriptions/")
+		testutil.JSON(t, w, map[string]any{})
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	serverTransport, clientTransport := sdk.NewInMemoryTransports()
+	serverSession, err := mcpcmd.NewDispatchServer(cmd.NewRootCmd).Connect(ctx, serverTransport, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = serverSession.Close() })
+	session, err := sdk.NewClient(&sdk.Implementation{Name: "test", Version: "1"}, nil).Connect(ctx, clientTransport, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = session.Close() })
+	planText := call(t, session, ctx, "gumroad", map[string]any{"operation": "webhooks_delete", "arguments": map[string]any{"args": []string{"reviewed-id"}}}, false)
+	var plan struct {
+		Operation    string   `json:"operation"`
+		Command      []string `json:"command"`
+		Confirmation string   `json:"confirmation"`
+	}
+	if err := json.Unmarshal([]byte(planText), &plan); err != nil {
+		t.Fatal(err)
+	}
+	if plan.Operation != "webhooks_delete" || plan.Confirmation == "" || !strings.Contains(strings.Join(plan.Command, " "), "reviewed-id") {
+		t.Fatalf("unexpected plan: %+v", plan)
+	}
+	call(t, session, ctx, "gumroad", map[string]any{"operation": "webhooks_delete", "arguments": map[string]any{"args": []string{"different-id"}}, "confirm": true, "confirmation": plan.Confirmation}, true)
+	if deleted != "" {
+		t.Fatalf("changed request deleted %q", deleted)
+	}
+	call(t, session, ctx, "gumroad", map[string]any{"operation": "webhooks_delete", "arguments": map[string]any{"args": []string{"reviewed-id"}}, "confirm": true, "confirmation": plan.Confirmation}, false)
+	if deleted != "reviewed-id" {
+		t.Fatalf("deleted %q", deleted)
+	}
+}
+
+func TestDispatchDescribesReadAndMutationOperations(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	serverTransport, clientTransport := sdk.NewInMemoryTransports()
+	serverSession, err := mcpcmd.NewDispatchServer(cmd.NewRootCmd).Connect(ctx, serverTransport, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = serverSession.Close() })
+	session, err := sdk.NewClient(&sdk.Implementation{Name: "test", Version: "1"}, nil).Connect(ctx, clientTransport, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = session.Close() })
+	for _, want := range []struct {
+		operation string
+		readOnly  bool
+		flag      string
+		typeName  string
+	}{
+		{operation: "products_list", readOnly: true, flag: "page-key", typeName: "string"},
+		{operation: "products_create", readOnly: false, flag: "name", typeName: "string"},
+		{operation: "pages_pull", readOnly: false, flag: "output", typeName: "string"},
+	} {
+		t.Run(want.operation, func(t *testing.T) {
+			text := call(t, session, ctx, "gumroad", map[string]any{"operation": "help", "arguments": map[string]any{"operation": want.operation}}, false)
+			var detail struct {
+				Operation   string `json:"operation"`
+				Description string `json:"description"`
+				ReadOnly    bool   `json:"read_only"`
+				InputSchema struct {
+					Type       string                    `json:"type"`
+					Properties map[string]map[string]any `json:"properties"`
+				} `json:"input_schema"`
+			}
+			if err := json.Unmarshal([]byte(text), &detail); err != nil {
+				t.Fatal(err)
+			}
+			if detail.Operation != want.operation || detail.ReadOnly != want.readOnly || detail.Description == "" || detail.InputSchema.Type != "object" {
+				t.Fatalf("unexpected detail: %+v", detail)
+			}
+			if !want.readOnly && (!strings.Contains(detail.Description, "Requires a plan confirmation token.") || strings.Contains(detail.Description, "Runs without interactive confirmation.")) {
+				t.Fatalf("unexpected mutation description: %s", detail.Description)
+			}
+			flag := detail.InputSchema.Properties[want.flag]
+			if flag["type"] != want.typeName || flag["description"] == "" {
+				t.Fatalf("missing flag schema: %+v", flag)
+			}
+			if args := detail.InputSchema.Properties["args"]; args["type"] != "array" || args["description"] == "" {
+				t.Fatalf("missing positional schema: %+v", args)
+			}
+		})
+	}
+}
+
+func TestDispatchClassifiesNonstandardGETOperationsAsReadOnly(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	serverTransport, clientTransport := sdk.NewInMemoryTransports()
+	serverSession, err := mcpcmd.NewDispatchServer(cmd.NewRootCmd).Connect(ctx, serverTransport, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = serverSession.Close() })
+	session, err := sdk.NewClient(&sdk.Implementation{Name: "test", Version: "1"}, nil).Connect(ctx, clientTransport, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = session.Close() })
+	for _, operation := range []string{"user", "payouts_upcoming", "sales_summary", "sales_buyers", "products_comps", "products_skus"} {
+		t.Run(operation, func(t *testing.T) {
+			text := call(t, session, ctx, "gumroad", map[string]any{"operation": "help", "arguments": map[string]any{"operation": operation}}, false)
+			var detail struct {
+				ReadOnly bool `json:"read_only"`
+			}
+			if err := json.Unmarshal([]byte(text), &detail); err != nil {
+				t.Fatal(err)
+			}
+			if !detail.ReadOnly {
+				t.Errorf("read_only = false")
+			}
+		})
 	}
 }
 

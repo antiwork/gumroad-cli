@@ -147,6 +147,7 @@ func NewRootCmd() *cobra.Command {
 	cmd.AddCommand(completion.NewCompletionCmd())
 	cmd.AddCommand(skill.NewSkillCmd())
 	cmd.AddCommand(mcp.NewMcpCmd(NewRootCmd))
+	cmd.AddCommand(mcp.NewDispatchCmd(NewRootCmd))
 	cmd.AddCommand(newUpdateCheckRefreshCmd())
 	cmdutil.PropagateExamples(cmd)
 
