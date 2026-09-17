@@ -17,7 +17,7 @@ import (
 	"github.com/spf13/pflag"
 )
 
-const instructions = "Prices are in whole currency units. IDs are opaque base64 strings returned by list calls; use *_list before *_view. Mutations run immediately without interactive confirmation. File paths refer to the machine running gumroad; stdin input is unavailable."
+const instructions = "Prices are in whole currency units. IDs are opaque base64 strings returned by list calls; use *_list before *_view. Mutations run immediately without interactive confirmation, except marketing mutations which require an explicit yes=true after showing the recommendation. File paths refer to the machine running gumroad; stdin input is unavailable."
 
 // The factory avoids an import cycle with cmd and gives each call its own flag state.
 func NewMcpCmd(newRoot func() *cobra.Command) *cobra.Command {
@@ -143,7 +143,11 @@ func commandTool(c *cobra.Command, path []string, flags *pflag.FlagSet) *sdk.Too
 		description = string(text[:maxDescriptionRunes]) + "…"
 	}
 	if flags.Lookup("yes") != nil {
-		description += "\nRuns without interactive confirmation."
+		if len(path) > 0 && path[0] == "marketing" {
+			description += "\nShow the exact post text, account and link from marketing_recommend or marketing_status, then ask the seller to confirm. Supply yes=true only after confirmation; approve and schedule also require confirmation-token from that reviewed preview."
+		} else {
+			description += "\nRuns without interactive confirmation."
+		}
 	}
 	description += "\nAlways runs with --json --no-input --quiet; stdin is unavailable."
 	// Hints are conservative: anything not clearly a read is flagged destructive, because
@@ -204,7 +208,7 @@ func commandArgs(path []string, flags *pflag.FlagSet, raw json.RawMessage) ([]st
 		}
 	}
 	args = append(args, "--json", "--no-input", "--quiet")
-	if flags.Lookup("yes") != nil {
+	if flags.Lookup("yes") != nil && (len(path) == 0 || path[0] != "marketing") {
 		args = append(args, "--yes")
 	}
 	// Flag-looking IDs and file names are data, never additional CLI options.
