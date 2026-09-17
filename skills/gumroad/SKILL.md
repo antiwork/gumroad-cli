@@ -167,6 +167,8 @@ gumroad marketing cancel <action-id> --yes --json --no-input
 
 Each mutation fetches and prints the exact action preview to stderr before confirmation; quoted text escapes control characters. `--dry-run` still performs that GET but sends no POST. The CLI returns the server's opaque idempotency and confirmation keys unchanged. Copy or account changes during confirmation are refused; review again rather than silently retrying altered content. Repeating approve/schedule resolves the same action, not another post. Do not request a new recommendation to retry a completed or uncertain post.
 
+Human and plain action output append the server's `connect_path` and `intent_url` after the error code for reconnect and manual sharing. These fields use the same control-character escaping as the other columns; JSON and MCP retain the original response fields.
+
 MCP exposes `marketing_recommend`, `marketing_approve`, `marketing_schedule`, `marketing_cancel`, and `marketing_status`. Unlike other mutations, marketing does not receive an implicit `--yes`: first show the preview and get approval, then supply `{"args":["<action-id>"],"yes":true,"confirmation-token":"<reviewed-token>"}`. The token must come from the preview the seller confirmed, not a fresh lookup; missing or changed tokens prevent approve/schedule. The server's X executor handles reconnect and unknown-result states; clients must surface `error_code` rather than claim success from HTTP 200.
 
 ## Commands
