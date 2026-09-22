@@ -82,7 +82,7 @@ func TestPageClearRateLimitMessage(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected rate limit error")
 	}
-	if !strings.Contains(err.Error(), "Wait a moment before trying again") {
+	if !strings.Contains(err.Error(), "publish rate limit") {
 		t.Fatalf("expected clear-specific rate limit message, got %v", err)
 	}
 	if strings.Contains(err.Error(), "page preview") {

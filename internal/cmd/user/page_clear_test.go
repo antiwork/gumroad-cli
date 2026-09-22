@@ -71,7 +71,7 @@ func TestUserPageClearRateLimitMessage(t *testing.T) {
 	cmd := testutil.Command(newPageClearCmd(), testutil.Yes(true))
 	cmd.SetArgs([]string{})
 	err := cmd.Execute()
-	if err == nil || !strings.Contains(err.Error(), "Wait a moment before trying again") {
+	if err == nil || !strings.Contains(err.Error(), "publish rate limit") {
 		t.Fatalf("expected clear-specific rate limit message, got %v", err)
 	}
 }

@@ -128,7 +128,7 @@ func TestUserPagePublishRateLimitMessage(t *testing.T) {
 	cmd := testutil.Command(newPagePublishCmd())
 	cmd.SetArgs([]string{htmlPath})
 	err := cmd.Execute()
-	if err == nil || !strings.Contains(err.Error(), "30 PUTs/min") {
+	if err == nil || !strings.Contains(err.Error(), "publish rate limit") {
 		t.Fatalf("expected publish-specific rate limit message, got %v", err)
 	}
 	if !strings.Contains(err.Error(), "user page preview") {
