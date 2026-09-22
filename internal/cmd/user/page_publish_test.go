@@ -128,10 +128,25 @@ func TestUserPagePublishRateLimitMessage(t *testing.T) {
 	cmd := testutil.Command(newPagePublishCmd())
 	cmd.SetArgs([]string{htmlPath})
 	err := cmd.Execute()
-	if err == nil || !strings.Contains(err.Error(), "30 PUTs/min") {
-		t.Fatalf("expected publish-specific rate limit message, got %v", err)
+	if err == nil {
+		t.Fatal("expected rate limit error")
 	}
-	if !strings.Contains(err.Error(), "user page preview") {
-		t.Fatalf("publish rate limit should point at user page preview, got %v", err)
+	msg := err.Error()
+	for _, want := range []string{
+		"in a burst",
+		"not on your account",
+		"for hours",
+		"rather than a minute",
+		"retrying does not shorten the wait",
+		"user page preview",
+	} {
+		if !strings.Contains(msg, want) {
+			t.Fatalf("rate limit message missing %q, got %v", want, err)
+		}
+	}
+	for _, banned := range []string{"30 PUTs/min", "Wait a moment"} {
+		if strings.Contains(msg, banned) {
+			t.Fatalf("rate limit message reintroduced %q, got %v", banned, err)
+		}
 	}
 }

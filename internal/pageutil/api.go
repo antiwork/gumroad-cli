@@ -13,15 +13,19 @@ import (
 )
 
 const (
-	PublishRateLimitMessage = "Hit Gumroad's rate limit (30 PUTs/min). Use `gumroad products page preview` to iterate without burning your publish budget."
+	// The publish endpoint's 429 is volume based: a burst can keep the limit in
+	// place for hours rather than a minute, and the response carries no retry
+	// timing. These messages name the volume behaviour instead of a per-minute
+	// window, which sellers otherwise read as an account restriction.
+	PublishRateLimitMessage = "Hit Gumroad's publish rate limit. The limit is on how many publishes you send in a burst, not on your account, and once it trips it can stay in effect for hours rather than a minute, so retrying does not shorten the wait. Use `gumroad products page preview` to iterate without burning your publish budget."
 	PreviewRateLimitMessage = "Hit Gumroad's rate limit (60 previews/min). Wait a moment before previewing again."
-	ClearRateLimitMessage   = "Hit Gumroad's rate limit (30 PUTs/min). Wait a moment before trying again."
+	ClearRateLimitMessage   = "Hit Gumroad's publish rate limit. The limit is on how many publishes you send in a burst, not on your account, and once it trips it can stay in effect for hours, so retrying does not shorten the wait."
 
-	ProfilePublishRateLimitMessage = "Hit Gumroad's rate limit (30 PUTs/min). Use `gumroad user page preview` to iterate without burning your publish budget."
+	ProfilePublishRateLimitMessage = "Hit Gumroad's publish rate limit. The limit is on how many publishes you send in a burst, not on your account, and once it trips it can stay in effect for hours rather than a minute, so retrying does not shorten the wait. Use `gumroad user page preview` to iterate without burning your publish budget."
 	ProfilePreviewRateLimitMessage = "Hit Gumroad's rate limit (60 previews/min). Wait a moment before previewing again."
-	ProfileClearRateLimitMessage   = "Hit Gumroad's rate limit (30 PUTs/min). Wait a moment before trying again."
+	ProfileClearRateLimitMessage   = "Hit Gumroad's publish rate limit. The limit is on how many publishes you send in a burst, not on your account, and once it trips it can stay in effect for hours, so retrying does not shorten the wait."
 
-	PagesPublishRateLimitMessage = "Hit Gumroad's rate limit (30 PUTs/min). Use `gumroad pages preview` to iterate without burning your publish budget."
+	PagesPublishRateLimitMessage = "Hit Gumroad's publish rate limit. The limit is on how many publishes you send in a burst, not on your account, and once it trips it can stay in effect for hours rather than a minute, so retrying does not shorten the wait. Use `gumroad pages preview` to iterate without burning your publish budget."
 	PagesPreviewRateLimitMessage = "Hit Gumroad's rate limit (60 previews/min). Wait a moment before previewing again."
 )
 
