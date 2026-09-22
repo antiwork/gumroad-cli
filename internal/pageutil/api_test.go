@@ -29,6 +29,34 @@ func TestShareURLPrecedence(t *testing.T) {
 	}
 }
 
+func TestPublishRateLimitCopyRejectsMinuteWindow(t *testing.T) {
+	cases := []struct {
+		msg     string
+		publish bool
+	}{
+		{PublishRateLimitMessage, true},
+		{ProfilePublishRateLimitMessage, true},
+		{PagesPublishRateLimitMessage, true},
+		{ClearRateLimitMessage, false},
+		{ProfileClearRateLimitMessage, false},
+	}
+	for _, tc := range cases {
+		for _, want := range []string{"in a burst", "not on your account", "for hours", "retrying does not shorten the wait"} {
+			if !strings.Contains(tc.msg, want) {
+				t.Errorf("%q missing %q", tc.msg, want)
+			}
+		}
+		for _, banned := range []string{"30 PUTs/min", "Wait a moment", "per minute"} {
+			if strings.Contains(tc.msg, banned) {
+				t.Errorf("%q reintroduced %q", tc.msg, banned)
+			}
+		}
+		if tc.publish && !strings.Contains(tc.msg, "rather than a minute") {
+			t.Errorf("%q missing the minute-scale correction", tc.msg)
+		}
+	}
+}
+
 func TestTranslateRateLimitErrorPreservesAPIError(t *testing.T) {
 	err := TranslateRateLimitError(&api.APIError{
 		StatusCode: http.StatusTooManyRequests,

@@ -71,7 +71,23 @@ func TestUserPageClearRateLimitMessage(t *testing.T) {
 	cmd := testutil.Command(newPageClearCmd(), testutil.Yes(true))
 	cmd.SetArgs([]string{})
 	err := cmd.Execute()
-	if err == nil || !strings.Contains(err.Error(), "publish rate limit") {
-		t.Fatalf("expected clear-specific rate limit message, got %v", err)
+	if err == nil {
+		t.Fatal("expected rate limit error")
+	}
+	msg := err.Error()
+	for _, want := range []string{
+		"in a burst",
+		"not on your account",
+		"for hours",
+		"retrying does not shorten the wait",
+	} {
+		if !strings.Contains(msg, want) {
+			t.Fatalf("rate limit message missing %q, got %v", want, err)
+		}
+	}
+	for _, banned := range []string{"30 PUTs/min", "Wait a moment", "page preview"} {
+		if strings.Contains(msg, banned) {
+			t.Fatalf("clear rate limit message reintroduced %q, got %v", banned, err)
+		}
 	}
 }
