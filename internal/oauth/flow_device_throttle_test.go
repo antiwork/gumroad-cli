@@ -10,9 +10,9 @@ import (
 )
 
 // deviceThrottleServer approves the login after throttledPolls token polls that
-// answer the way the app's Rack::Attack throttle does: a plain-text 429 with no
-// OAuth error JSON, optionally carrying Retry-After.
-func deviceThrottleServer(t *testing.T, throttledPolls int, retryAfter string, polls *int) *httptest.Server {
+// answer the way the app's Rack::Attack throttle does: a plain-text status with
+// no OAuth error JSON, optionally carrying Retry-After.
+func deviceThrottleServer(t *testing.T, throttledPolls int, retryAfter string, status int, polls *int) *httptest.Server {
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -30,7 +30,7 @@ func deviceThrottleServer(t *testing.T, throttledPolls int, retryAfter string, p
 				if retryAfter != "" {
 					w.Header().Set("Retry-After", retryAfter)
 				}
-				w.WriteHeader(http.StatusTooManyRequests)
+				w.WriteHeader(status)
 				_, _ = w.Write([]byte("Retry later\n"))
 				return
 			}
@@ -43,7 +43,7 @@ func deviceThrottleServer(t *testing.T, throttledPolls int, retryAfter string, p
 
 func TestDeviceFlow_RetriesThrottledPollHonoringRetryAfter(t *testing.T) {
 	var polls int
-	srv := deviceThrottleServer(t, 2, "7", &polls)
+	srv := deviceThrottleServer(t, 2, "7", http.StatusTooManyRequests, &polls)
 	defer srv.Close()
 
 	var waits []time.Duration
@@ -78,7 +78,7 @@ func TestDeviceFlow_RetriesThrottledPollHonoringRetryAfter(t *testing.T) {
 
 func TestDeviceFlow_RetriesThrottledPollWithoutRetryAfter(t *testing.T) {
 	var polls int
-	srv := deviceThrottleServer(t, 1, "", &polls)
+	srv := deviceThrottleServer(t, 1, "", http.StatusTooManyRequests, &polls)
 	defer srv.Close()
 
 	var waits []time.Duration
@@ -96,6 +96,34 @@ func TestDeviceFlow_RetriesThrottledPollWithoutRetryAfter(t *testing.T) {
 	}
 	if len(waits) != 2 || waits[1] != time.Second {
 		t.Fatalf("got waits %v, want the flow interval 1s on both polls", waits)
+	}
+}
+
+func TestDeviceFlow_RetriesEveryRetryableStatus(t *testing.T) {
+	for _, status := range []int{
+		http.StatusRequestTimeout,
+		http.StatusTooManyRequests,
+		http.StatusInternalServerError,
+		http.StatusBadGateway,
+		http.StatusServiceUnavailable,
+		http.StatusGatewayTimeout,
+	} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			var polls int
+			srv := deviceThrottleServer(t, 1, "", status, &polls)
+			defer srv.Close()
+
+			result, err := DeviceFlowResult(context.Background(), deviceFlowConfig(srv), &strings.Builder{})
+			if err != nil {
+				t.Fatalf("DeviceFlowResult should survive a %d poll, got: %v", status, err)
+			}
+			if result.AccessToken != "device-access-token" {
+				t.Fatalf("got access token %q, want device-access-token", result.AccessToken)
+			}
+			if polls != 2 {
+				t.Fatalf("got %d token polls, want 2 (%d, approved)", polls, status)
+			}
+		})
 	}
 }
 
