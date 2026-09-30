@@ -354,7 +354,7 @@ func shouldRetry(method string, attempt int, statusCode int) bool {
 }
 
 func retryDelay(attempt int, retryAfter string) time.Duration {
-	if delay, ok := parseRetryAfter(retryAfter); ok {
+	if delay, ok := ParseRetryAfter(retryAfter); ok {
 		return delay
 	}
 
@@ -365,7 +365,9 @@ func retryDelay(attempt int, retryAfter string) time.Duration {
 	return time.Duration(backoff)
 }
 
-func parseRetryAfter(value string) (time.Duration, bool) {
+// ParseRetryAfter reads a Retry-After value (seconds or an HTTP date). ok is
+// false when the header is absent or carries no usable wait.
+func ParseRetryAfter(value string) (time.Duration, bool) {
 	if value == "" {
 		return 0, false
 	}

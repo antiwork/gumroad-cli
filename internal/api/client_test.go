@@ -598,7 +598,7 @@ func TestClient_GetDoesNotRetryOversizedBody(t *testing.T) {
 }
 
 func TestParseRetryAfter_Seconds(t *testing.T) {
-	delay, ok := parseRetryAfter("2")
+	delay, ok := ParseRetryAfter("2")
 	if !ok {
 		t.Fatal("expected seconds Retry-After to parse")
 	}
@@ -609,7 +609,7 @@ func TestParseRetryAfter_Seconds(t *testing.T) {
 
 func TestParseRetryAfter_HTTPDate(t *testing.T) {
 	retryAt := time.Now().Add(1500 * time.Millisecond).UTC().Format(http.TimeFormat)
-	delay, ok := parseRetryAfter(retryAt)
+	delay, ok := ParseRetryAfter(retryAt)
 	if !ok {
 		t.Fatal("expected HTTP date Retry-After to parse")
 	}
@@ -620,7 +620,7 @@ func TestParseRetryAfter_HTTPDate(t *testing.T) {
 
 func TestParseRetryAfter_InvalidValues(t *testing.T) {
 	for _, input := range []string{"", "0", "garbage", time.Now().Add(-time.Minute).UTC().Format(http.TimeFormat)} {
-		if delay, ok := parseRetryAfter(input); ok {
+		if delay, ok := ParseRetryAfter(input); ok {
 			t.Fatalf("expected %q to be rejected, got delay %s", input, delay)
 		}
 	}

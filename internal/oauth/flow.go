@@ -15,6 +15,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/antiwork/gumroad-cli/internal/api"
 )
 
 // TokenResponse is the JSON body returned by the OAuth token endpoint.
@@ -379,12 +381,20 @@ func pollDeviceToken(ctx context.Context, cfg FlowConfig, deviceCode DeviceCodeR
 	expiresAt := time.Now().Add(time.Duration(deviceCode.ExpiresIn) * time.Second)
 
 	poll := 0
+	nextWait := time.Duration(0)
 	for {
 		remaining := time.Until(expiresAt)
 		if remaining <= 0 {
 			return FlowResult{}, fmt.Errorf("authorization expired")
 		}
 		wait := interval
+		if nextWait > 0 {
+			// A throttle's Retry-After governs the next attempt only: as a
+			// standing interval it would delay an approval that arrives
+			// after the throttle cleared.
+			wait = nextWait
+			nextWait = 0
+		}
 		if wait > remaining {
 			wait = remaining
 		}
@@ -407,14 +417,14 @@ func pollDeviceToken(ctx context.Context, cfg FlowConfig, deviceCode DeviceCodeR
 				// permanent contract failure; retrying would hide it.
 				return FlowResult{}, err
 			}
-			// The request itself failed in transport (connection reset,
-			// DNS blip, hung request). The authorization window is still
-			// open server-side, so keep polling until it expires instead
-			// of aborting the whole login.
+			// Transport failures and server refusals both leave the
+			// authorization window open server-side, so keep polling
+			// until it expires instead of aborting the whole login.
 			if ctx.Err() != nil {
 				return FlowResult{}, fmt.Errorf("authorization cancelled: %w", err)
 			}
-			cfg.debugf("device poll attempt=%d outcome=transient_error retrying err=%q", poll, err)
+			nextWait = transient.retryAfter
+			cfg.debugf("device poll attempt=%d outcome=transient_error retrying retry_after=%s err=%q", poll, transient.retryAfter, err)
 			continue
 		}
 		cfg.debugf("device poll attempt=%d outcome=%s", poll, oauthErr.Code)
@@ -446,12 +456,13 @@ func (e *oauthDevicePollError) Error() string {
 	return e.Code + ": " + e.Description
 }
 
-// transientPollError marks a poll failure that happened in transport (the
-// request never completed) rather than in the server's response. Only these
-// are safe to retry: a response-level error (bad JSON, missing token) is a
-// permanent contract failure and retrying would hide it until expiry.
+// transientPollError marks a poll failure that left the pending authorization
+// intact: the request never completed, or the endpoint answered 429 or 5xx.
+// Retrying is safe for those; a response we could not use (bad JSON, missing
+// token) is a permanent contract failure.
 type transientPollError struct {
-	err error
+	err        error
+	retryAfter time.Duration
 }
 
 func (e *transientPollError) Error() string { return e.err.Error() }
@@ -501,7 +512,7 @@ func pollDeviceTokenOnce(ctx context.Context, cfg FlowConfig, deviceCode string,
 			}
 			return FlowResult{}, currentInterval, fmt.Errorf("connection failed while receiving the approved token; run the login command again: %w", err)
 		}
-		return FlowResult{}, currentInterval, &transientPollError{err: fmt.Errorf("could not read token response: %w", err)}
+		return FlowResult{}, currentInterval, &transientPollError{err: fmt.Errorf("could not read token response: %w", err), retryAfter: retryAfterWait(resp)}
 	}
 
 	if resp.StatusCode == http.StatusOK {
@@ -519,7 +530,32 @@ func pollDeviceTokenOnce(ctx context.Context, cfg FlowConfig, deviceCode string,
 	if oauthErr.Error != "" {
 		return FlowResult{}, currentInterval, &oauthDevicePollError{Code: oauthErr.Error, Description: oauthErr.ErrorDescription}
 	}
-	return FlowResult{}, currentInterval, fmt.Errorf("token exchange failed (HTTP %d)", resp.StatusCode)
+	statusErr := fmt.Errorf("token exchange failed (HTTP %d)", resp.StatusCode)
+	if !isRetryablePollStatus(resp.StatusCode) {
+		return FlowResult{}, currentInterval, statusErr
+	}
+	// Retrying is safe: the response carries no OAuth error, and a throttle or
+	// a 5xx leaves the pending authorization untouched.
+	return FlowResult{}, currentInterval, &transientPollError{err: statusErr, retryAfter: retryAfterWait(resp)}
+}
+
+// isRetryablePollStatus reports whether a token endpoint status is one that
+// clears on its own: the same throttles and server faults the API client
+// retries for normal requests.
+func isRetryablePollStatus(statusCode int) bool {
+	switch statusCode {
+	case http.StatusRequestTimeout, http.StatusTooManyRequests,
+		http.StatusInternalServerError, http.StatusBadGateway,
+		http.StatusServiceUnavailable, http.StatusGatewayTimeout:
+		return true
+	default:
+		return false
+	}
+}
+
+func retryAfterWait(resp *http.Response) time.Duration {
+	delay, _ := api.ParseRetryAfter(resp.Header.Get("Retry-After"))
+	return delay
 }
 
 func requestContext(ctx context.Context, cfg FlowConfig) (context.Context, context.CancelFunc) {
