@@ -381,12 +381,20 @@ func pollDeviceToken(ctx context.Context, cfg FlowConfig, deviceCode DeviceCodeR
 	expiresAt := time.Now().Add(time.Duration(deviceCode.ExpiresIn) * time.Second)
 
 	poll := 0
+	nextWait := time.Duration(0)
 	for {
 		remaining := time.Until(expiresAt)
 		if remaining <= 0 {
 			return FlowResult{}, fmt.Errorf("authorization expired")
 		}
 		wait := interval
+		if nextWait > 0 {
+			// A throttle's Retry-After governs the next attempt only: as a
+			// standing interval it would delay an approval that arrives
+			// after the throttle cleared.
+			wait = nextWait
+			nextWait = 0
+		}
 		if wait > remaining {
 			wait = remaining
 		}
@@ -415,11 +423,7 @@ func pollDeviceToken(ctx context.Context, cfg FlowConfig, deviceCode DeviceCodeR
 			if ctx.Err() != nil {
 				return FlowResult{}, fmt.Errorf("authorization cancelled: %w", err)
 			}
-			if transient.retryAfter > interval {
-				// Polling sooner than the server asked is what earned
-				// the throttle, so wait at least as long as it said.
-				interval = transient.retryAfter
-			}
+			nextWait = transient.retryAfter
 			cfg.debugf("device poll attempt=%d outcome=transient_error retrying retry_after=%s err=%q", poll, transient.retryAfter, err)
 			continue
 		}
@@ -457,9 +461,7 @@ func (e *oauthDevicePollError) Error() string {
 // Retrying is safe for those; a response we could not use (bad JSON, missing
 // token) is a permanent contract failure.
 type transientPollError struct {
-	err error
-	// retryAfter is the wait the server asked for in Retry-After, or zero
-	// when the response carried no usable value.
+	err        error
 	retryAfter time.Duration
 }
 
@@ -510,7 +512,7 @@ func pollDeviceTokenOnce(ctx context.Context, cfg FlowConfig, deviceCode string,
 			}
 			return FlowResult{}, currentInterval, fmt.Errorf("connection failed while receiving the approved token; run the login command again: %w", err)
 		}
-		return FlowResult{}, currentInterval, &transientPollError{err: fmt.Errorf("could not read token response: %w", err)}
+		return FlowResult{}, currentInterval, &transientPollError{err: fmt.Errorf("could not read token response: %w", err), retryAfter: retryAfterWait(resp)}
 	}
 
 	if resp.StatusCode == http.StatusOK {
@@ -532,11 +534,9 @@ func pollDeviceTokenOnce(ctx context.Context, cfg FlowConfig, deviceCode string,
 	if !isRetryablePollStatus(resp.StatusCode) {
 		return FlowResult{}, currentInterval, statusErr
 	}
-	// A throttle or a server fault answers without an OAuth error code and
-	// leaves any pending authorization untouched, so retry it rather than
-	// discard an approval the seller already gave in the browser.
-	retryAfter, _ := api.ParseRetryAfter(resp.Header.Get("Retry-After"))
-	return FlowResult{}, currentInterval, &transientPollError{err: statusErr, retryAfter: retryAfter}
+	// Retrying is safe: the response carries no OAuth error, and a throttle or
+	// a 5xx leaves the pending authorization untouched.
+	return FlowResult{}, currentInterval, &transientPollError{err: statusErr, retryAfter: retryAfterWait(resp)}
 }
 
 // isRetryablePollStatus reports whether a token endpoint status is one that
@@ -551,6 +551,11 @@ func isRetryablePollStatus(statusCode int) bool {
 	default:
 		return false
 	}
+}
+
+func retryAfterWait(resp *http.Response) time.Duration {
+	delay, _ := api.ParseRetryAfter(resp.Header.Get("Retry-After"))
+	return delay
 }
 
 func requestContext(ctx context.Context, cfg FlowConfig) (context.Context, context.CancelFunc) {

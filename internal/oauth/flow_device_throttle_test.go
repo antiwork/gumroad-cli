@@ -9,6 +9,16 @@ import (
 	"time"
 )
 
+func deviceCodeResponse() DeviceCodeResponse {
+	return DeviceCodeResponse{
+		DeviceCode:      "device-code-123",
+		UserCode:        "GRD-ABCD-1234",
+		VerificationURI: "https://gumroad.com/oauth/device",
+		ExpiresIn:       600,
+		Interval:        1,
+	}
+}
+
 // deviceThrottleServer approves the login after throttledPolls token polls that
 // answer the way the app's Rack::Attack throttle does: a plain-text status with
 // no OAuth error JSON, optionally carrying Retry-After.
@@ -17,13 +27,7 @@ func deviceThrottleServer(t *testing.T, throttledPolls int, retryAfter string, s
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/oauth/device/code":
-			mustEncode(t, w, DeviceCodeResponse{
-				DeviceCode:      "device-code-123",
-				UserCode:        "GRD-ABCD-1234",
-				VerificationURI: "https://gumroad.com/oauth/device",
-				ExpiresIn:       600,
-				Interval:        1,
-			})
+			mustEncode(t, w, deviceCodeResponse())
 		case "/oauth/token":
 			*polls++
 			if *polls <= throttledPolls {
@@ -127,22 +131,112 @@ func TestDeviceFlow_RetriesEveryRetryableStatus(t *testing.T) {
 	}
 }
 
+func TestDeviceFlow_ThrottleWaitDoesNotPersist(t *testing.T) {
+	polls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/oauth/device/code":
+			mustEncode(t, w, deviceCodeResponse())
+		case "/oauth/token":
+			polls++
+			switch polls {
+			case 1:
+				w.Header().Set("Retry-After", "7")
+				w.WriteHeader(http.StatusTooManyRequests)
+				_, _ = w.Write([]byte("Retry later\n"))
+			case 2:
+				w.WriteHeader(http.StatusBadRequest)
+				mustEncode(t, w, oauthErrorResponse{Error: "authorization_pending"})
+			default:
+				mustEncode(t, w, TokenResponse{AccessToken: "device-access-token", TokenType: "Bearer"})
+			}
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer srv.Close()
+
+	var waits []time.Duration
+	cfg := deviceFlowConfig(srv)
+	cfg.Sleep = func(_ context.Context, d time.Duration) error {
+		waits = append(waits, d)
+		return nil
+	}
+
+	if _, err := DeviceFlowResult(context.Background(), cfg, &strings.Builder{}); err != nil {
+		t.Fatalf("DeviceFlowResult: %v", err)
+	}
+	want := []time.Duration{time.Second, 7 * time.Second, time.Second}
+	if len(waits) != len(want) {
+		t.Fatalf("got waits %v, want %v", waits, want)
+	}
+	for i := range want {
+		if waits[i] != want[i] {
+			t.Fatalf("got waits %v, want %v", waits, want)
+		}
+	}
+}
+
+func TestDeviceFlow_UnreadableThrottledBodyHonorsRetryAfter(t *testing.T) {
+	polls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/oauth/device/code":
+			w.Header().Set("Content-Type", "application/json")
+			mustEncode(t, w, deviceCodeResponse())
+		case "/oauth/token":
+			polls++
+			if polls == 1 {
+				// The declared Content-Length is larger than the body, so the
+				// read fails after the status and Retry-After already arrived.
+				hj, ok := w.(http.Hijacker)
+				if !ok {
+					t.Fatal("response writer does not support hijacking")
+				}
+				conn, bufrw, err := hj.Hijack()
+				if err != nil {
+					t.Fatalf("hijack: %v", err)
+				}
+				_, _ = bufrw.WriteString("HTTP/1.1 429 Too Many Requests\r\nContent-Type: text/plain\r\nRetry-After: 9\r\nContent-Length: 500\r\n\r\nRetry later\n")
+				_ = bufrw.Flush()
+				_ = conn.Close()
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			mustEncode(t, w, TokenResponse{AccessToken: "device-access-token", TokenType: "Bearer"})
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer srv.Close()
+
+	var waits []time.Duration
+	cfg := deviceFlowConfig(srv)
+	cfg.Sleep = func(_ context.Context, d time.Duration) error {
+		waits = append(waits, d)
+		return nil
+	}
+
+	if _, err := DeviceFlowResult(context.Background(), cfg, &strings.Builder{}); err != nil {
+		t.Fatalf("DeviceFlowResult should survive an unreadable throttled body, got: %v", err)
+	}
+	if polls != 2 {
+		t.Fatalf("got %d token polls, want 2 (unreadable 429, approved)", polls)
+	}
+	if len(waits) != 2 || waits[1] < 9*time.Second {
+		t.Fatalf("got waits %v, want the second wait to honor Retry-After 9s", waits)
+	}
+}
+
 func TestDeviceFlow_NonRetryableStatusFailsFast(t *testing.T) {
 	polls := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/oauth/device/code":
-			mustEncode(t, w, DeviceCodeResponse{
-				DeviceCode:      "device-code-123",
-				UserCode:        "GRD-ABCD-1234",
-				VerificationURI: "https://gumroad.com/oauth/device",
-				ExpiresIn:       600,
-				Interval:        1,
-			})
+			mustEncode(t, w, deviceCodeResponse())
 		case "/oauth/token":
 			polls++
-			// A 403 with no OAuth error body is a refusal the server does
-			// not intend to clear, so it must not be retried.
 			w.WriteHeader(http.StatusForbidden)
 			_, _ = w.Write([]byte("Forbidden\n"))
 		default:
