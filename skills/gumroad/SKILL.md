@@ -38,7 +38,7 @@ Always follow these rules:
 - Pass `--dry-run` to preview mutating requests without executing them.
 - Use `--page-delay 200ms` with `--all` to avoid rate limits on large datasets.
 - Prices are in whole currency units (e.g. `--price 10.00` for $10), not cents. The CLI converts internally. Use `--currency eur` to change currency.
-- Products are created as drafts — use `gumroad products publish <id>` to make them live.
+- Products are published immediately on create. Pass `--draft` to save an unpublished draft instead, then `gumroad products publish <id>` to make it live; `gumroad products unpublish <id>` takes a published product down. If the account cannot publish yet (unconfirmed email, no payout method), create still succeeds but saves a draft and prints the reason.
 - Product cover and thumbnail uploads support JPEG, PNG, and GIF. WebP is not supported by the API and the CLI rejects it before upload.
 - Product custom HTML landing pages use `gumroad products page preview <id> ./landing.html` to run the backend sanitizer without writing, `gumroad products page publish <id> ./landing.html` to store the page, `gumroad products page clear <id> --yes` to remove it, and `gumroad products page url <id>` to print the live URL. `--dry-run` only previews the CLI request body; it does not call the backend sanitizer. Inspect `.sanitization_report` in `preview` and `publish` JSON output for server-side changes.
 - Profile custom HTML landing pages mirror the product commands without a product id and without checkout: `gumroad user page preview ./landing.html`, `gumroad user page publish ./landing.html` (read from stdin with `-`), `gumroad user page clear --yes`, and `gumroad user page url` (prints the public profile URL and its `/landing/embed` URL). A profile has no buy button, so omit `data-gumroad-action="buy"` and the checkout data attributes; link to products instead.
@@ -99,7 +99,7 @@ Most responses are wrapped in `{"success": true, ...}` with resource-specific ke
 - `variants list` → `.variants[]`
 - `files upload` / `files complete` → `.file_url`
 - `media upload` → `.media` (`.id`, `.name`, `.url`, `.file_size`), `media list` → `.media[]`, `media delete` → `.message`
-- `products create` with media flags → `.product` plus `.media[]`
+- `products create` → `.product` (`.product.published` reports whether it went live; a blocked publish adds a top-level `.warning`); with media flags also `.media[]`
 - `products update` with media flags → `.product` plus `.media[]`
 - `products covers add --image` → `.result.covers[]`, `.result.main_cover_id`, plus `.result.media[]`
 - `products covers add --url` → `.result.covers[]`, `.result.main_cover_id`
@@ -361,8 +361,9 @@ gumroad products categories --search figma --json --no-input
 gumroad products comps --category design/ui-and-web/figma --json --no-input
 gumroad products comps --category music-and-sound-design --query "whoosh sfx" --json --no-input
 
-# Create a product (created as draft)
+# Create a product (published immediately; pass --draft to save it unpublished)
 gumroad products create --name "Art Pack" --price 10.00 --json --no-input
+gumroad products create --name "Art Pack" --price 10.00 --draft --json --no-input
 gumroad products create --name "Figma Kit" --category design/ui-and-web/figma --json --no-input
 gumroad products create --name "Art Pack" --price 10.00 --file ./pack.zip --file-name "Art Pack.zip" --json --no-input
 gumroad products create --name "Art Pack" --price 10.00 --cover-image ./cover.jpg --thumbnail ./thumb.jpg --json --no-input

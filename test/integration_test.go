@@ -179,11 +179,22 @@ func TestProductsHelpMentionsDraftWorkflow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("products --help failed: %v\n%s", err, out)
 	}
-	if !strings.Contains(out, "created as drafts") {
-		t.Fatalf("products help should mention draft workflow, got %q", out)
+	if !strings.Contains(out, "published immediately") {
+		t.Fatalf("products help should say new products are published immediately, got %q", out)
 	}
-	if !strings.Contains(out, "products publish") {
-		t.Fatalf("products help should mention publish command, got %q", out)
+	if !strings.Contains(out, "--draft") {
+		t.Fatalf("products help should mention the --draft flag, got %q", out)
+	}
+	if !strings.Contains(out, "products unpublish") {
+		t.Fatalf("products help should mention unpublish command, got %q", out)
+	}
+
+	createOut, err := runGR(t, bin, nil, "products", "create", "--help")
+	if err != nil {
+		t.Fatalf("products create --help failed: %v\n%s", err, createOut)
+	}
+	if !strings.Contains(createOut, "--draft") {
+		t.Fatalf("products create help should mention the --draft flag, got %q", createOut)
 	}
 }
 
