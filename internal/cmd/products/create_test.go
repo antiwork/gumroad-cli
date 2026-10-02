@@ -122,6 +122,23 @@ func TestCreate_WarningControlCharactersAreEscaped(t *testing.T) {
 	}
 }
 
+func TestCreate_BlockedPublishPlainKeepsColumnsAndWarnsOnStderr(t *testing.T) {
+	warning := "Saved as a draft: You have to confirm your email address before you can do that."
+	testutil.Setup(t, createProductHandler(t,
+		map[string]any{"id": "p1", "name": "Art Pack", "formatted_price": "$10", "published": false}, warning, nil))
+
+	cmd := testutil.Command(newCreateCmd(), testutil.PlainOutput())
+	cmd.SetArgs([]string{"--name", "Art Pack", "--price", "10.00"})
+	stdout, stderr := testutil.CaptureOutput(func() { testutil.MustExecute(t, cmd) })
+
+	if got := strings.TrimRight(stdout, "\n"); got != "p1	Art Pack	$10" {
+		t.Errorf("plain stdout = %q, want the three columns unchanged", got)
+	}
+	if !strings.Contains(stderr, warning) {
+		t.Errorf("expected the warning on stderr, got: %q", stderr)
+	}
+}
+
 func TestCreate_DryRunShowsDraftFlag(t *testing.T) {
 	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
 		t.Error("dry run should not reach the API")

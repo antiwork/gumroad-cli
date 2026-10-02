@@ -3,6 +3,7 @@ package products
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/url"
 	"sort"
 	"strconv"
@@ -511,9 +512,12 @@ func renderProductUploadDryRun(opts cmdutil.Options, plan upload.Plan) error {
 func renderCreateProductResult(opts cmdutil.Options, resp createProductResponse) error {
 	p := resp.Product
 	if opts.PlainOutput {
-		return output.PrintPlain(opts.Out(), [][]string{
+		if err := output.PrintPlain(opts.Out(), [][]string{
 			{p.ID, p.Name, p.FormattedPrice},
-		})
+		}); err != nil {
+			return err
+		}
+		return writeCreateWarning(opts.Err(), resp.Warning)
 	}
 	if opts.Quiet {
 		return nil
@@ -527,11 +531,18 @@ func renderCreateProductResult(opts cmdutil.Options, resp createProductResponse)
 		s.Bold(headline), p.Name, s.Dim(p.ID)); err != nil {
 		return err
 	}
-	if resp.Warning != "" {
-		if err := output.Writef(opts.Out(), "%s\n", output.EscapePlainField(resp.Warning)); err != nil {
-			return err
-		}
+	if err := writeCreateWarning(opts.Out(), resp.Warning); err != nil {
+		return err
 	}
 	return output.Writef(opts.Out(), "\n%s gumroad products %s %s\n",
 		s.Dim(followUp), verb, p.ID)
+}
+
+// writeCreateWarning reports a publish the server refused. It is written to a
+// separate stream for --plain so the three-column stdout contract survives.
+func writeCreateWarning(w io.Writer, warning string) error {
+	if warning == "" {
+		return nil
+	}
+	return output.Writef(w, "%s\n", output.EscapePlainField(warning))
 }
