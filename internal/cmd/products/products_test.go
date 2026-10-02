@@ -414,11 +414,14 @@ func TestDelete_RequiresConfirmation(t *testing.T) {
 
 func TestNewProductsCmd_HelpMentionsDraftWorkflow(t *testing.T) {
 	cmd := NewProductsCmd()
-	if !strings.Contains(cmd.Long, "created as drafts") {
-		t.Fatalf("expected products help to mention draft workflow, got %q", cmd.Long)
+	if !strings.Contains(cmd.Long, "published immediately") {
+		t.Fatalf("expected products help to say new products are published immediately, got %q", cmd.Long)
 	}
-	if !strings.Contains(cmd.Long, "gumroad products publish <id>") {
-		t.Fatalf("expected products help to mention publish command, got %q", cmd.Long)
+	if !strings.Contains(cmd.Long, "--draft") {
+		t.Fatalf("expected products help to mention the --draft flag, got %q", cmd.Long)
+	}
+	if !strings.Contains(cmd.Long, "gumroad products unpublish <id>") {
+		t.Fatalf("expected products help to mention the unpublish command, got %q", cmd.Long)
 	}
 }
 
@@ -512,7 +515,7 @@ func TestCreate_Success(t *testing.T) {
 		gotForm = r.PostForm
 		testutil.JSON(t, w, map[string]any{
 			"product": map[string]any{
-				"id": "newprod1", "name": "Art Pack",
+				"id": "newprod1", "name": "Art Pack", "published": true,
 				"formatted_price": "$10", "sales_count": 0,
 			},
 		})
@@ -540,11 +543,11 @@ func TestCreate_Success(t *testing.T) {
 	if len(tags) != 2 || tags[0] != "art" || tags[1] != "digital" {
 		t.Errorf("got tags=%v, want [art digital]", tags)
 	}
-	if !strings.Contains(out, "Created draft product:") || !strings.Contains(out, "newprod1") {
+	if !strings.Contains(out, "Created and published product:") || !strings.Contains(out, "newprod1") {
 		t.Errorf("expected create confirmation, got: %q", out)
 	}
-	if !strings.Contains(out, "Publish with:") || !strings.Contains(out, "gumroad products publish") {
-		t.Errorf("expected publish tip with publish command, got: %q", out)
+	if !strings.Contains(out, "Unpublish with:") || !strings.Contains(out, "gumroad products unpublish") {
+		t.Errorf("expected unpublish tip with unpublish command, got: %q", out)
 	}
 }
 

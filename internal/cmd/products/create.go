@@ -31,7 +31,9 @@ type createProductResponse struct {
 		ID             string `json:"id"`
 		Name           string `json:"name"`
 		FormattedPrice string `json:"formatted_price"`
+		Published      bool   `json:"published"`
 	} `json:"product"`
+	Warning string `json:"warning"`
 }
 
 var validProductTypes = map[string]bool{
@@ -82,7 +84,7 @@ func newCreateCmd() *cobra.Command {
 	var customSummary, customReceipt, subscriptionDuration, category, taxonomyID string
 	var price, suggestedPrice string
 	var maxPurchaseCount int
-	var payWhatYouWant bool
+	var payWhatYouWant, draft bool
 	var tags []string
 	var files, fileNames, fileDescriptions []string
 	var coverImage, thumbnail string
@@ -92,8 +94,14 @@ func newCreateCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "create",
-		Short: "Create a new product (as draft)",
+		Short: "Create a new product",
+		Long: "Create a new product.\n\n" +
+			"The product is published immediately unless you pass --draft, which saves it unpublished " +
+			"until you run `gumroad products publish <id>`. If your account cannot publish yet (for example " +
+			"an unconfirmed email address or no payout method), the product is saved as a draft and the " +
+			"reason is printed.",
 		Example: `  gumroad products create --name "Art Pack" --price 10.00
+  gumroad products create --name "Art Pack" --price 10.00 --draft
   gumroad products create --name "Art Pack" --file ./pack.zip --file-name "Art Pack.zip"
   gumroad products create --name "Art Pack" --cover-image ./cover.jpg --thumbnail ./thumb.jpg
   gumroad products create --name "Figma Kit" --category design/ui-and-web/figma
@@ -147,6 +155,9 @@ func newCreateCmd() *cobra.Command {
 			params := url.Values{}
 			params.Set("name", name)
 			params.Set("native_type", nativeType)
+			if flags.Changed("draft") {
+				params.Set("draft", strconv.FormatBool(draft))
+			}
 			currency = strings.ToLower(currency)
 			if flags.Changed("price") {
 				cents, err := cmdutil.ParseMoney("price", price, "price", currency)
@@ -291,6 +302,7 @@ func newCreateCmd() *cobra.Command {
 	cmd.Flags().StringVar(&customSummary, "custom-summary", "", "Short summary")
 	cmd.Flags().StringVar(&customReceipt, "custom-receipt", "", "Custom receipt text")
 	cmd.Flags().BoolVar(&payWhatYouWant, "pay-what-you-want", false, "Enable pay-what-you-want pricing")
+	cmd.Flags().BoolVar(&draft, "draft", false, "Save the product as an unpublished draft instead of publishing it")
 	cmd.Flags().StringVar(&suggestedPrice, "suggested-price", "", "Suggested price for pay-what-you-want (e.g. 5, 5.00)")
 	cmd.Flags().IntVar(&maxPurchaseCount, "max-purchase-count", 0, "Maximum number of purchases (inventory limit)")
 	cmd.Flags().StringVar(&category, "category", "", "Product category path (for example: design/ui-and-web/figma)")
@@ -507,10 +519,19 @@ func renderCreateProductResult(opts cmdutil.Options, resp createProductResponse)
 		return nil
 	}
 	s := opts.Style()
+	headline, followUp, verb := "Created draft product:", "Publish with:", "publish"
+	if p.Published {
+		headline, followUp, verb = "Created and published product:", "Unpublish with:", "unpublish"
+	}
 	if err := output.Writef(opts.Out(), "%s %s (%s)\n",
-		s.Bold("Created draft product:"), p.Name, s.Dim(p.ID)); err != nil {
+		s.Bold(headline), p.Name, s.Dim(p.ID)); err != nil {
 		return err
 	}
-	return output.Writef(opts.Out(), "\n%s gumroad products publish %s\n",
-		s.Dim("Publish with:"), p.ID)
+	if resp.Warning != "" {
+		if err := output.Writef(opts.Out(), "%s\n", output.EscapePlainField(resp.Warning)); err != nil {
+			return err
+		}
+	}
+	return output.Writef(opts.Out(), "\n%s gumroad products %s %s\n",
+		s.Dim(followUp), verb, p.ID)
 }

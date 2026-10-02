@@ -133,6 +133,7 @@ func (srv *createUploadServers) dispatch(t *testing.T) http.HandlerFunc {
 					"id":              "prod-upload",
 					"name":            body["name"],
 					"formatted_price": "$10",
+					"published":       true,
 				},
 			})
 		default:
@@ -309,14 +310,35 @@ func TestCreate_WithFiles_UploadsAndPostsIndexedFields(t *testing.T) {
 	if completeCalls != 2 {
 		t.Fatalf("complete calls = %d, want 2", completeCalls)
 	}
-	if !strings.Contains(out, "Created draft product:") || !strings.Contains(out, "prod-upload") {
+	if !strings.Contains(out, "Created and published product:") || !strings.Contains(out, "prod-upload") {
 		t.Fatalf("unexpected output: %q", out)
+	}
+}
+
+func TestCreate_WithFiles_DryRunJSONIncludesDraftFlag(t *testing.T) {
+	testutil.Setup(t, func(http.ResponseWriter, *http.Request) {
+		t.Fatal("dry run must not reach the API")
+	})
+
+	path := writeCreateFixture(t, "draft")
+
+	cmd := testutil.Command(newCreateCmd(), testutil.DryRun(true), testutil.JSONOutput())
+	cmd.SetArgs([]string{"--name", "Art Pack", "--file", path, "--draft"})
+
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	var payload dryRunCreatePayload
+	if err := json.Unmarshal([]byte(out), &payload); err != nil {
+		t.Fatalf("parse JSON: %v\n%s", err, out)
+	}
+	if got := payload.Request.Body["draft"]; got != "true" {
+		t.Fatalf("request body draft = %#v, want \"true\"", got)
 	}
 }
 
 func TestCreate_WithFilesJSONPreservesRawProductResponseWithoutMedia(t *testing.T) {
 	srv := newCreateUploadServers(t)
-	srv.productResponse = json.RawMessage(`{"product":{"id":"prod-upload","rank":1.0}}`)
+	srv.productResponse = json.RawMessage(`{"product":{"id":"prod-upload","published":true,"rank":1.0}}`)
 	testutil.Setup(t, srv.dispatch(t))
 
 	firstPath := writeCreateFixture(t, "first")

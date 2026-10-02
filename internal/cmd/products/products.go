@@ -11,9 +11,10 @@ func NewProductsCmd() *cobra.Command {
 		Short: "Manage products",
 		Long: "Manage products.\n\n" +
 			"Create, update, list, view, delete, publish, and unpublish products. " +
-			"New products are created as drafts; use `gumroad products publish <id>` to publish.",
+			"New products are published immediately unless you pass `--draft`; use `gumroad products unpublish <id>` to take a published product down.",
 		Example: `  gumroad products list
   gumroad products create --name "Art Pack" --price 10.00
+  gumroad products create --name "Art Pack" --price 10.00 --draft
   gumroad products create --name "Art Pack" --file ./pack.zip --file-name "Art Pack.zip"
   gumroad products create --name "Art Pack" --cover-image ./cover.jpg --thumbnail ./thumb.jpg
   gumroad products categories --search figma
