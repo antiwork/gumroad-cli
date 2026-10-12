@@ -764,6 +764,9 @@ func exchangeCodeOnce(ctx context.Context, cfg FlowConfig, data url.Values, admi
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
+		if parseOAuthError(body).Error != "" {
+			return FlowResult{}, oauthHTTPError("token exchange failed", resp.StatusCode, body)
+		}
 		readErr := fmt.Errorf("could not read token response: %w", err)
 		if isRetryablePollStatus(resp.StatusCode) {
 			return FlowResult{}, &transientPollError{err: readErr, retryAfter: retryAfterWait(resp), statusCode: resp.StatusCode}

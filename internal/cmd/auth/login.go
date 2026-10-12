@@ -44,7 +44,10 @@ func newLoginCmd() *cobra.Command {
 			"By default, starts device authorization and waits for approval.\n" +
 			"Use --web to force the local browser OAuth flow.\n" +
 			"Use --with-token to read an existing seller token from stdin.\n" +
-			"Piped stdin without --with-token is still accepted for compatibility.",
+			"Piped stdin without --with-token is still accepted for compatibility.\n\n" +
+			"If the token endpoint is rate limited or briefly unavailable, login waits and retries,\n" +
+			"honoring Retry-After. --web prints a line before each wait and, when the throttle outlasts\n" +
+			"the authorization code, fails with how long to wait before running login again.",
 		Example: "  # Device authorization login (default)\n" +
 			"  gumroad auth login\n\n" +
 			"  # Local browser OAuth\n" +

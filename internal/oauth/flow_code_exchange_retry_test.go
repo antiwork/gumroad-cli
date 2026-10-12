@@ -290,7 +290,7 @@ func TestBrowserFlow_ThrottledExchangeOutlivesAuthorizationTimeout(t *testing.T)
 	defer srv.Close()
 
 	cfg := exchangeTestConfig(srv)
-	cfg.AuthorizeURL = "http://unused/oauth/authorize"
+	cfg.AuthorizeURL = "http://example.com/oauth/authorize"
 	cfg.Timeout = 200 * time.Millisecond
 	cfg.Sleep = func(ctx context.Context, d time.Duration) error {
 		return sleepContext(ctx, cfg.Timeout+100*time.Millisecond)
@@ -403,5 +403,36 @@ func TestExchangeCodeResult_UnreadableApprovalIsNotRetried(t *testing.T) {
 	}
 	if requests != 1 {
 		t.Fatalf("got %d token requests, want 1 (the code may already be spent)", requests)
+	}
+}
+
+func TestExchangeCodeResult_UnreadableThrottleWithOAuthErrorIsNotRetried(t *testing.T) {
+	requests := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		hj, ok := w.(http.Hijacker)
+		if !ok {
+			t.Fatal("response writer does not support hijacking")
+		}
+		conn, bufrw, err := hj.Hijack()
+		if err != nil {
+			t.Fatalf("hijack: %v", err)
+		}
+		_, _ = bufrw.WriteString("HTTP/1.1 429 Too Many Requests\r\nContent-Type: application/json\r\nRetry-After: 5\r\nContent-Length: 500\r\n\r\n{\"error\":\"invalid_grant\"}")
+		_ = bufrw.Flush()
+		_ = conn.Close()
+	}))
+	defer srv.Close()
+
+	cfg := exchangeTestConfig(srv)
+	var clock fakeClock
+	clock.configure(&cfg)
+
+	_, err := exchangeCodeResult(context.Background(), cfg, callbackPayload{Code: "auth-code"}, "http://127.0.0.1/callback", "verifier")
+	if err == nil || !strings.Contains(err.Error(), "token exchange failed: invalid_grant (HTTP 429)") {
+		t.Fatalf("got error %v, want the invalid_grant OAuth error", err)
+	}
+	if requests != 1 || len(clock.waits) != 0 {
+		t.Fatalf("got %d requests and waits %v, want 1 request and no wait for an OAuth error", requests, clock.waits)
 	}
 }
