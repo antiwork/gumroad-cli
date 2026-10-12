@@ -196,7 +196,7 @@ gumroad auth login --web
 gumroad auth logout --yes --no-input
 ```
 
-Both login paths retry a token endpoint that answers `408`, `429`, `500`, `502`, `503` or `504`, waiting at least as long as `Retry-After` asks. A throttle that outlasts the retry window ends the login with the throttle named rather than a bare `HTTP 429`; nothing was stored, so the remedy is to wait and run the login again.
+Both login paths retry a token endpoint that answers `408`, `429`, `500`, `502`, `503` or `504`, waiting at least as long as `Retry-After` asks. With `--web`, the CLI prints a line to stderr before each wait and keeps retrying until shortly before the authorization code expires; a throttle that outlasts that ends the login with the throttle named rather than a bare `HTTP 429`. Nothing was stored, so the remedy is to wait and run the login again.
 
 ### user — Account info
 

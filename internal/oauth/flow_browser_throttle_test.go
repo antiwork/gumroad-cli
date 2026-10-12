@@ -156,7 +156,7 @@ func TestBrowserFlow_RetriesTransportFailureOnExchange(t *testing.T) {
 	}
 }
 
-func TestBrowserFlow_ThrottleBeyondBudgetIsReportedNotWaited(t *testing.T) {
+func TestBrowserFlow_ThrottleBeyondCodeLifetimeIsReportedNotWaited(t *testing.T) {
 	var exchanges int
 	srv := exchangeThrottleServer(t, 1, "3600", http.StatusTooManyRequests, &exchanges)
 	defer srv.Close()
@@ -180,7 +180,7 @@ func TestBrowserFlow_ThrottleBeyondBudgetIsReportedNotWaited(t *testing.T) {
 	}
 }
 
-func TestBrowserFlow_ExchangeGivesUpAfterTheBudget(t *testing.T) {
+func TestBrowserFlow_StandingThrottleGivesUpAfterMaxAttempts(t *testing.T) {
 	var exchanges int
 	srv := exchangeThrottleServer(t, 100, "6", http.StatusTooManyRequests, &exchanges)
 	defer srv.Close()
@@ -188,20 +188,18 @@ func TestBrowserFlow_ExchangeGivesUpAfterTheBudget(t *testing.T) {
 	var waits []time.Duration
 	_, err := authorizeInBrowser(t, exchangeConfig(srv, &waits))
 	if err == nil {
-		t.Fatal("expected the login to give up once the retry budget is spent")
+		t.Fatal("expected the login to give up once the attempts run out")
 	}
 	if !strings.Contains(err.Error(), "rate limiting") {
 		t.Fatalf("got error %q, want it to name the throttle", err)
 	}
-	waited := time.Duration(0)
-	for _, wait := range waits {
-		waited += wait
+	if exchanges != maxExchangeAttempts || len(waits) != maxExchangeAttempts-1 {
+		t.Fatalf("got %d token exchanges and %d waits, want %d exchanges and %d waits", exchanges, len(waits), maxExchangeAttempts, maxExchangeAttempts-1)
 	}
-	if waited != exchangeRetryBudget {
-		t.Fatalf("got waits %v totalling %s, want exactly the %s budget", waits, waited, exchangeRetryBudget)
-	}
-	if exchanges != len(waits)+1 {
-		t.Fatalf("got %d token exchanges for %d waits, want one more exchange than waits", exchanges, len(waits))
+	for i, wait := range waits {
+		if wait != 6*time.Second {
+			t.Fatalf("wait %d = %s, want the 6s Retry-After", i+1, wait)
+		}
 	}
 }
 
@@ -500,5 +498,94 @@ func TestBrowserFlow_ExchangeStopsAfterMaxAttempts(t *testing.T) {
 	}
 	if exchanges != maxExchangeAttempts || len(waits) != maxExchangeAttempts-1 {
 		t.Fatalf("got %d exchanges and %d waits, want %d exchanges and %d waits", exchanges, len(waits), maxExchangeAttempts, maxExchangeAttempts-1)
+	}
+}
+
+// fakeClock advances only when the exchange sleeps, so a test controls how
+// much of the code's lifetime the retries use.
+type fakeClock struct {
+	now   time.Time
+	waits []time.Duration
+}
+
+func (c *fakeClock) configure(cfg *FlowConfig) {
+	c.now = time.Date(2026, 10, 12, 12, 0, 0, 0, time.UTC)
+	cfg.now = func() time.Time { return c.now }
+	cfg.Sleep = func(_ context.Context, d time.Duration) error {
+		c.waits = append(c.waits, d)
+		c.now = c.now.Add(d)
+		return nil
+	}
+}
+
+func TestBrowserFlow_WaitsOutThrottleLongerThanThirtySeconds(t *testing.T) {
+	var exchanges int
+	srv := exchangeThrottleServer(t, 1, "60", http.StatusTooManyRequests, &exchanges)
+	defer srv.Close()
+
+	cfg := testConfig(srv)
+	var clock fakeClock
+	clock.configure(&cfg)
+
+	result, err := authorizeInBrowser(t, cfg)
+	if err != nil {
+		t.Fatalf("browser login should wait out a 60s throttle inside the code lifetime, got: %v", err)
+	}
+	if result.AccessToken != "browser-access-token" {
+		t.Fatalf("got access token %q, want browser-access-token", result.AccessToken)
+	}
+	if exchanges != 2 || fmt.Sprint(clock.waits) != fmt.Sprint([]time.Duration{time.Minute}) {
+		t.Fatalf("got %d exchanges and waits %v, want 2 exchanges and one 1m0s wait", exchanges, clock.waits)
+	}
+}
+
+func TestExchangeCodeResult_StopsBeforeTheCodeExpires(t *testing.T) {
+	var exchanges int
+	srv := exchangeThrottleServer(t, 100, "240", http.StatusTooManyRequests, &exchanges)
+	defer srv.Close()
+
+	cfg := testConfig(srv)
+	var clock fakeClock
+	clock.configure(&cfg)
+
+	_, err := exchangeCodeResult(context.Background(), cfg, callbackPayload{Code: "auth-code"}, "http://127.0.0.1/callback", "verifier")
+	if err == nil || !strings.Contains(err.Error(), "rate limiting") {
+		t.Fatalf("got error %v, want the throttle named", err)
+	}
+	want := []time.Duration{240 * time.Second, 240 * time.Second}
+	if exchanges != 3 || fmt.Sprint(clock.waits) != fmt.Sprint(want) {
+		t.Fatalf("got %d exchanges and waits %v, want 3 exchanges and waits %v (a third 4m wait would pass 9m)", exchanges, clock.waits, want)
+	}
+}
+
+func TestExchangeCodeResult_ReportsRetryWaitsToStatusWriter(t *testing.T) {
+	exchanges := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		exchanges++
+		switch exchanges {
+		case 1:
+			w.Header().Set("Retry-After", "240")
+			w.WriteHeader(http.StatusTooManyRequests)
+		case 2:
+			w.WriteHeader(http.StatusServiceUnavailable)
+		default:
+			w.Header().Set("Content-Type", "application/json")
+			mustEncode(t, w, TokenResponse{AccessToken: "browser-access-token", TokenType: "Bearer"})
+		}
+	}))
+	defer srv.Close()
+
+	var status strings.Builder
+	cfg := testConfig(srv)
+	cfg.StatusWriter = &status
+	var clock fakeClock
+	clock.configure(&cfg)
+
+	if _, err := exchangeCodeResult(context.Background(), cfg, callbackPayload{Code: "auth-code"}, "http://127.0.0.1/callback", "verifier"); err != nil {
+		t.Fatalf("exchangeCodeResult: %v", err)
+	}
+	want := "Gumroad is rate limiting login requests; retrying in 4m0s...\nLogin request failed; retrying in 2s...\n"
+	if status.String() != want {
+		t.Fatalf("status output = %q, want %q", status.String(), want)
 	}
 }

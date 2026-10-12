@@ -59,12 +59,29 @@ type FlowConfig struct {
 	HTTPClient    *http.Client // optional; defaults to http.DefaultClient
 	Sleep         func(context.Context, time.Duration) error
 	DebugWriter   io.Writer // optional; when set, poll attempts and outcomes are logged
+	StatusWriter  io.Writer // optional; when set, exchange retry waits are reported to the user
+
+	now func() time.Time
 }
 
 // tokenRequestTimeout caps how long a single token endpoint request can hang.
 // Without it, a dead reused connection stalls a request for the full flow
 // timeout (2 minutes) with no feedback before the next attempt.
 const tokenRequestTimeout = 30 * time.Second
+
+func (cfg FlowConfig) currentTime() time.Time {
+	if cfg.now != nil {
+		return cfg.now()
+	}
+	return time.Now()
+}
+
+func (cfg FlowConfig) statusf(format string, args ...any) {
+	if cfg.StatusWriter == nil {
+		return
+	}
+	fmt.Fprintf(cfg.StatusWriter, format+"\n", args...)
+}
 
 func (cfg FlowConfig) debugf(format string, args ...any) {
 	if cfg.DebugWriter == nil {
@@ -665,15 +682,14 @@ func extractCallbackPayload(q url.Values, expectedState string) (callbackPayload
 	return callbackPayload{Code: code, AdminCode: adminCode}, nil
 }
 
-// exchangeRetryBudget bounds how long a login waits out a throttled token
-// exchange. The authorization code stays valid for ten minutes server-side,
-// but a seller watching the terminal reads a longer silence as a hang, so a
-// wait beyond this is reported instead of taken.
-const exchangeRetryBudget = 30 * time.Second
+// exchangeRetryWindow bounds how long a login keeps retrying a throttled token
+// exchange. The server issues authorization codes that expire after 10 minutes
+// (Doorkeeper's authorization_code_expires_in in antiwork/gumroad); stopping a
+// minute short keeps a retry from spending the seller's wait on an expired code.
+const exchangeRetryWindow = 9 * time.Minute
 
-// maxExchangeAttempts bounds the exchange in wall time as well: the budget
-// counts only waits, and each attempt can take up to tokenRequestTimeout, so
-// six attempts keep the exchange well inside the code's ten-minute lifetime.
+// maxExchangeAttempts caps the requests a throttled login sends, because each
+// retry counts against the same rate limit that throttled it.
 const maxExchangeAttempts = 6
 
 // exchangeRetryBackoff is the first wait after a retryable exchange that named
@@ -702,7 +718,7 @@ func exchangeCodeResult(ctx context.Context, cfg FlowConfig, payload callbackPay
 		cfg.Sleep = sleepContext
 	}
 
-	waited := time.Duration(0)
+	giveUpAt := cfg.currentTime().Add(exchangeRetryWindow)
 	for attempt := 1; ; attempt++ {
 		result, err := exchangeCodeOnce(ctx, cfg, payload, redirectURI, verifier)
 		if err == nil {
@@ -718,11 +734,15 @@ func exchangeCodeResult(ctx context.Context, cfg FlowConfig, payload callbackPay
 		if wait <= 0 {
 			wait = exchangeBackoff(attempt)
 		}
-		if attempt >= maxExchangeAttempts || waited+wait > exchangeRetryBudget {
+		if attempt >= maxExchangeAttempts || wait >= giveUpAt.Sub(cfg.currentTime()) {
 			return FlowResult{}, exchangeRefusedError(transient)
 		}
-		waited += wait
 		cfg.debugf("token exchange attempt=%d outcome=retryable wait=%s err=%q", attempt, wait, err)
+		if transient.status == http.StatusTooManyRequests {
+			cfg.statusf("Gumroad is rate limiting login requests; retrying in %s...", wait.Round(time.Second))
+		} else {
+			cfg.statusf("Login request failed; retrying in %s...", wait.Round(time.Second))
+		}
 
 		if sleepErr := cfg.Sleep(ctx, wait); sleepErr != nil {
 			if errors.Is(sleepErr, context.DeadlineExceeded) {
@@ -735,7 +755,7 @@ func exchangeCodeResult(ctx context.Context, cfg FlowConfig, payload callbackPay
 
 func exchangeBackoff(attempt int) time.Duration {
 	wait := exchangeRetryBackoff
-	for i := 1; i < attempt && wait < exchangeRetryBudget; i++ {
+	for i := 1; i < attempt; i++ {
 		wait *= 2
 	}
 	return wait
