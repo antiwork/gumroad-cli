@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -384,4 +385,105 @@ func printedState(t *testing.T, printed string) string {
 	}
 	t.Fatal("could not find the authorize URL in the flow output")
 	return ""
+}
+
+func TestBrowserFlow_RetryableStatusCarryingOAuthErrorIsNotRetried(t *testing.T) {
+	for _, status := range []int{http.StatusTooManyRequests, http.StatusServiceUnavailable} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			exchanges := 0
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				exchanges++
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(status)
+				_, _ = w.Write([]byte(`{"error":"invalid_grant"}`))
+			}))
+			defer srv.Close()
+
+			var waits []time.Duration
+			_, err := authorizeInBrowser(t, exchangeConfig(srv, &waits))
+			want := fmt.Sprintf("token exchange failed: invalid_grant (HTTP %d)", status)
+			if err == nil || !strings.Contains(err.Error(), want) {
+				t.Fatalf("got error %v, want %q", err, want)
+			}
+			if exchanges != 1 || len(waits) != 0 {
+				t.Fatalf("got %d exchanges and waits %v, want 1 exchange and no wait for an OAuth error", exchanges, waits)
+			}
+		})
+	}
+}
+
+func TestBrowserFlow_CutOffThrottleCarryingOAuthErrorIsNotRetried(t *testing.T) {
+	exchanges := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		exchanges++
+		hijackShortBody(t, w, "HTTP/1.1 429 Too Many Requests\r\nContent-Type: application/json\r\nRetry-After: 5\r\nContent-Length: 500\r\n\r\n{\"error\":\"invalid_grant\"}")
+	}))
+	defer srv.Close()
+
+	var waits []time.Duration
+	_, err := authorizeInBrowser(t, exchangeConfig(srv, &waits))
+	if err == nil || !strings.Contains(err.Error(), "token exchange failed: invalid_grant (HTTP 429)") {
+		t.Fatalf("got error %v, want the invalid_grant OAuth error", err)
+	}
+	if exchanges != 1 || len(waits) != 0 {
+		t.Fatalf("got %d exchanges and waits %v, want 1 exchange and no wait for an OAuth error", exchanges, waits)
+	}
+}
+
+func TestBrowserFlow_ThrottledExchangeOutlivesAuthorizationTimeout(t *testing.T) {
+	var exchanges int
+	srv := exchangeThrottleServer(t, 1, "1", http.StatusTooManyRequests, &exchanges)
+	defer srv.Close()
+
+	cfg := testConfig(srv)
+	cfg.Timeout = 200 * time.Millisecond
+	cfg.Sleep = func(ctx context.Context, d time.Duration) error {
+		return sleepContext(ctx, cfg.Timeout+100*time.Millisecond)
+	}
+
+	result, err := authorizeInBrowser(t, cfg)
+	if err != nil {
+		t.Fatalf("browser login should finish a throttled exchange after the authorization wait ends, got: %v", err)
+	}
+	if result.AccessToken != "browser-access-token" {
+		t.Fatalf("got access token %q, want browser-access-token", result.AccessToken)
+	}
+	if exchanges != 2 {
+		t.Fatalf("got %d token exchanges, want 2 (throttled, approved)", exchanges)
+	}
+}
+
+func TestExchangeCodeResult_HungRequestIsCappedAndRetried(t *testing.T) {
+	var exchanges atomic.Int32
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if exchanges.Add(1) == 1 {
+			select {
+			case <-r.Context().Done():
+			case <-release:
+			}
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		mustEncode(t, w, TokenResponse{AccessToken: "browser-access-token", TokenType: "Bearer"})
+	}))
+	defer srv.Close()
+	defer close(release)
+
+	var waits []time.Duration
+	cfg := exchangeConfig(srv, &waits)
+	cfg.Timeout = 100 * time.Millisecond
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	result, err := exchangeCodeResult(ctx, cfg, callbackPayload{Code: "auth-code"}, "http://127.0.0.1/callback", "verifier")
+	if err != nil {
+		t.Fatalf("exchangeCodeResult should retry a hung request on a fresh attempt, got: %v", err)
+	}
+	if result.AccessToken != "browser-access-token" {
+		t.Fatalf("got access token %q, want browser-access-token", result.AccessToken)
+	}
+	if got := exchanges.Load(); got != 2 {
+		t.Fatalf("got %d token exchanges, want 2 (hung, approved)", got)
+	}
 }
