@@ -59,12 +59,31 @@ type FlowConfig struct {
 	HTTPClient    *http.Client // optional; defaults to http.DefaultClient
 	Sleep         func(context.Context, time.Duration) error
 	DebugWriter   io.Writer // optional; when set, poll attempts and outcomes are logged
+	StatusWriter  io.Writer // optional; when set, exchange retry waits are reported to the user
+
+	now func() time.Time
 }
 
-// devicePollRequestTimeout caps how long a single device token poll can hang.
-// Without it, a dead reused connection stalls a poll for the full flow timeout
-// (2 minutes) with no feedback before the next attempt.
-const devicePollRequestTimeout = 30 * time.Second
+// tokenRequestTimeout caps how long a single token endpoint request can hang.
+// Without it, a dead reused connection stalls a request for the full flow
+// timeout (2 minutes) with no feedback before the next attempt.
+const tokenRequestTimeout = 30 * time.Second
+
+// currentTime reads the wall clock, without Go's monotonic reading, so a
+// laptop that slept through a retry wait still sees the code's real age.
+func (cfg FlowConfig) currentTime() time.Time {
+	if cfg.now != nil {
+		return cfg.now()
+	}
+	return time.Now().Round(0)
+}
+
+func (cfg FlowConfig) statusf(format string, args ...any) {
+	if cfg.StatusWriter == nil {
+		return
+	}
+	fmt.Fprintf(cfg.StatusWriter, format+"\n", args...)
+}
 
 func (cfg FlowConfig) debugf(format string, args ...any) {
 	if cfg.DebugWriter == nil {
@@ -138,7 +157,7 @@ func BrowserFlowResult(ctx context.Context, cfg FlowConfig, openBrowser func(str
 		cfg.HTTPClient = http.DefaultClient
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, cfg.Timeout)
+	authCtx, cancel := context.WithTimeout(ctx, cfg.Timeout)
 	defer cancel()
 
 	// Bind ephemeral port.
@@ -198,20 +217,13 @@ func BrowserFlowResult(ctx context.Context, cfg FlowConfig, openBrowser func(str
 	var result callbackResult
 	select {
 	case result = <-resultCh:
-	case <-ctx.Done():
-		if ctx.Err() != context.DeadlineExceeded {
+	case <-authCtx.Done():
+		if authCtx.Err() != context.DeadlineExceeded {
 			return FlowResult{}, fmt.Errorf("authorization cancelled")
 		}
 		// Drain resultCh in case the callback arrived at the exact deadline.
 		select {
 		case result = <-resultCh:
-			if result.Err != nil {
-				return FlowResult{}, result.Err
-			}
-			// Original ctx expired; give the token exchange its own deadline.
-			xctx, xcancel := context.WithTimeout(context.Background(), 30*time.Second)
-			defer xcancel()
-			return exchangeCodeResult(xctx, cfg, result.Payload, redirectURI, verifier)
 		default:
 			return FlowResult{}, fmt.Errorf("authorization timed out after %s", cfg.Timeout)
 		}
@@ -220,7 +232,9 @@ func BrowserFlowResult(ctx context.Context, cfg FlowConfig, openBrowser func(str
 		return FlowResult{}, result.Err
 	}
 
-	// Exchange code for token.
+	// The timeout covers waiting for the seller to authorize. The exchange
+	// that follows is limited by its own retry budget and per-request cap, so
+	// a seller who used most of the wait still gets the full retry.
 	return exchangeCodeResult(ctx, cfg, result.Payload, redirectURI, verifier)
 }
 
@@ -240,7 +254,7 @@ func HeadlessFlowResult(ctx context.Context, cfg FlowConfig, out io.Writer, read
 		cfg.HTTPClient = http.DefaultClient
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, cfg.Timeout)
+	readCtx, cancel := context.WithTimeout(ctx, cfg.Timeout)
 	defer cancel()
 
 	verifier, err := GenerateVerifier()
@@ -280,7 +294,7 @@ func HeadlessFlowResult(ctx context.Context, cfg FlowConfig, out io.Writer, read
 			return FlowResult{}, fmt.Errorf("could not read URL: %w", res.err)
 		}
 		line = res.line
-	case <-ctx.Done():
+	case <-readCtx.Done():
 		return FlowResult{}, fmt.Errorf("authorization timed out after %s", cfg.Timeout)
 	}
 
@@ -476,7 +490,7 @@ func pollDeviceTokenOnce(ctx context.Context, cfg FlowConfig, deviceCode string,
 		"device_code": {deviceCode},
 	}
 
-	requestCtx, cancel := devicePollContext(ctx, cfg)
+	requestCtx, cancel := tokenRequestContext(ctx, cfg)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(requestCtx, "POST", cfg.TokenURL, strings.NewReader(data.Encode()))
@@ -565,12 +579,12 @@ func requestContext(ctx context.Context, cfg FlowConfig) (context.Context, conte
 	return context.WithTimeout(ctx, cfg.Timeout)
 }
 
-// devicePollContext bounds a single device token poll. Polls are cheap and
-// repeated, so a poll hung on a dead reused connection should fail fast and
-// let the loop retry on a fresh attempt rather than stall for the full flow
-// timeout.
-func devicePollContext(ctx context.Context, cfg FlowConfig) (context.Context, context.CancelFunc) {
-	timeout := devicePollRequestTimeout
+// tokenRequestContext bounds a single token endpoint request. Device polls and
+// code exchange retries both repeat, so a request hung on a dead reused
+// connection should fail fast and let the loop retry on a fresh attempt rather
+// than stall for the full flow timeout.
+func tokenRequestContext(ctx context.Context, cfg FlowConfig) (context.Context, context.CancelFunc) {
+	timeout := tokenRequestTimeout
 	if cfg.Timeout > 0 && cfg.Timeout < timeout {
 		timeout = cfg.Timeout
 	}
@@ -670,11 +684,15 @@ func extractCallbackPayload(q url.Values, expectedState string) (callbackPayload
 	return callbackPayload{Code: code, AdminCode: adminCode}, nil
 }
 
-// exchangeRetryBudget bounds how long a login waits out a throttled token
-// exchange. The authorization code stays valid for ten minutes server-side,
-// but a seller watching the terminal reads a longer silence as a hang, so a
-// wait beyond this is reported instead of taken.
-const exchangeRetryBudget = 30 * time.Second
+// exchangeRetryWindow bounds how long a login keeps retrying a throttled token
+// exchange. The server issues authorization codes that expire after 10 minutes
+// (Doorkeeper's authorization_code_expires_in in antiwork/gumroad); stopping a
+// minute short keeps a retry from spending the seller's wait on an expired code.
+const exchangeRetryWindow = 9 * time.Minute
+
+// maxExchangeAttempts caps the requests a throttled login sends, because each
+// retry counts against the same rate limit that throttled it.
+const maxExchangeAttempts = 6
 
 // exchangeRetryBackoff is the first wait after a retryable exchange that named
 // no wait of its own; each further attempt doubles it.
@@ -702,7 +720,7 @@ func exchangeCodeResult(ctx context.Context, cfg FlowConfig, payload callbackPay
 		cfg.Sleep = sleepContext
 	}
 
-	waited := time.Duration(0)
+	giveUpAt := cfg.currentTime().Add(exchangeRetryWindow)
 	for attempt := 1; ; attempt++ {
 		result, err := exchangeCodeOnce(ctx, cfg, payload, redirectURI, verifier)
 		if err == nil {
@@ -718,11 +736,15 @@ func exchangeCodeResult(ctx context.Context, cfg FlowConfig, payload callbackPay
 		if wait <= 0 {
 			wait = exchangeBackoff(attempt)
 		}
-		if waited+wait > exchangeRetryBudget {
+		if attempt >= maxExchangeAttempts || wait >= giveUpAt.Sub(cfg.currentTime()) {
 			return FlowResult{}, exchangeRefusedError(transient)
 		}
-		waited += wait
 		cfg.debugf("token exchange attempt=%d outcome=retryable wait=%s err=%q", attempt, wait, err)
+		if transient.status == http.StatusTooManyRequests {
+			cfg.statusf("Gumroad is rate limiting login requests; retrying in %s...", wait.Round(time.Second))
+		} else {
+			cfg.statusf("Login request failed; retrying in %s...", wait.Round(time.Second))
+		}
 
 		if sleepErr := cfg.Sleep(ctx, wait); sleepErr != nil {
 			if errors.Is(sleepErr, context.DeadlineExceeded) {
@@ -730,12 +752,15 @@ func exchangeCodeResult(ctx context.Context, cfg FlowConfig, payload callbackPay
 			}
 			return FlowResult{}, fmt.Errorf("token exchange cancelled: %w", sleepErr)
 		}
+		if !cfg.currentTime().Before(giveUpAt) {
+			return FlowResult{}, exchangeRefusedError(transient)
+		}
 	}
 }
 
 func exchangeBackoff(attempt int) time.Duration {
 	wait := exchangeRetryBackoff
-	for i := 1; i < attempt && wait < exchangeRetryBudget; i++ {
+	for i := 1; i < attempt; i++ {
 		wait *= 2
 	}
 	return wait
@@ -760,7 +785,10 @@ func exchangeCodeOnce(ctx context.Context, cfg FlowConfig, payload callbackPaylo
 		"code_verifier": {verifier},
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", cfg.TokenURL, strings.NewReader(data.Encode()))
+	requestCtx, cancel := tokenRequestContext(ctx, cfg)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(requestCtx, "POST", cfg.TokenURL, strings.NewReader(data.Encode()))
 	if err != nil {
 		return FlowResult{}, fmt.Errorf("could not build token request: %w", err)
 	}
@@ -777,6 +805,9 @@ func exchangeCodeOnce(ctx context.Context, cfg FlowConfig, payload callbackPaylo
 		// A 200 means the app already issued the token and spent the code, so
 		// that read failure stays permanent; a throttled or failed response
 		// left the code usable and still carries Retry-After.
+		if parseOAuthError(body).Error != "" {
+			return FlowResult{}, oauthHTTPError("token exchange failed", resp.StatusCode, body)
+		}
 		if isRetryableTokenStatus(resp.StatusCode) {
 			return FlowResult{}, &transientExchangeError{err: fmt.Errorf("could not read token response: %w", err), retryAfter: retryAfterWait(resp), status: resp.StatusCode}
 		}
@@ -785,7 +816,7 @@ func exchangeCodeOnce(ctx context.Context, cfg FlowConfig, payload callbackPaylo
 
 	if resp.StatusCode != http.StatusOK {
 		statusErr := oauthHTTPError("token exchange failed", resp.StatusCode, body)
-		if !isRetryableTokenStatus(resp.StatusCode) {
+		if parseOAuthError(body).Error != "" || !isRetryableTokenStatus(resp.StatusCode) {
 			return FlowResult{}, statusErr
 		}
 		// Retrying is safe: the response carries no OAuth error, and a throttle
