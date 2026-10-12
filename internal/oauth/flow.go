@@ -69,11 +69,13 @@ type FlowConfig struct {
 // timeout (2 minutes) with no feedback before the next attempt.
 const tokenRequestTimeout = 30 * time.Second
 
+// currentTime reads the wall clock, without Go's monotonic reading, so a
+// laptop that slept through a retry wait still sees the code's real age.
 func (cfg FlowConfig) currentTime() time.Time {
 	if cfg.now != nil {
 		return cfg.now()
 	}
-	return time.Now()
+	return time.Now().Round(0)
 }
 
 func (cfg FlowConfig) statusf(format string, args ...any) {
@@ -749,6 +751,9 @@ func exchangeCodeResult(ctx context.Context, cfg FlowConfig, payload callbackPay
 				return FlowResult{}, exchangeRefusedError(transient)
 			}
 			return FlowResult{}, fmt.Errorf("token exchange cancelled: %w", sleepErr)
+		}
+		if !cfg.currentTime().Before(giveUpAt) {
+			return FlowResult{}, exchangeRefusedError(transient)
 		}
 	}
 }

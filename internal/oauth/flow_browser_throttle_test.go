@@ -589,3 +589,25 @@ func TestExchangeCodeResult_ReportsRetryWaitsToStatusWriter(t *testing.T) {
 		t.Fatalf("status output = %q, want %q", status.String(), want)
 	}
 }
+
+func TestExchangeCodeResult_StopsWhenAWaitOverranTheWindow(t *testing.T) {
+	var exchanges int
+	srv := exchangeThrottleServer(t, 1, "60", http.StatusTooManyRequests, &exchanges)
+	defer srv.Close()
+
+	cfg := testConfig(srv)
+	var clock fakeClock
+	clock.configure(&cfg)
+	cfg.Sleep = func(context.Context, time.Duration) error {
+		clock.now = clock.now.Add(exchangeRetryWindow)
+		return nil
+	}
+
+	_, err := exchangeCodeResult(context.Background(), cfg, callbackPayload{Code: "auth-code"}, "http://127.0.0.1/callback", "verifier")
+	if err == nil || !strings.Contains(err.Error(), "rate limiting") {
+		t.Fatalf("got error %v, want the throttle named", err)
+	}
+	if exchanges != 1 {
+		t.Fatalf("got %d token exchanges, want 1 (no request after the window passed during the wait)", exchanges)
+	}
+}
