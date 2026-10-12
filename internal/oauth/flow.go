@@ -671,6 +671,11 @@ func extractCallbackPayload(q url.Values, expectedState string) (callbackPayload
 // wait beyond this is reported instead of taken.
 const exchangeRetryBudget = 30 * time.Second
 
+// maxExchangeAttempts bounds the exchange in wall time as well: the budget
+// counts only waits, and each attempt can take up to tokenRequestTimeout, so
+// six attempts keep the exchange well inside the code's ten-minute lifetime.
+const maxExchangeAttempts = 6
+
 // exchangeRetryBackoff is the first wait after a retryable exchange that named
 // no wait of its own; each further attempt doubles it.
 const exchangeRetryBackoff = time.Second
@@ -713,7 +718,7 @@ func exchangeCodeResult(ctx context.Context, cfg FlowConfig, payload callbackPay
 		if wait <= 0 {
 			wait = exchangeBackoff(attempt)
 		}
-		if waited+wait > exchangeRetryBudget {
+		if attempt >= maxExchangeAttempts || waited+wait > exchangeRetryBudget {
 			return FlowResult{}, exchangeRefusedError(transient)
 		}
 		waited += wait

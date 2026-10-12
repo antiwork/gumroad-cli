@@ -487,3 +487,18 @@ func TestExchangeCodeResult_HungRequestIsCappedAndRetried(t *testing.T) {
 		t.Fatalf("got %d token exchanges, want 2 (hung, approved)", got)
 	}
 }
+
+func TestBrowserFlow_ExchangeStopsAfterMaxAttempts(t *testing.T) {
+	var exchanges int
+	srv := exchangeThrottleServer(t, 100, "1", http.StatusServiceUnavailable, &exchanges)
+	defer srv.Close()
+
+	var waits []time.Duration
+	_, err := authorizeInBrowser(t, exchangeConfig(srv, &waits))
+	if err == nil || !strings.Contains(err.Error(), "token exchange failed (HTTP 503)") {
+		t.Fatalf("got error %v, want the server fault reported", err)
+	}
+	if exchanges != maxExchangeAttempts || len(waits) != maxExchangeAttempts-1 {
+		t.Fatalf("got %d exchanges and %d waits, want %d exchanges and %d waits", exchanges, len(waits), maxExchangeAttempts, maxExchangeAttempts-1)
+	}
+}
