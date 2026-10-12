@@ -59,40 +59,12 @@ type FlowConfig struct {
 	HTTPClient    *http.Client // optional; defaults to http.DefaultClient
 	Sleep         func(context.Context, time.Duration) error
 	DebugWriter   io.Writer // optional; when set, poll attempts and outcomes are logged
-	StatusWriter  io.Writer // optional; when set, retry waits are reported to the user
-
-	now func() time.Time
 }
 
-// tokenRequestTimeout caps how long a single token endpoint request can hang.
-// Without it, a dead reused connection stalls a request for the full flow
-// timeout (2 minutes) with no feedback before the next attempt.
-const tokenRequestTimeout = 30 * time.Second
-
-const (
-	// codeExchangeWindow is how long the CLI keeps retrying a throttled
-	// authorization code exchange. The server issues codes that expire after
-	// 10 minutes (Doorkeeper's authorization_code_expires_in in
-	// antiwork/gumroad); the window stops a minute short so a retry never
-	// spends the seller's wait on a code that has already expired.
-	codeExchangeWindow         = 9 * time.Minute
-	maxCodeExchangeAttempts    = 5
-	initialCodeExchangeBackoff = 2 * time.Second
-)
-
-func (cfg FlowConfig) currentTime() time.Time {
-	if cfg.now != nil {
-		return cfg.now()
-	}
-	return time.Now()
-}
-
-func (cfg FlowConfig) statusf(format string, args ...any) {
-	if cfg.StatusWriter == nil {
-		return
-	}
-	fmt.Fprintf(cfg.StatusWriter, format+"\n", args...)
-}
+// devicePollRequestTimeout caps how long a single device token poll can hang.
+// Without it, a dead reused connection stalls a poll for the full flow timeout
+// (2 minutes) with no feedback before the next attempt.
+const devicePollRequestTimeout = 30 * time.Second
 
 func (cfg FlowConfig) debugf(format string, args ...any) {
 	if cfg.DebugWriter == nil {
@@ -166,7 +138,7 @@ func BrowserFlowResult(ctx context.Context, cfg FlowConfig, openBrowser func(str
 		cfg.HTTPClient = http.DefaultClient
 	}
 
-	authCtx, cancel := context.WithTimeout(ctx, cfg.Timeout)
+	ctx, cancel := context.WithTimeout(ctx, cfg.Timeout)
 	defer cancel()
 
 	// Bind ephemeral port.
@@ -226,13 +198,20 @@ func BrowserFlowResult(ctx context.Context, cfg FlowConfig, openBrowser func(str
 	var result callbackResult
 	select {
 	case result = <-resultCh:
-	case <-authCtx.Done():
-		if authCtx.Err() != context.DeadlineExceeded {
+	case <-ctx.Done():
+		if ctx.Err() != context.DeadlineExceeded {
 			return FlowResult{}, fmt.Errorf("authorization cancelled")
 		}
 		// Drain resultCh in case the callback arrived at the exact deadline.
 		select {
 		case result = <-resultCh:
+			if result.Err != nil {
+				return FlowResult{}, result.Err
+			}
+			// Original ctx expired; give the token exchange its own deadline.
+			xctx, xcancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer xcancel()
+			return exchangeCodeResult(xctx, cfg, result.Payload, redirectURI, verifier)
 		default:
 			return FlowResult{}, fmt.Errorf("authorization timed out after %s", cfg.Timeout)
 		}
@@ -241,9 +220,7 @@ func BrowserFlowResult(ctx context.Context, cfg FlowConfig, openBrowser func(str
 		return FlowResult{}, result.Err
 	}
 
-	// The timeout covers waiting for the seller to authorize. The exchange
-	// that follows has its own limit, the code's lifetime, so a throttled
-	// exchange can keep retrying after the authorization wait is over.
+	// Exchange code for token.
 	return exchangeCodeResult(ctx, cfg, result.Payload, redirectURI, verifier)
 }
 
@@ -263,7 +240,7 @@ func HeadlessFlowResult(ctx context.Context, cfg FlowConfig, out io.Writer, read
 		cfg.HTTPClient = http.DefaultClient
 	}
 
-	readCtx, cancel := context.WithTimeout(ctx, cfg.Timeout)
+	ctx, cancel := context.WithTimeout(ctx, cfg.Timeout)
 	defer cancel()
 
 	verifier, err := GenerateVerifier()
@@ -303,7 +280,7 @@ func HeadlessFlowResult(ctx context.Context, cfg FlowConfig, out io.Writer, read
 			return FlowResult{}, fmt.Errorf("could not read URL: %w", res.err)
 		}
 		line = res.line
-	case <-readCtx.Done():
+	case <-ctx.Done():
 		return FlowResult{}, fmt.Errorf("authorization timed out after %s", cfg.Timeout)
 	}
 
@@ -486,7 +463,6 @@ func (e *oauthDevicePollError) Error() string {
 type transientPollError struct {
 	err        error
 	retryAfter time.Duration
-	statusCode int
 }
 
 func (e *transientPollError) Error() string { return e.err.Error() }
@@ -500,7 +476,7 @@ func pollDeviceTokenOnce(ctx context.Context, cfg FlowConfig, deviceCode string,
 		"device_code": {deviceCode},
 	}
 
-	requestCtx, cancel := tokenRequestContext(ctx, cfg)
+	requestCtx, cancel := devicePollContext(ctx, cfg)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(requestCtx, "POST", cfg.TokenURL, strings.NewReader(data.Encode()))
@@ -555,7 +531,7 @@ func pollDeviceTokenOnce(ctx context.Context, cfg FlowConfig, deviceCode string,
 		return FlowResult{}, currentInterval, &oauthDevicePollError{Code: oauthErr.Error, Description: oauthErr.ErrorDescription}
 	}
 	statusErr := fmt.Errorf("token exchange failed (HTTP %d)", resp.StatusCode)
-	if !isRetryablePollStatus(resp.StatusCode) {
+	if !isRetryableTokenStatus(resp.StatusCode) {
 		return FlowResult{}, currentInterval, statusErr
 	}
 	// Retrying is safe: the response carries no OAuth error, and a throttle or
@@ -563,10 +539,10 @@ func pollDeviceTokenOnce(ctx context.Context, cfg FlowConfig, deviceCode string,
 	return FlowResult{}, currentInterval, &transientPollError{err: statusErr, retryAfter: retryAfterWait(resp)}
 }
 
-// isRetryablePollStatus reports whether a token endpoint status is one that
+// isRetryableTokenStatus reports whether a token endpoint status is one that
 // clears on its own: the same throttles and server faults the API client
 // retries for normal requests.
-func isRetryablePollStatus(statusCode int) bool {
+func isRetryableTokenStatus(statusCode int) bool {
 	switch statusCode {
 	case http.StatusRequestTimeout, http.StatusTooManyRequests,
 		http.StatusInternalServerError, http.StatusBadGateway,
@@ -589,12 +565,12 @@ func requestContext(ctx context.Context, cfg FlowConfig) (context.Context, conte
 	return context.WithTimeout(ctx, cfg.Timeout)
 }
 
-// tokenRequestContext bounds a single token endpoint request. Device polls
-// and code exchange retries both repeat, so a request hung on a dead reused
-// connection should fail fast and let the loop retry on a fresh attempt
-// rather than stall for the full flow timeout.
-func tokenRequestContext(ctx context.Context, cfg FlowConfig) (context.Context, context.CancelFunc) {
-	timeout := tokenRequestTimeout
+// devicePollContext bounds a single device token poll. Polls are cheap and
+// repeated, so a poll hung on a dead reused connection should fail fast and
+// let the loop retry on a fresh attempt rather than stall for the full flow
+// timeout.
+func devicePollContext(ctx context.Context, cfg FlowConfig) (context.Context, context.CancelFunc) {
+	timeout := devicePollRequestTimeout
 	if cfg.Timeout > 0 && cfg.Timeout < timeout {
 		timeout = cfg.Timeout
 	}
@@ -694,10 +670,88 @@ func extractCallbackPayload(q url.Values, expectedState string) (callbackPayload
 	return callbackPayload{Code: code, AdminCode: adminCode}, nil
 }
 
+// exchangeRetryBudget bounds how long a login waits out a throttled token
+// exchange. The authorization code stays valid for ten minutes server-side,
+// but a seller watching the terminal reads a longer silence as a hang, so a
+// wait beyond this is reported instead of taken.
+const exchangeRetryBudget = 30 * time.Second
+
+// exchangeRetryBackoff is the first wait after a retryable exchange that named
+// no wait of its own; each further attempt doubles it.
+const exchangeRetryBackoff = time.Second
+
+// transientExchangeError marks an exchange that failed without the app
+// spending the authorization code: the request never arrived (a transport
+// failure or an edge throttle), or the endpoint answered with a server fault.
+type transientExchangeError struct {
+	err        error
+	retryAfter time.Duration
+	status     int
+}
+
+func (e *transientExchangeError) Error() string { return e.err.Error() }
+
+func (e *transientExchangeError) Unwrap() error { return e.err }
+
+// exchangeCodeResult exchanges the authorization code for a token, retrying an
+// attempt the endpoint refused transiently while the budget lasts. The code is
+// single-use, so a retry happens only when nothing suggests the app consumed
+// it.
 func exchangeCodeResult(ctx context.Context, cfg FlowConfig, payload callbackPayload, redirectURI, verifier string) (FlowResult, error) {
 	if cfg.Sleep == nil {
 		cfg.Sleep = sleepContext
 	}
+
+	waited := time.Duration(0)
+	for attempt := 1; ; attempt++ {
+		result, err := exchangeCodeOnce(ctx, cfg, payload, redirectURI, verifier)
+		if err == nil {
+			return result, nil
+		}
+
+		var transient *transientExchangeError
+		if !errors.As(err, &transient) {
+			return FlowResult{}, err
+		}
+
+		wait := transient.retryAfter
+		if wait <= 0 {
+			wait = exchangeBackoff(attempt)
+		}
+		if waited+wait > exchangeRetryBudget {
+			return FlowResult{}, exchangeRefusedError(transient)
+		}
+		waited += wait
+		cfg.debugf("token exchange attempt=%d outcome=retryable wait=%s err=%q", attempt, wait, err)
+
+		if sleepErr := cfg.Sleep(ctx, wait); sleepErr != nil {
+			if errors.Is(sleepErr, context.DeadlineExceeded) {
+				return FlowResult{}, exchangeRefusedError(transient)
+			}
+			return FlowResult{}, fmt.Errorf("token exchange cancelled: %w", sleepErr)
+		}
+	}
+}
+
+func exchangeBackoff(attempt int) time.Duration {
+	wait := exchangeRetryBackoff
+	for i := 1; i < attempt && wait < exchangeRetryBudget; i++ {
+		wait *= 2
+	}
+	return wait
+}
+
+// exchangeRefusedError explains a refusal the login could not wait out. A
+// throttle is not about the seller's account and nothing was stored, so the
+// remedy is the wait itself rather than another authorization.
+func exchangeRefusedError(transient *transientExchangeError) error {
+	if transient.status != http.StatusTooManyRequests {
+		return transient.err
+	}
+	return fmt.Errorf("%w: Gumroad is rate limiting logins from this network address, so the login could not finish. Nothing was saved, and retrying does not shorten the wait — run `gumroad auth login --web` again later", transient.err)
+}
+
+func exchangeCodeOnce(ctx context.Context, cfg FlowConfig, payload callbackPayload, redirectURI, verifier string) (FlowResult, error) {
 	data := url.Values{
 		"grant_type":    {"authorization_code"},
 		"code":          {payload.Code},
@@ -705,52 +759,8 @@ func exchangeCodeResult(ctx context.Context, cfg FlowConfig, payload callbackPay
 		"client_id":     {cfg.ClientID},
 		"code_verifier": {verifier},
 	}
-	giveUpAt := cfg.currentTime().Add(codeExchangeWindow)
-	backoff := initialCodeExchangeBackoff
 
-	for attempt := 1; ; attempt++ {
-		result, err := exchangeCodeOnce(ctx, cfg, data, payload.AdminCode, verifier)
-		if err == nil {
-			cfg.debugf("token exchange attempt=%d outcome=approved", attempt)
-			return result, nil
-		}
-		var transient *transientPollError
-		if !errors.As(err, &transient) {
-			cfg.debugf("token exchange attempt=%d outcome=error err=%q", attempt, err)
-			return FlowResult{}, err
-		}
-		if ctx.Err() != nil {
-			return FlowResult{}, fmt.Errorf("authorization cancelled: %w", err)
-		}
-
-		wait := max(backoff, transient.retryAfter)
-		backoff *= 2
-		if attempt >= maxCodeExchangeAttempts || wait >= giveUpAt.Sub(cfg.currentTime()) {
-			cfg.debugf("token exchange attempt=%d outcome=transient_error giving_up retry_after=%s err=%q", attempt, transient.retryAfter, err)
-			return FlowResult{}, codeExchangeGaveUpError(transient)
-		}
-		cfg.debugf("token exchange attempt=%d outcome=transient_error retrying wait=%s retry_after=%s err=%q", attempt, wait, transient.retryAfter, err)
-		if transient.statusCode == http.StatusTooManyRequests {
-			cfg.statusf("Gumroad is rate limiting login requests; retrying in %s...", wait.Round(time.Second))
-		} else {
-			cfg.statusf("Login request failed; retrying in %s...", wait.Round(time.Second))
-		}
-		if err := cfg.Sleep(ctx, wait); err != nil {
-			return FlowResult{}, fmt.Errorf("authorization cancelled: %w", err)
-		}
-	}
-}
-
-// exchangeCodeOnce makes one authorization code exchange. It marks a failure
-// as transient only when the code is still unused: the request never got a
-// response, or the endpoint refused it with a throttle or server fault and no
-// OAuth error. An OAuth error such as invalid_grant, or a 200 we could not
-// use, is final.
-func exchangeCodeOnce(ctx context.Context, cfg FlowConfig, data url.Values, adminCode, verifier string) (FlowResult, error) {
-	requestCtx, cancel := tokenRequestContext(ctx, cfg)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(requestCtx, "POST", cfg.TokenURL, strings.NewReader(data.Encode()))
+	req, err := http.NewRequestWithContext(ctx, "POST", cfg.TokenURL, strings.NewReader(data.Encode()))
 	if err != nil {
 		return FlowResult{}, fmt.Errorf("could not build token request: %w", err)
 	}
@@ -758,44 +768,32 @@ func exchangeCodeOnce(ctx context.Context, cfg FlowConfig, data url.Values, admi
 
 	resp, err := cfg.HTTPClient.Do(req)
 	if err != nil {
-		return FlowResult{}, &transientPollError{err: fmt.Errorf("token exchange failed: %w", err)}
+		return FlowResult{}, &transientExchangeError{err: fmt.Errorf("token exchange failed: %w", err)}
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
-		if parseOAuthError(body).Error != "" {
-			return FlowResult{}, oauthHTTPError("token exchange failed", resp.StatusCode, body)
+		// A 200 means the app already issued the token and spent the code, so
+		// that read failure stays permanent; a throttled or failed response
+		// left the code usable and still carries Retry-After.
+		if isRetryableTokenStatus(resp.StatusCode) {
+			return FlowResult{}, &transientExchangeError{err: fmt.Errorf("could not read token response: %w", err), retryAfter: retryAfterWait(resp), status: resp.StatusCode}
 		}
-		readErr := fmt.Errorf("could not read token response: %w", err)
-		if isRetryablePollStatus(resp.StatusCode) {
-			return FlowResult{}, &transientPollError{err: readErr, retryAfter: retryAfterWait(resp), statusCode: resp.StatusCode}
-		}
-		return FlowResult{}, readErr
+		return FlowResult{}, fmt.Errorf("could not read token response: %w", err)
 	}
 
-	if resp.StatusCode == http.StatusOK {
-		return tokenResponseResult(body, adminCode, verifier)
-	}
-	if parseOAuthError(body).Error == "" && isRetryablePollStatus(resp.StatusCode) {
-		return FlowResult{}, &transientPollError{
-			err:        fmt.Errorf("token exchange failed (HTTP %d)", resp.StatusCode),
-			retryAfter: retryAfterWait(resp),
-			statusCode: resp.StatusCode,
+	if resp.StatusCode != http.StatusOK {
+		statusErr := oauthHTTPError("token exchange failed", resp.StatusCode, body)
+		if !isRetryableTokenStatus(resp.StatusCode) {
+			return FlowResult{}, statusErr
 		}
+		// Retrying is safe: the response carries no OAuth error, and a throttle
+		// or a server fault leaves the authorization code unspent.
+		return FlowResult{}, &transientExchangeError{err: statusErr, retryAfter: retryAfterWait(resp), status: resp.StatusCode}
 	}
-	return FlowResult{}, oauthHTTPError("token exchange failed", resp.StatusCode, body)
-}
 
-func codeExchangeGaveUpError(last *transientPollError) error {
-	if last.statusCode != http.StatusTooManyRequests {
-		return fmt.Errorf("%w; wait a moment, then run the login command again", last)
-	}
-	wait := "a few minutes"
-	if last.retryAfter > 0 {
-		wait = last.retryAfter.Round(time.Second).String()
-	}
-	return fmt.Errorf("token exchange was rate limited (HTTP 429): Gumroad is receiving too many login requests from your network. Wait %s, then run the login command again", wait)
+	return tokenResponseResult(body, payload.AdminCode, verifier)
 }
 
 func tokenResponseResult(body []byte, adminCode, verifier string) (FlowResult, error) {

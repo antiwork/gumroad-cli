@@ -1939,60 +1939,6 @@ func TestLogin_OAuth_BrowserFlow(t *testing.T) {
 	}
 }
 
-func TestLogin_OAuth_BrowserFlowReportsThrottledExchangeRetry(t *testing.T) {
-	withTerminal(t, true)
-	withMockBrowser(t)
-	tokenRequests := 0
-	tokenSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		tokenRequests++
-		if tokenRequests == 1 {
-			w.Header().Set("Retry-After", "5")
-			w.WriteHeader(http.StatusTooManyRequests)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(oauth.TokenResponse{AccessToken: "oauth-access-token-from-server", TokenType: "bearer"}); err != nil {
-			t.Errorf("encode token response: %v", err)
-		}
-	}))
-	t.Cleanup(tokenSrv.Close)
-	oldCfg := oauth.DefaultFlowConfigFunc
-	oauth.DefaultFlowConfigFunc = func() oauth.FlowConfig {
-		cfg := oldCfg()
-		cfg.TokenURL = tokenSrv.URL + "/oauth/token"
-		cfg.Sleep = func(context.Context, time.Duration) error { return nil }
-		return cfg
-	}
-	t.Cleanup(func() { oauth.DefaultFlowConfigFunc = oldCfg })
-	setupAuth(t, func(w http.ResponseWriter, r *http.Request) {
-		if err := json.NewEncoder(w).Encode(map[string]any{
-			"success": true,
-			"user":    map[string]any{"name": "OAuth User", "email": "oauth@example.com"},
-		}); err != nil {
-			t.Errorf("encode response: %v", err)
-		}
-	})
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-
-	var out, errOut bytes.Buffer
-	cmd := testutil.Command(newLoginCmd(), testutil.Quiet(false), testutil.Stdout(&out), testutil.Stderr(&errOut))
-	if err := cmd.Flags().Set("web", "true"); err != nil {
-		t.Fatalf("set --web flag: %v", err)
-	}
-	if err := cmd.RunE(cmd, []string{}); err != nil {
-		t.Fatalf("RunE: %v", err)
-	}
-	if tokenRequests != 2 {
-		t.Fatalf("got %d token requests, want 2 (throttled, approved)", tokenRequests)
-	}
-	if !strings.Contains(errOut.String(), "Gumroad is rate limiting login requests; retrying in 5s...") {
-		t.Fatalf("stderr missing the throttle retry notice:\n%s", errOut.String())
-	}
-	if !strings.Contains(out.String(), "OAuth User") {
-		t.Fatalf("expected user info in output: %q", out.String())
-	}
-}
-
 func TestLogin_OAuth_WebFlagIgnoresPipedStdin(t *testing.T) {
 	withTerminal(t, false)
 	withMockBrowser(t)
