@@ -196,6 +196,8 @@ gumroad auth login --web
 gumroad auth logout --yes --no-input
 ```
 
+Both login paths retry a token endpoint that answers `429`, `408` or `5xx`, waiting at least as long as `Retry-After` asks. A throttle that outlasts the retry window ends the login with the throttle named rather than a bare `HTTP 429`; nothing was stored, so the remedy is to wait and run the login again.
+
 ### user — Account info
 
 ```sh
