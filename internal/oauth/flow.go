@@ -59,6 +59,7 @@ type FlowConfig struct {
 	HTTPClient    *http.Client // optional; defaults to http.DefaultClient
 	Sleep         func(context.Context, time.Duration) error
 	DebugWriter   io.Writer // optional; when set, poll attempts and outcomes are logged
+	StatusWriter  io.Writer // optional; when set, retry waits are reported to the user
 
 	now func() time.Time
 }
@@ -84,6 +85,13 @@ func (cfg FlowConfig) currentTime() time.Time {
 		return cfg.now()
 	}
 	return time.Now()
+}
+
+func (cfg FlowConfig) statusf(format string, args ...any) {
+	if cfg.StatusWriter == nil {
+		return
+	}
+	fmt.Fprintf(cfg.StatusWriter, format+"\n", args...)
 }
 
 func (cfg FlowConfig) debugf(format string, args ...any) {
@@ -722,6 +730,11 @@ func exchangeCodeResult(ctx context.Context, cfg FlowConfig, payload callbackPay
 			return FlowResult{}, codeExchangeGaveUpError(transient)
 		}
 		cfg.debugf("token exchange attempt=%d outcome=transient_error retrying wait=%s retry_after=%s err=%q", attempt, wait, transient.retryAfter, err)
+		if transient.statusCode == http.StatusTooManyRequests {
+			cfg.statusf("Gumroad is rate limiting login requests; retrying in %s...", wait.Round(time.Second))
+		} else {
+			cfg.statusf("Login request failed; retrying in %s...", wait.Round(time.Second))
+		}
 		if err := cfg.Sleep(ctx, wait); err != nil {
 			return FlowResult{}, fmt.Errorf("authorization cancelled: %w", err)
 		}

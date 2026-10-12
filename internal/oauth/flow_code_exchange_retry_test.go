@@ -313,3 +313,26 @@ func TestBrowserFlow_ThrottledExchangeOutlivesAuthorizationTimeout(t *testing.T)
 		t.Fatalf("got %d token requests, want 2 (throttled, approved)", requests)
 	}
 }
+
+func TestExchangeCodeResult_ReportsRetryWaitsToStatusWriter(t *testing.T) {
+	var requests int
+	srv := codeExchangeServer(t, []exchangeReply{throttled("240"), {status: http.StatusServiceUnavailable}, approved()}, &requests)
+	defer srv.Close()
+
+	var status strings.Builder
+	cfg := exchangeTestConfig(srv)
+	cfg.StatusWriter = &status
+	var clock fakeClock
+	clock.configure(&cfg)
+
+	if _, err := exchangeCodeResult(context.Background(), cfg, callbackPayload{Code: "auth-code"}, "http://127.0.0.1/callback", "verifier"); err != nil {
+		t.Fatalf("exchangeCodeResult: %v", err)
+	}
+	want := "Gumroad is rate limiting login requests; retrying in 4m0s...\nLogin request failed; retrying in 4s...\n"
+	if status.String() != want {
+		t.Fatalf("status output = %q, want %q", status.String(), want)
+	}
+	if strings.Contains(status.String(), "DEBUG") {
+		t.Fatalf("status output contains debug lines: %q", status.String())
+	}
+}
