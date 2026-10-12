@@ -2,6 +2,7 @@ package oauth
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -11,9 +12,6 @@ import (
 	"time"
 )
 
-// exchangeThrottleServer answers the first throttledExchanges token requests
-// the way an edge throttle does — a plain-text status with no OAuth error JSON,
-// optionally carrying Retry-After — then approves the exchange.
 func exchangeThrottleServer(t *testing.T, throttledExchanges int, retryAfter string, status int, exchanges *int) *httptest.Server {
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -31,9 +29,6 @@ func exchangeThrottleServer(t *testing.T, throttledExchanges int, retryAfter str
 	}))
 }
 
-// exchangeConfig is testConfig with the token server's URL and a recording
-// sleep, so a test can assert the waits a throttle produced without spending
-// them.
 func exchangeConfig(srv *httptest.Server, waits *[]time.Duration) FlowConfig {
 	cfg := testConfig(srv)
 	cfg.Sleep = func(_ context.Context, d time.Duration) error {
@@ -43,8 +38,6 @@ func exchangeConfig(srv *httptest.Server, waits *[]time.Duration) FlowConfig {
 	return cfg
 }
 
-// authorizeInBrowser drives the browser flow the way a seller does: it
-// completes authorization through the redirect the flow printed.
 func authorizeInBrowser(t *testing.T, cfg FlowConfig) (FlowResult, error) {
 	t.Helper()
 	return BrowserFlowResult(context.Background(), cfg, func(authURL string) error {
@@ -339,8 +332,43 @@ func TestHeadlessFlow_RetriesThrottledExchange(t *testing.T) {
 	}
 }
 
-// printedState reads the state the headless flow printed alongside the
-// authorize URL, so the pasted redirect is accepted.
+func TestExchangeCodeResult_CancelledWaitStopsRetrying(t *testing.T) {
+	exchanges := 0
+	srv := exchangeThrottleServer(t, 1, "5", http.StatusTooManyRequests, &exchanges)
+	defer srv.Close()
+
+	cfg := testConfig(srv)
+	cfg.Sleep = func(context.Context, time.Duration) error { return context.Canceled }
+
+	_, err := exchangeCodeResult(context.Background(), cfg, callbackPayload{Code: "auth-code"}, "http://127.0.0.1/callback", "verifier")
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("got error %v, want it to wrap context.Canceled", err)
+	}
+	if exchanges != 1 {
+		t.Fatalf("got %d token exchanges, want 1 (cancelled while waiting)", exchanges)
+	}
+}
+
+func TestExchangeCodeResult_DeadlineDuringWaitNamesTheThrottle(t *testing.T) {
+	exchanges := 0
+	srv := exchangeThrottleServer(t, 1, "5", http.StatusTooManyRequests, &exchanges)
+	defer srv.Close()
+
+	cfg := testConfig(srv)
+	cfg.Sleep = func(context.Context, time.Duration) error { return context.DeadlineExceeded }
+
+	_, err := exchangeCodeResult(context.Background(), cfg, callbackPayload{Code: "auth-code"}, "http://127.0.0.1/callback", "verifier")
+	if err == nil {
+		t.Fatal("expected an error when the wait is cut short by a deadline")
+	}
+	if !strings.Contains(err.Error(), "rate limiting") {
+		t.Fatalf("got error %q, want the throttle named", err)
+	}
+	if exchanges != 1 {
+		t.Fatalf("got %d token exchanges, want 1 (deadline hit while waiting)", exchanges)
+	}
+}
+
 func printedState(t *testing.T, printed string) string {
 	t.Helper()
 	for _, line := range strings.Split(printed, "\n") {
