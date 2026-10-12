@@ -336,3 +336,72 @@ func TestExchangeCodeResult_ReportsRetryWaitsToStatusWriter(t *testing.T) {
 		t.Fatalf("status output contains debug lines: %q", status.String())
 	}
 }
+
+func TestExchangeCodeResult_UnreadableThrottledBodyHonorsRetryAfter(t *testing.T) {
+	requests := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		if requests > 1 {
+			mustEncode(t, w, TokenResponse{AccessToken: "exchanged-token", TokenType: "Bearer"})
+			return
+		}
+		hj, ok := w.(http.Hijacker)
+		if !ok {
+			t.Fatal("response writer does not support hijacking")
+		}
+		conn, bufrw, err := hj.Hijack()
+		if err != nil {
+			t.Fatalf("hijack: %v", err)
+		}
+		_, _ = bufrw.WriteString("HTTP/1.1 429 Too Many Requests\r\nRetry-After: 9\r\nContent-Length: 500\r\n\r\nRetry later")
+		_ = bufrw.Flush()
+		_ = conn.Close()
+	}))
+	defer srv.Close()
+
+	cfg := exchangeTestConfig(srv)
+	var clock fakeClock
+	clock.configure(&cfg)
+
+	result, err := exchangeCodeResult(context.Background(), cfg, callbackPayload{Code: "auth-code"}, "http://127.0.0.1/callback", "verifier")
+	if err != nil {
+		t.Fatalf("exchangeCodeResult: %v", err)
+	}
+	if result.AccessToken != "exchanged-token" {
+		t.Fatalf("access token = %q, want exchanged-token", result.AccessToken)
+	}
+	if fmt.Sprint(clock.waits) != fmt.Sprint([]time.Duration{9 * time.Second}) {
+		t.Fatalf("got waits %v, want [9s] from the unreadable throttle's Retry-After", clock.waits)
+	}
+}
+
+func TestExchangeCodeResult_UnreadableApprovalIsNotRetried(t *testing.T) {
+	requests := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		hj, ok := w.(http.Hijacker)
+		if !ok {
+			t.Fatal("response writer does not support hijacking")
+		}
+		conn, bufrw, err := hj.Hijack()
+		if err != nil {
+			t.Fatalf("hijack: %v", err)
+		}
+		_, _ = bufrw.WriteString("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 500\r\n\r\n{\"access_")
+		_ = bufrw.Flush()
+		_ = conn.Close()
+	}))
+	defer srv.Close()
+
+	cfg := exchangeTestConfig(srv)
+	var clock fakeClock
+	clock.configure(&cfg)
+
+	_, err := exchangeCodeResult(context.Background(), cfg, callbackPayload{Code: "auth-code"}, "http://127.0.0.1/callback", "verifier")
+	if err == nil || !strings.Contains(err.Error(), "could not read token response") {
+		t.Fatalf("got error %v, want could not read token response", err)
+	}
+	if requests != 1 {
+		t.Fatalf("got %d token requests, want 1 (the code may already be spent)", requests)
+	}
+}

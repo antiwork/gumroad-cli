@@ -196,6 +196,8 @@ gumroad auth login --web
 gumroad auth logout --yes --no-input
 ```
 
+Both login paths retry a token endpoint that answers `429`, `408` or `5xx`, waiting at least as long as `Retry-After` asks. With `--web`, the CLI prints a line to stderr before each wait; if it cannot wait out a throttle before the authorization code expires, login fails with a message that names the rate limit and how long to wait. Nothing is saved, so wait and run login again.
+
 ### user — Account info
 
 ```sh
