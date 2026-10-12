@@ -235,17 +235,7 @@ func TestBrowserFlow_UnreadableSuccessBodyDoesNotRetry(t *testing.T) {
 		exchanges++
 		// A 200 whose declared Content-Length overshoots the body: the app
 		// issued the token and spent the code, so the read failure is final.
-		hj, ok := w.(http.Hijacker)
-		if !ok {
-			t.Fatal("response writer does not support hijacking")
-		}
-		conn, bufrw, err := hj.Hijack()
-		if err != nil {
-			t.Fatalf("hijack: %v", err)
-		}
-		_, _ = bufrw.WriteString("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 500\r\n\r\n{\"access_token\":")
-		_ = bufrw.Flush()
-		_ = conn.Close()
+		hijackShortBody(t, w, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 500\r\n\r\n{\"access_token\":")
 	}))
 	defer srv.Close()
 
@@ -260,6 +250,69 @@ func TestBrowserFlow_UnreadableSuccessBodyDoesNotRetry(t *testing.T) {
 	if exchanges != 1 {
 		t.Fatalf("got %d token exchanges, want 1 (the code is already spent)", exchanges)
 	}
+}
+
+func TestBrowserFlow_UnreadableThrottledBodyHonorsRetryAfter(t *testing.T) {
+	exchanges := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		exchanges++
+		if exchanges == 1 {
+			// The declared Content-Length overshoots the body, so the read
+			// fails after the status and Retry-After already arrived.
+			hijackShortBody(t, w, "HTTP/1.1 429 Too Many Requests\r\nContent-Type: text/plain\r\nRetry-After: 9\r\nContent-Length: 500\r\n\r\nRetry later\n")
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		mustEncode(t, w, TokenResponse{AccessToken: "browser-access-token", TokenType: "Bearer"})
+	}))
+	defer srv.Close()
+
+	var waits []time.Duration
+	if _, err := authorizeInBrowser(t, exchangeConfig(srv, &waits)); err != nil {
+		t.Fatalf("browser login should survive an unreadable throttled body, got: %v", err)
+	}
+	if exchanges != 2 {
+		t.Fatalf("got %d token exchanges, want 2 (unreadable 429, approved)", exchanges)
+	}
+	if len(waits) != 1 || waits[0] < 9*time.Second {
+		t.Fatalf("got waits %v, want the wait to honor Retry-After 9s", waits)
+	}
+}
+
+func TestBrowserFlow_ServerFaultGiveUpDoesNotClaimAThrottle(t *testing.T) {
+	var exchanges int
+	srv := exchangeThrottleServer(t, 100, "60", http.StatusServiceUnavailable, &exchanges)
+	defer srv.Close()
+
+	var waits []time.Duration
+	_, err := authorizeInBrowser(t, exchangeConfig(srv, &waits))
+	if err == nil {
+		t.Fatal("expected the login to give up on a server fault it cannot wait out")
+	}
+	if !strings.Contains(err.Error(), "token exchange failed (HTTP 503)") {
+		t.Fatalf("got error %q, want it to keep the status", err)
+	}
+	if strings.Contains(err.Error(), "rate limiting") {
+		t.Fatalf("got error %q, want no throttle claim for a server fault", err)
+	}
+}
+
+// hijackShortBody answers with a raw response whose declared Content-Length
+// overshoots the body it writes, so the client's read fails after the status
+// line and headers already arrived.
+func hijackShortBody(t *testing.T, w http.ResponseWriter, raw string) {
+	t.Helper()
+	hj, ok := w.(http.Hijacker)
+	if !ok {
+		t.Fatal("response writer does not support hijacking")
+	}
+	conn, bufrw, err := hj.Hijack()
+	if err != nil {
+		t.Fatalf("hijack: %v", err)
+	}
+	_, _ = bufrw.WriteString(raw)
+	_ = bufrw.Flush()
+	_ = conn.Close()
 }
 
 func TestHeadlessFlow_RetriesThrottledExchange(t *testing.T) {
