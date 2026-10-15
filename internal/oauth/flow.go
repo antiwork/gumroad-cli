@@ -447,10 +447,12 @@ func pollDeviceToken(ctx context.Context, cfg FlowConfig, deviceCode DeviceCodeR
 				if transient.retryAfter > 0 && transient.retryAfter >= left {
 					return FlowResult{}, deviceRateLimitedError{retryAfter: transient.retryAfter}
 				}
-				if !inThrottle && left > 0 {
+				if wait := nextDevicePollWait(nextWait, interval, left).Round(time.Second); !inThrottle && wait > 0 {
 					inThrottle = true
-					cfg.statusf("Gumroad is rate limiting login requests from this network address; still waiting for approval and retrying in %s...", nextDevicePollWait(nextWait, interval, left).Round(time.Second))
+					cfg.statusf("Gumroad is rate limiting login requests from this network address; still waiting for approval and retrying in %s...", wait)
 				}
+			} else if transient.status != 0 {
+				throttled = false
 			}
 			continue
 		}
@@ -484,8 +486,8 @@ func nextDevicePollWait(retryAfter, interval, remaining time.Duration) time.Dura
 
 // ErrDeviceLoginRateLimited is returned when Gumroad's rate limit keeps the
 // device login from finishing: the code expired while the polls were being
-// throttled (no OAuth answer came back after the last throttled poll), or a
-// throttle's Retry-After runs past the code's expiry. An approval may have
+// throttled (the last HTTP answer before expiry was a 429), or a throttle's
+// Retry-After runs past the code's expiry. An approval may have
 // happened but could not be collected. The browser flow shares the same limit,
 // so callers should not suggest it as an alternative.
 var ErrDeviceLoginRateLimited error = deviceRateLimitedError{}
