@@ -449,7 +449,7 @@ func pollDeviceToken(ctx context.Context, cfg FlowConfig, deviceCode DeviceCodeR
 				}
 				if wait := nextDevicePollWait(nextWait, interval, left).Round(time.Second); !inThrottle && wait > 0 {
 					inThrottle = true
-					cfg.statusf("Gumroad is rate limiting login requests from this network address; still waiting for approval and retrying in %s...", wait)
+					cfg.statusf("Gumroad is rate limiting login requests from this network address, so an approval cannot reach the CLI yet; retrying in %s. Leave this command running.", wait)
 				}
 			} else if transient.status != 0 {
 				throttled = false

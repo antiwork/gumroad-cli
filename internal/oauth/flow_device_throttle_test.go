@@ -326,6 +326,7 @@ func TestDeviceFlow_ReportsThrottleOncePerEpisode(t *testing.T) {
 			var status strings.Builder
 			cfg := deviceFlowConfig(srv)
 			cfg.StatusWriter = &status
+			guardedFakeClock(&cfg)
 
 			if _, err := DeviceFlowResult(context.Background(), cfg, &strings.Builder{}); err != nil {
 				t.Fatalf("DeviceFlowResult: %v", err)
@@ -338,8 +339,8 @@ func TestDeviceFlow_ReportsThrottleOncePerEpisode(t *testing.T) {
 				t.Fatalf("got status output other than the rate limit lines (5xx retries must stay quiet):\n%s", status.String())
 			}
 			for _, line := range lines {
-				if !strings.Contains(line, "still waiting for approval and retrying in 1m0s...") {
-					t.Fatalf("got line %q, want it to say the login is still waiting and when it retries", line)
+				if !strings.Contains(line, "so an approval cannot reach the CLI yet; retrying in 1m0s. Leave this command running.") {
+					t.Fatalf("got line %q, want it to say an approval cannot reach the CLI yet and when it retries", line)
 				}
 			}
 		})
@@ -369,15 +370,7 @@ func TestDeviceFlow_ExpiryNamesRateLimitOnlyAfterThrottledPoll(t *testing.T) {
 			defer srv.Close()
 
 			cfg := deviceFlowConfig(srv)
-			var clock fakeClock
-			clock.configure(&cfg)
-			advance := cfg.Sleep
-			cfg.Sleep = func(ctx context.Context, d time.Duration) error {
-				if len(clock.waits) >= 1000 {
-					return context.Canceled
-				}
-				return advance(ctx, d)
-			}
+			guardedFakeClock(&cfg)
 
 			_, err := DeviceFlowResult(context.Background(), cfg, &strings.Builder{})
 			if err == nil {
@@ -411,8 +404,7 @@ func TestDeviceFlow_NoThrottleLineWhenTheCodeHasExpired(t *testing.T) {
 	var status strings.Builder
 	cfg := deviceFlowConfig(srv)
 	cfg.StatusWriter = &status
-	var clock fakeClock
-	clock.configure(&cfg)
+	guardedFakeClock(&cfg)
 
 	_, err := DeviceFlowResult(context.Background(), cfg, &strings.Builder{})
 	if !errors.Is(err, ErrDeviceLoginRateLimited) {
@@ -439,8 +431,7 @@ func TestDeviceFlow_StopsWhenRetryAfterOutlastsTheCode(t *testing.T) {
 			var status strings.Builder
 			cfg := deviceFlowConfig(srv)
 			cfg.StatusWriter = &status
-			var clock fakeClock
-			clock.configure(&cfg)
+			clock := guardedFakeClock(&cfg)
 
 			_, err := DeviceFlowResult(context.Background(), cfg, &strings.Builder{})
 			if !errors.Is(err, ErrDeviceLoginRateLimited) {
@@ -470,7 +461,20 @@ func TestDeviceFlow_ThrottleLineUsesPollIntervalWithoutRetryAfter(t *testing.T) 
 	if _, err := DeviceFlowResult(context.Background(), cfg, &strings.Builder{}); err != nil {
 		t.Fatalf("DeviceFlowResult: %v", err)
 	}
-	if want := "still waiting for approval and retrying in 1s...\n"; !strings.HasSuffix(status.String(), want) {
+	if want := "retrying in 1s. Leave this command running.\n"; !strings.HasSuffix(status.String(), want) {
 		t.Fatalf("got status output %q, want it to end with %q", status.String(), want)
 	}
+}
+
+func guardedFakeClock(cfg *FlowConfig) *fakeClock {
+	clock := &fakeClock{}
+	clock.configure(cfg)
+	advance := cfg.Sleep
+	cfg.Sleep = func(ctx context.Context, d time.Duration) error {
+		if len(clock.waits) >= 1000 {
+			return context.Canceled
+		}
+		return advance(ctx, d)
+	}
+	return clock
 }
