@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -258,8 +259,6 @@ func TestDeviceFlow_NonRetryableStatusFailsFast(t *testing.T) {
 	}
 }
 
-// devicePollScriptServer answers each token poll with the next step of the
-// script, repeating the last step once the script runs out.
 func devicePollScriptServer(t *testing.T, retryAfter string, script ...string) *httptest.Server {
 	t.Helper()
 	polls := 0
@@ -288,7 +287,7 @@ func devicePollScriptServer(t *testing.T, retryAfter string, script ...string) *
 				code := map[string]string{"pending": "authorization_pending", "slow_down": "slow_down", "expired": "expired_token"}[step]
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusBadRequest)
-				mustEncode(t, w, oauthErrorResponse{Error: code, Interval: 1})
+				mustEncode(t, w, oauthErrorResponse{Error: code, Interval: deviceCodeResponse().Interval})
 			case "approved":
 				mustEncode(t, w, TokenResponse{AccessToken: "device-access-token", TokenType: "Bearer"})
 			default:
@@ -320,9 +319,10 @@ func TestDeviceFlow_ReportsThrottleOncePerEpisode(t *testing.T) {
 		{"two runs split by a pending answer", []string{"429", "429", "pending", "429", "approved"}, 2},
 		{"a 5xx inside a run does not start a new one", []string{"429", "503", "429", "approved"}, 1},
 	}
+	retryAfter := time.Minute
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			srv := devicePollScriptServer(t, "60", tt.script...)
+			srv := devicePollScriptServer(t, strconv.Itoa(int(retryAfter.Seconds())), tt.script...)
 			defer srv.Close()
 
 			var status strings.Builder
@@ -341,7 +341,7 @@ func TestDeviceFlow_ReportsThrottleOncePerEpisode(t *testing.T) {
 				t.Fatalf("got status output other than the rate limit lines (5xx retries must stay quiet):\n%s", status.String())
 			}
 			for _, line := range lines {
-				if !strings.Contains(line, "so an approval cannot reach the CLI yet; retrying in 1m0s. Leave this command running.") {
+				if !strings.Contains(line, "so an approval cannot reach the CLI yet; retrying in "+retryAfter.String()+". Leave this command running.") {
 					t.Fatalf("got line %q, want it to say an approval cannot reach the CLI yet and when it retries", line)
 				}
 			}
@@ -396,8 +396,10 @@ func TestDeviceFlow_ExpiryNamesRateLimitOnlyAfterThrottledPoll(t *testing.T) {
 }
 
 func TestDeviceFlow_NoThrottleLineWhenTheCodeHasExpired(t *testing.T) {
-	script := make([]string, 0, 600)
-	for range 599 {
+	code := deviceCodeResponse()
+	pollsPerWindow := code.ExpiresIn / code.Interval
+	script := make([]string, 0, pollsPerWindow)
+	for range pollsPerWindow - 1 {
 		script = append(script, "pending")
 	}
 	script = append(script, "429")
@@ -419,16 +421,12 @@ func TestDeviceFlow_NoThrottleLineWhenTheCodeHasExpired(t *testing.T) {
 }
 
 func TestDeviceFlow_StopsWhenRetryAfterOutlastsTheCode(t *testing.T) {
-	tests := []struct {
-		retryAfter string
-		wantWait   string
-	}{
-		{"3600", "Wait 1h0m0s before running"},
-		{"599", "Wait 9m59s before running"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.retryAfter, func(t *testing.T) {
-			srv := devicePollScriptServer(t, tt.retryAfter, "429")
+	code := deviceCodeResponse()
+	edgeBlock := time.Hour
+	exactlyTheTimeLeft := time.Duration(code.ExpiresIn-code.Interval) * time.Second
+	for _, retryAfter := range []time.Duration{edgeBlock, exactlyTheTimeLeft} {
+		t.Run(retryAfter.String(), func(t *testing.T) {
+			srv := devicePollScriptServer(t, strconv.Itoa(int(retryAfter.Seconds())), "429")
 			defer srv.Close()
 
 			var status strings.Builder
@@ -440,8 +438,9 @@ func TestDeviceFlow_StopsWhenRetryAfterOutlastsTheCode(t *testing.T) {
 			if !errors.Is(err, ErrDeviceLoginRateLimited) {
 				t.Fatalf("got error %v, want the rate-limited error", err)
 			}
-			if !strings.Contains(err.Error(), "for longer than the code stays valid") || !strings.Contains(err.Error(), tt.wantWait) {
-				t.Fatalf("got error %q, want it to say the limit outlasts the code and %q", err, tt.wantWait)
+			wantWait := "Wait " + retryAfter.String() + " before running"
+			if !strings.Contains(err.Error(), "for longer than the code stays valid") || !strings.Contains(err.Error(), wantWait) {
+				t.Fatalf("got error %q, want it to say the limit outlasts the code and %q", err, wantWait)
 			}
 			if len(clock.waits) != 1 {
 				t.Fatalf("got waits %v, want only the first poll interval before giving up", clock.waits)
@@ -464,17 +463,20 @@ func TestDeviceFlow_ThrottleLineUsesPollIntervalWithoutRetryAfter(t *testing.T) 
 	if _, err := DeviceFlowResult(context.Background(), cfg, &strings.Builder{}); err != nil {
 		t.Fatalf("DeviceFlowResult: %v", err)
 	}
-	if want := "retrying in 1s. Leave this command running.\n"; !strings.HasSuffix(status.String(), want) {
+	interval := time.Duration(deviceCodeResponse().Interval) * time.Second
+	if want := "retrying in " + interval.String() + ". Leave this command running.\n"; !strings.HasSuffix(status.String(), want) {
 		t.Fatalf("got status output %q, want it to end with %q", status.String(), want)
 	}
 }
+
+const maxFakeClockWaits = 1000
 
 func guardedFakeClock(cfg *FlowConfig) *fakeClock {
 	clock := &fakeClock{}
 	clock.configure(cfg)
 	advance := cfg.Sleep
 	cfg.Sleep = func(ctx context.Context, d time.Duration) error {
-		if len(clock.waits) >= 1000 {
+		if len(clock.waits) >= maxFakeClockWaits {
 			return context.Canceled
 		}
 		return advance(ctx, d)
