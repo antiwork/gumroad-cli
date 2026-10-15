@@ -443,12 +443,10 @@ func pollDeviceToken(ctx context.Context, cfg FlowConfig, deviceCode DeviceCodeR
 			cfg.debugf("device poll attempt=%d outcome=transient_error retrying retry_after=%s err=%q", poll, transient.retryAfter, err)
 			if transient.status == http.StatusTooManyRequests {
 				throttled = true
-				if !inThrottle {
+				if left := expiresAt.Sub(cfg.currentTime()); !inThrottle && left > 0 {
 					inThrottle = true
-					cfg.statusf("Gumroad is rate limiting login requests from this network address; still waiting for approval and retrying in %s...", nextDevicePollWait(nextWait, interval, expiresAt.Sub(cfg.currentTime())).Round(time.Second))
+					cfg.statusf("Gumroad is rate limiting login requests from this network address; still waiting for approval and retrying in %s...", nextDevicePollWait(nextWait, interval, left).Round(time.Second))
 				}
-			} else if transient.status != 0 {
-				inThrottle = false
 			}
 			continue
 		}

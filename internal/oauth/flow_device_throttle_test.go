@@ -280,11 +280,11 @@ func devicePollScriptServer(t *testing.T, retryAfter string, script ...string) *
 			case "503":
 				w.WriteHeader(http.StatusServiceUnavailable)
 				_, _ = w.Write([]byte("Unavailable\n"))
-			case "pending", "expired":
-				code := map[string]string{"pending": "authorization_pending", "expired": "expired_token"}[step]
+			case "pending", "slow_down", "expired":
+				code := map[string]string{"pending": "authorization_pending", "slow_down": "slow_down", "expired": "expired_token"}[step]
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusBadRequest)
-				mustEncode(t, w, oauthErrorResponse{Error: code})
+				mustEncode(t, w, oauthErrorResponse{Error: code, Interval: 1})
 			case "approved":
 				mustEncode(t, w, TokenResponse{AccessToken: "device-access-token", TokenType: "Bearer"})
 			default:
@@ -314,6 +314,7 @@ func TestDeviceFlow_ReportsThrottleOncePerEpisode(t *testing.T) {
 	}{
 		{"one run of throttled polls", []string{"503", "429", "429", "429", "503", "approved"}, 1},
 		{"two runs split by a pending answer", []string{"429", "429", "pending", "429", "approved"}, 2},
+		{"a 5xx inside a run does not start a new one", []string{"429", "503", "429", "approved"}, 1},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -354,6 +355,7 @@ func TestDeviceFlow_ExpiryNamesRateLimitOnlyAfterThrottledPoll(t *testing.T) {
 		{"pending after the throttle cleared until the code expires", []string{"429", "pending"}, false},
 		{"server expires the code right after a throttled poll", []string{"pending", "429", "expired"}, true},
 		{"server expires the code after the throttle cleared", []string{"429", "pending", "expired"}, false},
+		{"server expires the code after a slow_down cleared the throttle", []string{"429", "slow_down", "expired"}, false},
 		{"server expires the code without a throttled poll", []string{"pending", "expired"}, false},
 	}
 	for _, tt := range tests {
@@ -389,5 +391,29 @@ func TestDeviceFlow_ExpiryNamesRateLimitOnlyAfterThrottledPoll(t *testing.T) {
 				t.Fatalf("got error %q, want the bare authorization expired", err)
 			}
 		})
+	}
+}
+
+func TestDeviceFlow_NoThrottleLineWhenTheCodeHasExpired(t *testing.T) {
+	script := make([]string, 0, 600)
+	for range 599 {
+		script = append(script, "pending")
+	}
+	script = append(script, "429")
+	srv := devicePollScriptServer(t, "", script...)
+	defer srv.Close()
+
+	var status strings.Builder
+	cfg := deviceFlowConfig(srv)
+	cfg.StatusWriter = &status
+	var clock fakeClock
+	clock.configure(&cfg)
+
+	_, err := DeviceFlowResult(context.Background(), cfg, &strings.Builder{})
+	if !errors.Is(err, ErrDeviceLoginRateLimited) {
+		t.Fatalf("got error %v, want the rate-limited expiry", err)
+	}
+	if status.String() != "" {
+		t.Fatalf("got status output %q, want none for a throttle that arrives as the code expires", status.String())
 	}
 }
