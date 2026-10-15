@@ -445,7 +445,7 @@ func pollDeviceToken(ctx context.Context, cfg FlowConfig, deviceCode DeviceCodeR
 				throttled = true
 				left := expiresAt.Sub(cfg.currentTime())
 				if transient.retryAfter > 0 && transient.retryAfter >= left {
-					return FlowResult{}, deviceRateLimitedError{outlastsCode: true}
+					return FlowResult{}, deviceRateLimitedError{retryAfter: transient.retryAfter}
 				}
 				if !inThrottle && left > 0 {
 					inThrottle = true
@@ -491,12 +491,12 @@ func nextDevicePollWait(retryAfter, interval, remaining time.Duration) time.Dura
 var ErrDeviceLoginRateLimited error = deviceRateLimitedError{}
 
 type deviceRateLimitedError struct {
-	outlastsCode bool
+	retryAfter time.Duration
 }
 
 func (e deviceRateLimitedError) Error() string {
-	if e.outlastsCode {
-		return "authorization expires before the rate limit clears: Gumroad is rate limiting the login polls from this network address for longer than the code stays valid, so an approval cannot reach the CLI. Nothing was saved. Wait before running `gumroad auth login` again, and run one login at a time"
+	if e.retryAfter > 0 {
+		return fmt.Sprintf("authorization expires before the rate limit clears: Gumroad is rate limiting the login polls from this network address for longer than the code stays valid, so an approval cannot reach the CLI. Nothing was saved. Wait %s before running `gumroad auth login` again, and run one login at a time", e.retryAfter.Round(time.Second))
 	}
 	return "authorization expired: Gumroad rate limited the login polls from this network address, so an approval may not have reached the CLI before the code expired. Nothing was saved. Wait before running `gumroad auth login` again, and run one login at a time"
 }
