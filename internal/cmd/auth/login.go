@@ -46,9 +46,9 @@ func newLoginCmd() *cobra.Command {
 			"Use --with-token to read an existing seller token from stdin.\n" +
 			"Piped stdin without --with-token is still accepted for compatibility.\n\n" +
 			"If the token endpoint is rate limited or briefly unavailable, login waits and retries,\n" +
-			"honoring Retry-After. Device login prints a line when it is rate limited, and --web prints\n" +
-			"one before each wait. If the rate limit outlasts the authorization code, login ends with\n" +
-			"the rate limit named; nothing is saved, so wait and run login again.\n\n" +
+			"honoring Retry-After. Device login prints a line when a rate limit starts and it can still\n" +
+			"wait, and --web prints one before each wait. If the rate limit outlasts the authorization\n" +
+			"code, login ends with the rate limit named; nothing is saved, so wait and run login again.\n\n" +
 			"Approve promptly and run one login at a time. Never put this command in a retry loop:\n" +
 			"every attempt counts against the same rate limit.",
 		Example: "  # Device authorization login (default)\n" +

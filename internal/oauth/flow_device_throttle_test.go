@@ -279,6 +279,8 @@ func devicePollScriptServer(t *testing.T, retryAfter string, script ...string) *
 				_, _ = w.Write([]byte("Retry later\n"))
 			case "429-cut":
 				hijackShortBody(t, w, "HTTP/1.1 429 Too Many Requests\r\nContent-Type: text/plain\r\nContent-Length: 500\r\n\r\nRetry later\n")
+			case "conn-drop":
+				hijackShortBody(t, w, "")
 			case "503":
 				w.WriteHeader(http.StatusServiceUnavailable)
 				_, _ = w.Write([]byte("Unavailable\n"))
@@ -358,6 +360,7 @@ func TestDeviceFlow_ExpiryNamesRateLimitOnlyAfterThrottledPoll(t *testing.T) {
 		{"pending until the code expires", []string{"pending"}, false},
 		{"server errors until the code expires", []string{"503"}, false},
 		{"server errors after the throttle until the code expires", []string{"429", "503"}, false},
+		{"connection failures after the throttle until the code expires", []string{"429", "conn-drop"}, true},
 		{"pending after the throttle cleared until the code expires", []string{"429", "pending"}, false},
 		{"server expires the code right after a throttled poll", []string{"pending", "429", "expired"}, true},
 		{"server expires the code after the throttle cleared", []string{"429", "pending", "expired"}, false},
