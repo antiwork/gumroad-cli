@@ -70,7 +70,7 @@ gumroad sales refund abc123 --amount 5.00 --dry-run
 
 ## Authentication
 
-`gumroad auth login` starts OAuth device authorization. It prints a Gumroad approval URL, waits while you approve in the browser, then stores the seller token locally.
+`gumroad auth login` starts OAuth device authorization. It prints a Gumroad approval URL, waits while you approve in the browser, then stores the seller token locally. Approve promptly and run one login at a time; Gumroad rate limits login requests per network address, so never put the command in a retry loop.
 
 ```sh
 gumroad auth login          # Device authorization (default)

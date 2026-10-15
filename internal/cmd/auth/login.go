@@ -46,9 +46,11 @@ func newLoginCmd() *cobra.Command {
 			"Use --with-token to read an existing seller token from stdin.\n" +
 			"Piped stdin without --with-token is still accepted for compatibility.\n\n" +
 			"If the token endpoint is rate limited or briefly unavailable, login waits and retries,\n" +
-			"honoring Retry-After. --web prints a line before each wait and, when the throttle outlasts\n" +
-			"the authorization code, ends the login with the rate limit named; nothing is saved, so\n" +
-			"wait and run login again.",
+			"honoring Retry-After. Device login prints a line when a rate limit starts and it can still\n" +
+			"wait, and --web prints one before each wait. If the rate limit outlasts the authorization\n" +
+			"code, login ends with the rate limit named; nothing is saved, so wait and run login again.\n\n" +
+			"Approve promptly and run one login at a time. Never put this command in a retry loop:\n" +
+			"every attempt counts against the same rate limit.",
 		Example: "  # Device authorization login (default)\n" +
 			"  gumroad auth login\n\n" +
 			"  # Local browser OAuth\n" +
@@ -136,6 +138,9 @@ func oauthLogin(opts cmdutil.Options, webFlag bool) (loginCredentials, error) {
 	}
 
 	result, err := oauth.DeviceFlowResult(opts.Context, cfg, opts.Err())
+	if errors.Is(err, oauth.ErrDeviceLoginRateLimited) {
+		return loginCredentials{}, fmt.Errorf("device login failed: %w", err)
+	}
 	if err != nil {
 		return loginCredentials{}, fmt.Errorf("device login failed: %w. Use `gumroad auth login --web` for browser OAuth", err)
 	}
