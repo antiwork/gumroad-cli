@@ -2,6 +2,7 @@ package oauth
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -254,5 +255,137 @@ func TestDeviceFlow_NonRetryableStatusFailsFast(t *testing.T) {
 	}
 	if polls != 1 {
 		t.Fatalf("got %d token polls, want 1 (a 403 must not retry)", polls)
+	}
+}
+
+// devicePollScriptServer answers each token poll with the next step of the
+// script, repeating the last step once the script runs out.
+func devicePollScriptServer(t *testing.T, retryAfter string, script ...string) *httptest.Server {
+	t.Helper()
+	polls := 0
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/oauth/device/code":
+			mustEncode(t, w, deviceCodeResponse())
+		case "/oauth/token":
+			step := script[min(polls, len(script)-1)]
+			polls++
+			switch step {
+			case "429":
+				if retryAfter != "" {
+					w.Header().Set("Retry-After", retryAfter)
+				}
+				w.WriteHeader(http.StatusTooManyRequests)
+				_, _ = w.Write([]byte("Retry later\n"))
+			case "503":
+				w.WriteHeader(http.StatusServiceUnavailable)
+				_, _ = w.Write([]byte("Unavailable\n"))
+			case "pending", "expired":
+				code := map[string]string{"pending": "authorization_pending", "expired": "expired_token"}[step]
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusBadRequest)
+				mustEncode(t, w, oauthErrorResponse{Error: code})
+			case "approved":
+				mustEncode(t, w, TokenResponse{AccessToken: "device-access-token", TokenType: "Bearer"})
+			default:
+				t.Errorf("unknown script step %q", step)
+			}
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+}
+
+func rateLimitLines(status string) []string {
+	var lines []string
+	for _, line := range strings.Split(strings.TrimSpace(status), "\n") {
+		if strings.HasPrefix(line, "Gumroad is rate limiting login requests from this network address") {
+			lines = append(lines, line)
+		}
+	}
+	return lines
+}
+
+func TestDeviceFlow_ReportsThrottleOncePerEpisode(t *testing.T) {
+	tests := []struct {
+		name   string
+		script []string
+		lines  int
+	}{
+		{"one run of throttled polls", []string{"503", "429", "429", "429", "503", "approved"}, 1},
+		{"two runs split by a pending answer", []string{"429", "429", "pending", "429", "approved"}, 2},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := devicePollScriptServer(t, "60", tt.script...)
+			defer srv.Close()
+
+			var status strings.Builder
+			cfg := deviceFlowConfig(srv)
+			cfg.StatusWriter = &status
+
+			if _, err := DeviceFlowResult(context.Background(), cfg, &strings.Builder{}); err != nil {
+				t.Fatalf("DeviceFlowResult: %v", err)
+			}
+			lines := rateLimitLines(status.String())
+			if len(lines) != tt.lines {
+				t.Fatalf("got %d rate limit lines, want %d; status output:\n%s", len(lines), tt.lines, status.String())
+			}
+			if strings.Count(status.String(), "\n") != tt.lines {
+				t.Fatalf("got status output other than the rate limit lines (5xx retries must stay quiet):\n%s", status.String())
+			}
+			for _, line := range lines {
+				if !strings.Contains(line, "still waiting for approval and retrying in 1m0s...") {
+					t.Fatalf("got line %q, want it to say the login is still waiting and when it retries", line)
+				}
+			}
+		})
+	}
+}
+
+func TestDeviceFlow_ExpiryNamesRateLimitOnlyAfterThrottledPoll(t *testing.T) {
+	tests := []struct {
+		name          string
+		script        []string
+		wantRateLimit bool
+	}{
+		{"throttled until the code expires", []string{"429"}, true},
+		{"pending until the code expires", []string{"pending"}, false},
+		{"server expires the code after a throttled poll", []string{"429", "pending", "expired"}, true},
+		{"server expires the code without a throttled poll", []string{"pending", "expired"}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := devicePollScriptServer(t, "60", tt.script...)
+			defer srv.Close()
+
+			cfg := deviceFlowConfig(srv)
+			var clock fakeClock
+			clock.configure(&cfg)
+			advance := cfg.Sleep
+			cfg.Sleep = func(ctx context.Context, d time.Duration) error {
+				if len(clock.waits) >= 1000 {
+					return context.Canceled
+				}
+				return advance(ctx, d)
+			}
+
+			_, err := DeviceFlowResult(context.Background(), cfg, &strings.Builder{})
+			if err == nil {
+				t.Fatal("expected the login to expire")
+			}
+			if !strings.HasPrefix(err.Error(), "authorization expired") {
+				t.Fatalf("got error %q, want it to start with authorization expired", err)
+			}
+			if got := errors.Is(err, ErrDeviceLoginRateLimited); got != tt.wantRateLimit {
+				t.Fatalf("errors.Is(err, ErrDeviceLoginRateLimited) = %v, want %v (error %q)", got, tt.wantRateLimit, err)
+			}
+			if tt.wantRateLimit && !strings.Contains(err.Error(), "Gumroad rate limited the login polls from this network address") {
+				t.Fatalf("got error %q, want it to name the rate limit", err)
+			}
+			if !tt.wantRateLimit && err.Error() != "authorization expired" {
+				t.Fatalf("got error %q, want the bare authorization expired", err)
+			}
+		})
 	}
 }

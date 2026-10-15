@@ -59,7 +59,7 @@ type FlowConfig struct {
 	HTTPClient    *http.Client // optional; defaults to http.DefaultClient
 	Sleep         func(context.Context, time.Duration) error
 	DebugWriter   io.Writer // optional; when set, poll attempts and outcomes are logged
-	StatusWriter  io.Writer // optional; when set, exchange retry waits are reported to the user
+	StatusWriter  io.Writer // optional; when set, retry waits and throttled polls are reported to the user
 
 	now func() time.Time
 }
@@ -392,14 +392,16 @@ func pollDeviceToken(ctx context.Context, cfg FlowConfig, deviceCode DeviceCodeR
 	if interval <= 0 {
 		interval = 5 * time.Second
 	}
-	expiresAt := time.Now().Add(time.Duration(deviceCode.ExpiresIn) * time.Second)
+	expiresAt := cfg.currentTime().Add(time.Duration(deviceCode.ExpiresIn) * time.Second)
 
 	poll := 0
 	nextWait := time.Duration(0)
+	throttled := false
+	inThrottle := false
 	for {
-		remaining := time.Until(expiresAt)
+		remaining := expiresAt.Sub(cfg.currentTime())
 		if remaining <= 0 {
-			return FlowResult{}, fmt.Errorf("authorization expired")
+			return FlowResult{}, deviceExpiredError(throttled)
 		}
 		wait := interval
 		if nextWait > 0 {
@@ -439,8 +441,18 @@ func pollDeviceToken(ctx context.Context, cfg FlowConfig, deviceCode DeviceCodeR
 			}
 			nextWait = transient.retryAfter
 			cfg.debugf("device poll attempt=%d outcome=transient_error retrying retry_after=%s err=%q", poll, transient.retryAfter, err)
+			if transient.status == http.StatusTooManyRequests {
+				throttled = true
+				if !inThrottle {
+					inThrottle = true
+					cfg.statusf("Gumroad is rate limiting login requests from this network address; still waiting for approval and retrying in %s...", nextDevicePollWait(nextWait, interval, expiresAt.Sub(cfg.currentTime())).Round(time.Second))
+				}
+			} else if transient.status != 0 {
+				inThrottle = false
+			}
 			continue
 		}
+		inThrottle = false
 		cfg.debugf("device poll attempt=%d outcome=%s", poll, oauthErr.Code)
 		switch oauthErr.Code {
 		case "authorization_pending":
@@ -451,11 +463,38 @@ func pollDeviceToken(ctx context.Context, cfg FlowConfig, deviceCode DeviceCodeR
 		case "access_denied":
 			return FlowResult{}, fmt.Errorf("authorization denied: access was denied")
 		case "expired_token":
-			return FlowResult{}, fmt.Errorf("authorization expired")
+			return FlowResult{}, deviceExpiredError(throttled)
 		default:
 			return FlowResult{}, oauthErr
 		}
 	}
+}
+
+func nextDevicePollWait(retryAfter, interval, remaining time.Duration) time.Duration {
+	wait := interval
+	if retryAfter > 0 {
+		wait = retryAfter
+	}
+	return max(min(wait, remaining), 0)
+}
+
+// ErrDeviceLoginRateLimited is returned when the device code expired after
+// Gumroad throttled at least one poll, so an approval may have happened but
+// could not be collected. The browser flow shares the same limit, so callers
+// should not suggest it as an alternative.
+var ErrDeviceLoginRateLimited error = deviceRateLimitedError{}
+
+type deviceRateLimitedError struct{}
+
+func (deviceRateLimitedError) Error() string {
+	return "authorization expired: Gumroad rate limited the login polls from this network address, so an approval may not have reached the CLI before the code expired. Nothing was saved. Wait before running `gumroad auth login` again, and run one login at a time"
+}
+
+func deviceExpiredError(throttled bool) error {
+	if throttled {
+		return ErrDeviceLoginRateLimited
+	}
+	return errors.New("authorization expired")
 }
 
 type oauthDevicePollError struct {
@@ -477,6 +516,7 @@ func (e *oauthDevicePollError) Error() string {
 type transientPollError struct {
 	err        error
 	retryAfter time.Duration
+	status     int
 }
 
 func (e *transientPollError) Error() string { return e.err.Error() }
@@ -526,7 +566,7 @@ func pollDeviceTokenOnce(ctx context.Context, cfg FlowConfig, deviceCode string,
 			}
 			return FlowResult{}, currentInterval, fmt.Errorf("connection failed while receiving the approved token; run the login command again: %w", err)
 		}
-		return FlowResult{}, currentInterval, &transientPollError{err: fmt.Errorf("could not read token response: %w", err), retryAfter: retryAfterWait(resp)}
+		return FlowResult{}, currentInterval, &transientPollError{err: fmt.Errorf("could not read token response: %w", err), retryAfter: retryAfterWait(resp), status: resp.StatusCode}
 	}
 
 	if resp.StatusCode == http.StatusOK {
@@ -550,7 +590,7 @@ func pollDeviceTokenOnce(ctx context.Context, cfg FlowConfig, deviceCode string,
 	}
 	// Retrying is safe: the response carries no OAuth error, and a throttle or
 	// a 5xx leaves the pending authorization untouched.
-	return FlowResult{}, currentInterval, &transientPollError{err: statusErr, retryAfter: retryAfterWait(resp)}
+	return FlowResult{}, currentInterval, &transientPollError{err: statusErr, retryAfter: retryAfterWait(resp), status: resp.StatusCode}
 }
 
 // isRetryableTokenStatus reports whether a token endpoint status is one that

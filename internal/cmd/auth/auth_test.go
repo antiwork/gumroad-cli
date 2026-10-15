@@ -2372,3 +2372,69 @@ func TestNewAuthCmd(t *testing.T) {
 		}
 	}
 }
+
+func TestLogin_OAuth_DeviceExpiryHintsWebOnlyWithoutRateLimit(t *testing.T) {
+	tests := []struct {
+		name     string
+		throttle bool
+		wantErr  string
+		wantWeb  bool
+	}{
+		{"rate limited poll", true, "device login failed: authorization expired: Gumroad rate limited the login polls", false},
+		{"no rate limited poll", false, "device login failed: authorization expired.", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			withTerminal(t, true)
+			polls := 0
+			oauthSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch r.URL.Path {
+				case "/oauth/device/code":
+					if err := json.NewEncoder(w).Encode(oauth.DeviceCodeResponse{
+						DeviceCode:      "test-device-code",
+						VerificationURI: "http://" + r.Host + "/oauth/device",
+						ExpiresIn:       600,
+						Interval:        1,
+					}); err != nil {
+						t.Errorf("encode device response: %v", err)
+					}
+				case "/oauth/token":
+					polls++
+					if polls == 1 && tt.throttle {
+						w.WriteHeader(http.StatusTooManyRequests)
+						return
+					}
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusBadRequest)
+					if err := json.NewEncoder(w).Encode(map[string]string{"error": "expired_token"}); err != nil {
+						t.Errorf("encode token response: %v", err)
+					}
+				default:
+					t.Errorf("unexpected OAuth path %q", r.URL.Path)
+				}
+			}))
+			t.Cleanup(oauthSrv.Close)
+
+			oldCfg := oauth.DefaultFlowConfigFunc
+			oauth.DefaultFlowConfigFunc = func() oauth.FlowConfig {
+				cfg := oldCfg()
+				cfg.DeviceCodeURL = oauthSrv.URL + "/oauth/device/code"
+				cfg.TokenURL = oauthSrv.URL + "/oauth/token"
+				cfg.Sleep = func(context.Context, time.Duration) error { return nil }
+				return cfg
+			}
+			t.Cleanup(func() { oauth.DefaultFlowConfigFunc = oldCfg })
+			t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+			var errOut bytes.Buffer
+			cmd := testutil.Command(newLoginCmd(), testutil.Quiet(false), testutil.Stderr(&errOut))
+			err := cmd.RunE(cmd, []string{})
+			if err == nil || !strings.HasPrefix(err.Error(), tt.wantErr) {
+				t.Fatalf("got error %v, want it to start with %q", err, tt.wantErr)
+			}
+			if got := strings.Contains(err.Error(), "--web"); got != tt.wantWeb {
+				t.Fatalf("error mentions --web = %v, want %v: %v", got, tt.wantWeb, err)
+			}
+		})
+	}
+}
