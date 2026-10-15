@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
@@ -21,16 +22,19 @@ import (
 )
 
 const (
-	courtOrderNoticePath = "stripe_court_order_notices"
+	courtOrderNoticePath = "stripe_restraint_notices"
 
 	courtOrderNoticeStatusDryRun      = "dry_run"
 	courtOrderNoticeStatusQueued      = "queued"
 	courtOrderNoticeStatusAlreadySent = "already_sent"
 
+	deliveryStatusPending  = "pending"
+	deliveryStatusAccepted = "accepted"
+
 	maxFirmNameLength  = 200
 	maxFirmEmailLength = 254
 
-	courtOrderNoticeConfirmationMessage = "Email the seller who owns %s about Stripe's court order, with %s (%s) as the law firm contact? This records an admin comment and queues the email."
+	courtOrderNoticeConfirmationMessage = "Email the seller who owns %s about Stripe's court order, with %s (%s) as the law firm contact? This queues the email unless the mail service already accepted this notice."
 )
 
 var (
@@ -52,12 +56,18 @@ type courtOrderNoticeSeller struct {
 	Name   string `json:"name"`
 }
 
+type courtOrderNoticeReceipt struct {
+	Status         string                 `json:"status"`
+	AlreadySent    *bool                  `json:"already_sent"`
+	DeliveryStatus *string                `json:"delivery_status"`
+	AcceptedAt     *string                `json:"accepted_at"`
+	CommentID      *string                `json:"comment_id"`
+	User           courtOrderNoticeSeller `json:"user"`
+}
+
 type courtOrderNoticePreview struct {
-	Status      string                 `json:"status"`
-	AlreadySent bool                   `json:"already_sent"`
-	User        courtOrderNoticeSeller `json:"user"`
-	CommentID   string                 `json:"comment_id"`
-	Email       struct {
+	courtOrderNoticeReceipt
+	Email struct {
 		From     string   `json:"from"`
 		ReplyTo  []string `json:"reply_to"`
 		To       []string `json:"to"`
@@ -67,12 +77,17 @@ type courtOrderNoticePreview struct {
 }
 
 type courtOrderNoticeResult struct {
-	Status    string                 `json:"status"`
-	User      courtOrderNoticeSeller `json:"user"`
-	CommentID string                 `json:"comment_id"`
-	Comment   struct {
+	courtOrderNoticeReceipt
+	Comment struct {
 		CreatedAt string `json:"created_at"`
 	} `json:"comment"`
+}
+
+type courtOrderNoticeCompletion struct {
+	accepted   bool
+	acceptedAt string
+	commentID  string
+	delivery   string
 }
 
 func newCourtOrderNoticeCmd() *cobra.Command {
@@ -86,13 +101,21 @@ account under a court order, with the law firm's contact.
 
 The server matches the one live Gumroad account with an email address that uses
 --stripe-account-id, records an admin comment keyed by --notice-key, and queues
-the email from noreply@ with replies going to support@. The comment is the
-dedup record: running the command again with the same --notice-key answers
-already_sent and queues nothing. A queued email has not been delivered yet;
-delivery runs in a background job.
+the email from noreply@ with replies going to support@.
+
+The answer is "queued" until the mail service accepts the email, and
+"already_sent" after that. Run the same command with the same --notice-key to
+check: while the notice is still pending, each call queues the email again so a
+failed or lost job is retried; once the mail service has accepted it, the call
+answers already_sent and queues nothing. Acceptance by the mail service is not
+delivery to the seller's inbox. Do not confirm the notice to Stripe or archive
+it until a call answers already_sent. The server cannot rule out a duplicate
+email if it fails between the mail service accepting the email and recording
+that acceptance.
 
 Pass --dry-run to have the server render the email without sending it. It
-prints the matched seller and the complete email, and records nothing.`,
+prints the matched seller, the notice's current delivery status and the
+complete email, and records nothing.`,
 		Example: `  gumroad admin stripe court-order-notice --stripe-account-id acct_1Example --firm-name "Example Law LLP" --firm-email notices@example.com --notice-key notice-1 --dry-run
   gumroad admin stripe court-order-notice --stripe-account-id acct_1Example --firm-name "Example Law LLP" --firm-email notices@example.com --notice-key notice-1 --yes`,
 		Args: cmdutil.ExactArgs(0),
@@ -141,16 +164,16 @@ prints the matched seller and the complete email, and records nothing.`,
 			}
 			result, err := cmdutil.DecodeJSON[courtOrderNoticeResult](data)
 			if err != nil {
-				return err
+				return fmt.Errorf("%w. %s", err, unknownOutcomeGuidance(req.NoticeKey))
 			}
-			return renderCourtOrderNoticeResult(opts, result)
+			return renderCourtOrderNoticeResult(opts, req.NoticeKey, result)
 		},
 	}
 
 	cmd.Flags().StringVar(&req.StripeAccountID, "stripe-account-id", "", "Stripe connected account ID named in the notice, acct_... (required)")
 	cmd.Flags().StringVar(&req.FirmName, "firm-name", "", "Name of the law firm that sent the court order (required)")
 	cmd.Flags().StringVar(&req.FirmEmail, "firm-email", "", "Email address of the law firm, shown to the seller (required)")
-	cmd.Flags().StringVar(&req.NoticeKey, "notice-key", "", "Unique key for this notice; repeat calls with the same key send nothing (required)")
+	cmd.Flags().StringVar(&req.NoticeKey, "notice-key", "", "Unique key for this notice; reuse it to check or retry the same notice (required)")
 
 	return cmd
 }
@@ -209,21 +232,12 @@ func postCourtOrderNotice(opts cmdutil.Options, client *adminapi.Client, req cou
 }
 
 func wrapCourtOrderNoticeSendError(req courtOrderNoticeRequest, err error) error {
-	verify := "The email may have been queued. Run the same command again with --notice-key " + req.NoticeKey +
-		": if the notice was recorded the server answers already_sent and queues nothing"
+	verify := unknownOutcomeGuidance(req.NoticeKey)
 
 	var apiErr *api.APIError
 	if errors.As(err, &apiErr) {
 		if apiErr.StatusCode < http.StatusInternalServerError {
 			return err
-		}
-		if apiErr.StatusCode == http.StatusServiceUnavailable && hasServerMessage(apiErr) {
-			return &api.APIError{
-				StatusCode: apiErr.StatusCode,
-				Message: fmt.Sprintf("court order notice was not queued: %s. Run the same command again with --notice-key %s to retry",
-					apiErr.Message, req.NoticeKey),
-				Hint: apiErr.Hint,
-			}
 		}
 		return &api.APIError{
 			StatusCode: apiErr.StatusCode,
@@ -234,15 +248,70 @@ func wrapCourtOrderNoticeSendError(req courtOrderNoticeRequest, err error) error
 	return fmt.Errorf("court order notice request failed: %w. %s", err, verify)
 }
 
-// The api client falls back to this generic text when the error body has no
-// JSON message, for example a 503 page from a proxy rather than from Rails.
-func hasServerMessage(apiErr *api.APIError) bool {
-	return apiErr.Message != fmt.Sprintf("API error (HTTP %d)", apiErr.StatusCode)
+func unknownOutcomeGuidance(noticeKey string) string {
+	return "The email may have been queued. Run the same command again with --notice-key " + noticeKey +
+		": it answers already_sent if the mail service has accepted the notice, and queues the email again if not"
+}
+
+func (r courtOrderNoticeReceipt) completion() (courtOrderNoticeCompletion, error) {
+	inconsistent := func(reason string) (courtOrderNoticeCompletion, error) {
+		return courtOrderNoticeCompletion{}, fmt.Errorf("server answered an inconsistent %s receipt: %s; check the seller's admin comments before confirming the notice", r.Status, reason)
+	}
+
+	if r.AlreadySent == nil {
+		return inconsistent("already_sent is missing")
+	}
+	c := courtOrderNoticeCompletion{
+		accepted:   *r.AlreadySent,
+		acceptedAt: stringValue(r.AcceptedAt),
+		commentID:  stringValue(r.CommentID),
+		delivery:   stringValue(r.DeliveryStatus),
+	}
+
+	if c.accepted {
+		switch {
+		case c.delivery != deliveryStatusAccepted:
+			return inconsistent(fmt.Sprintf("already_sent is true but delivery_status is %q", c.delivery))
+		case c.commentID == "":
+			return inconsistent("already_sent is true without a comment_id")
+		case !isTimestamp(c.acceptedAt):
+			return inconsistent(fmt.Sprintf("already_sent is true but accepted_at is %q", c.acceptedAt))
+		}
+		return c, nil
+	}
+
+	switch {
+	case c.acceptedAt != "":
+		return inconsistent("already_sent is false but accepted_at is set")
+	case c.delivery == deliveryStatusAccepted:
+		return inconsistent("already_sent is false but delivery_status is accepted")
+	case c.commentID != "" && c.delivery != deliveryStatusPending:
+		return inconsistent(fmt.Sprintf("a recorded notice has delivery_status %q", c.delivery))
+	case c.commentID == "" && c.delivery != "":
+		return inconsistent(fmt.Sprintf("delivery_status is %q without a comment_id", c.delivery))
+	}
+	return c, nil
+}
+
+func stringValue(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
+}
+
+func isTimestamp(value string) bool {
+	_, err := time.Parse(time.RFC3339, value)
+	return err == nil
 }
 
 func renderCourtOrderNoticePreview(opts cmdutil.Options, preview courtOrderNoticePreview) error {
 	if preview.Status != courtOrderNoticeStatusDryRun {
 		return fmt.Errorf("server answered status %q instead of %q to a dry run; check the seller's admin comments before sending", preview.Status, courtOrderNoticeStatusDryRun)
+	}
+	completion, err := preview.completion()
+	if err != nil {
+		return err
 	}
 
 	user := preview.User
@@ -250,8 +319,10 @@ func renderCourtOrderNoticePreview(opts cmdutil.Options, preview courtOrderNotic
 	if opts.PlainOutput {
 		return output.PrintPlain(opts.Out(), [][]string{{
 			preview.Status,
-			strconv.FormatBool(preview.AlreadySent),
-			preview.CommentID,
+			strconv.FormatBool(completion.accepted),
+			completion.delivery,
+			completion.acceptedAt,
+			completion.commentID,
 			user.UserID,
 			user.Email,
 			user.Name,
@@ -264,13 +335,25 @@ func renderCourtOrderNoticePreview(opts cmdutil.Options, preview courtOrderNotic
 	}
 
 	style := opts.Style()
+	delivery := completion.delivery
+	if delivery == "" {
+		delivery = "none (not recorded yet)"
+	}
 	lines := []string{
 		style.Yellow("Dry run: nothing was sent or recorded."),
+		"Delivery status: " + escape(delivery),
 	}
-	if preview.AlreadySent {
+	switch {
+	case completion.accepted:
 		lines = append(lines,
-			style.Yellow("This notice key was already used, so a real call would answer already_sent and queue nothing."),
-			"Comment ID: "+escape(preview.CommentID),
+			style.Yellow("The mail service already accepted this notice, so a real call would answer already_sent and queue nothing."),
+			"Accepted at: "+escape(completion.acceptedAt),
+			"Comment ID: "+escape(completion.commentID),
+		)
+	case completion.commentID != "":
+		lines = append(lines,
+			style.Yellow("This notice was recorded but the mail service has not accepted it yet, so a real call would queue the email again."),
+			"Comment ID: "+escape(completion.commentID),
 		)
 	}
 	lines = append(lines,
@@ -304,37 +387,59 @@ func escapeLines(value string) []string {
 	return lines
 }
 
-func renderCourtOrderNoticeResult(opts cmdutil.Options, result courtOrderNoticeResult) error {
-	var message string
-	switch result.Status {
-	case courtOrderNoticeStatusQueued:
-		message = "Queued the court order notice email. It is not delivered yet: a background job sends it."
-	case courtOrderNoticeStatusAlreadySent:
-		message = "Already queued: an earlier call with this notice key queued the email, so nothing new was queued."
-	default:
+func renderCourtOrderNoticeResult(opts cmdutil.Options, noticeKey string, result courtOrderNoticeResult) error {
+	if result.Status != courtOrderNoticeStatusQueued && result.Status != courtOrderNoticeStatusAlreadySent {
 		return fmt.Errorf("server answered unexpected status %q; check the seller's admin comments before retrying", result.Status)
 	}
-	if result.CommentID == "" {
+	completion, err := result.completion()
+	if err != nil {
+		return err
+	}
+	if completion.commentID == "" {
 		return fmt.Errorf("server answered %s without an admin comment ID; check the seller's admin comments before retrying", result.Status)
+	}
+	if completion.accepted != (result.Status == courtOrderNoticeStatusAlreadySent) {
+		return fmt.Errorf("server answered an inconsistent %s receipt: already_sent is %t; check the seller's admin comments before confirming the notice", result.Status, completion.accepted)
 	}
 
 	if opts.PlainOutput {
-		return output.PrintPlain(opts.Out(), [][]string{{result.Status, result.User.UserID, result.User.Email, result.CommentID, result.Comment.CreatedAt}})
+		return output.PrintPlain(opts.Out(), [][]string{{
+			result.Status,
+			completion.delivery,
+			completion.acceptedAt,
+			result.User.UserID,
+			result.User.Email,
+			completion.commentID,
+			result.Comment.CreatedAt,
+		}})
 	}
 	if opts.Quiet {
 		return nil
 	}
 
 	style := opts.Style()
-	headline := style.Green(message)
-	if result.Status == courtOrderNoticeStatusAlreadySent {
-		headline = style.Yellow(message)
+	var lines []string
+	if completion.accepted {
+		lines = []string{
+			style.Green("Already sent: the mail service accepted the court order notice email, so nothing new was queued."),
+			"Acceptance by the mail service is not confirmation of delivery to the seller's inbox.",
+			"Status: " + result.Status,
+			"Delivery status: " + escape(completion.delivery),
+			"Accepted at: " + escape(completion.acceptedAt),
+		}
+	} else {
+		lines = []string{
+			style.Yellow("Queued the court order notice email. The mail service has not accepted it yet."),
+			"Before confirming to Stripe or archiving the notice, run the same command with --notice-key " + escape(noticeKey) +
+				" until it answers already_sent. While the notice is pending, each run queues the email again.",
+			"Status: " + result.Status,
+			"Delivery status: " + escape(completion.delivery),
+		}
 	}
-	return output.Writeln(opts.Out(), strings.Join([]string{
-		headline,
-		"Status: " + result.Status,
-		"Seller: " + escape(result.User.Name) + " <" + escape(result.User.Email) + ">",
-		"User ID: " + escape(result.User.UserID),
-		"Comment ID: " + escape(result.CommentID),
-	}, "\n"))
+	lines = append(lines,
+		"Seller: "+escape(result.User.Name)+" <"+escape(result.User.Email)+">",
+		"User ID: "+escape(result.User.UserID),
+		"Comment ID: "+escape(completion.commentID),
+	)
+	return output.Writeln(opts.Out(), strings.Join(lines, "\n"))
 }

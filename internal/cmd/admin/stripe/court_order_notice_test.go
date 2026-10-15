@@ -22,6 +22,7 @@ const (
 	testSellerEmail      = "seller@example.com"
 	testCommentID        = "comment-external-id"
 	testCommentCreatedAt = "2026-10-15T12:00:00Z"
+	testAcceptedAt       = "2026-10-15T12:01:00Z"
 	testEmailBody        = "<div>\n  <p>Hi,</p>\n  <p>Law firm: Example Law LLP<br>\n  Email: <a href=\"mailto:notices@example.com\">notices@example.com</a></p>\n</div>\n"
 )
 
@@ -38,12 +39,29 @@ func sellerFixture() map[string]any {
 	return map[string]any{"user_id": testSellerID, "email": testSellerEmail, "name": "Seller One"}
 }
 
-func previewFixture(alreadySent bool) map[string]any {
+type noticeState int
+
+const (
+	noticeNew noticeState = iota
+	noticePending
+	noticeAccepted
+)
+
+func completionFixture(state noticeState) map[string]any {
+	switch state {
+	case noticePending:
+		return map[string]any{"already_sent": false, "delivery_status": "pending", "accepted_at": nil, "comment_id": testCommentID}
+	case noticeAccepted:
+		return map[string]any{"already_sent": true, "delivery_status": "accepted", "accepted_at": testAcceptedAt, "comment_id": testCommentID}
+	default:
+		return map[string]any{"already_sent": false, "delivery_status": nil, "accepted_at": nil, "comment_id": nil}
+	}
+}
+
+func previewFixture(state noticeState) map[string]any {
 	preview := map[string]any{
-		"status":       "dry_run",
-		"already_sent": alreadySent,
-		"user":         sellerFixture(),
-		"comment_id":   nil,
+		"status": "dry_run",
+		"user":   sellerFixture(),
 		"email": map[string]any{
 			"from":      "Gumroad <noreply@example.com>",
 			"reply_to":  []string{"support@example.com"},
@@ -52,19 +70,26 @@ func previewFixture(alreadySent bool) map[string]any {
 			"html_body": testEmailBody,
 		},
 	}
-	if alreadySent {
-		preview["comment_id"] = testCommentID
+	for key, value := range completionFixture(state) {
+		preview[key] = value
 	}
 	return preview
 }
 
 func sendFixture(status string) map[string]any {
-	return map[string]any{
-		"status":     status,
-		"user":       sellerFixture(),
-		"comment_id": testCommentID,
-		"comment":    map[string]any{"content": "Stripe court order notice for " + testStripeAccountID, "created_at": testCommentCreatedAt},
+	state := noticePending
+	if status == courtOrderNoticeStatusAlreadySent {
+		state = noticeAccepted
 	}
+	result := map[string]any{
+		"status":  status,
+		"user":    sellerFixture(),
+		"comment": map[string]any{"content": "Stripe court order notice for " + testStripeAccountID, "created_at": testCommentCreatedAt},
+	}
+	for key, value := range completionFixture(state) {
+		result[key] = value
+	}
+	return result
 }
 
 type recordedRequests struct {
@@ -75,8 +100,8 @@ type recordedRequests struct {
 
 func recordingHandler(t *testing.T, recorded *recordedRequests, respond func(http.ResponseWriter)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost || r.URL.Path != "/internal/admin/stripe_court_order_notices" {
-			t.Errorf("got %s %s, want POST /internal/admin/stripe_court_order_notices", r.Method, r.URL.Path)
+		if r.Method != http.MethodPost || r.URL.Path != "/internal/admin/stripe_restraint_notices" {
+			t.Errorf("got %s %s, want POST /internal/admin/stripe_restraint_notices", r.Method, r.URL.Path)
 		}
 		var raw map[string]any
 		if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
@@ -151,7 +176,7 @@ func TestCourtOrderNoticeRejectsMalformedInputWithoutNetwork(t *testing.T) {
 
 func TestCourtOrderNoticeDryRunPostsOnceAndPrintsSellerAndEmail(t *testing.T) {
 	var recorded recordedRequests
-	testutil.SetupAdmin(t, recordingHandler(t, &recorded, respondJSON(t, previewFixture(false))))
+	testutil.SetupAdmin(t, recordingHandler(t, &recorded, respondJSON(t, previewFixture(noticeNew))))
 
 	var stderr bytes.Buffer
 	cmd := testutil.Command(newCourtOrderNoticeCmd(), testutil.DryRun(true), testutil.NoInput(true), testutil.Quiet(false), testutil.Stderr(&stderr))
@@ -179,6 +204,7 @@ func TestCourtOrderNoticeDryRunPostsOnceAndPrintsSellerAndEmail(t *testing.T) {
 	}
 	for _, want := range []string{
 		"Dry run: nothing was sent or recorded.",
+		"Delivery status: none (not recorded yet)",
 		"User ID: " + testSellerID,
 		"Email: " + testSellerEmail,
 		"Reply-To: support@example.com",
@@ -190,25 +216,81 @@ func TestCourtOrderNoticeDryRunPostsOnceAndPrintsSellerAndEmail(t *testing.T) {
 			t.Errorf("dry-run output missing %q:\n%s", want, out)
 		}
 	}
-	if strings.Contains(out, "already used") {
-		t.Errorf("fresh notice key must not be reported as used:\n%s", out)
+	if strings.Contains(out, "accepted") || strings.Contains(out, "Comment ID") {
+		t.Errorf("a new notice must not report a recorded or accepted notice:\n%s", out)
 	}
 }
 
-func TestCourtOrderNoticeDryRunReportsAlreadyUsedNoticeKey(t *testing.T) {
-	testutil.SetupAdmin(t, respondingHandler(respondJSON(t, previewFixture(true))))
+func TestCourtOrderNoticeDryRunReportsRecordedNoticeDeliveryStatus(t *testing.T) {
+	tests := []struct {
+		name    string
+		state   noticeState
+		want    []string
+		notWant string
+	}{
+		{"pending", noticePending, []string{"Delivery status: pending", "the mail service has not accepted it yet, so a real call would queue the email again", "Comment ID: " + testCommentID}, "Accepted at"},
+		{"accepted", noticeAccepted, []string{"Delivery status: accepted", "The mail service already accepted this notice, so a real call would answer already_sent and queue nothing.", "Accepted at: " + testAcceptedAt, "Comment ID: " + testCommentID}, "queue the email again"},
+	}
 
-	cmd := testutil.Command(newCourtOrderNoticeCmd(), testutil.DryRun(true), testutil.Quiet(false))
-	cmd.SetArgs(courtOrderNoticeArgs())
-	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			testutil.SetupAdmin(t, respondingHandler(respondJSON(t, previewFixture(tt.state))))
 
-	if !strings.Contains(out, "This notice key was already used") || !strings.Contains(out, "Comment ID: "+testCommentID) {
-		t.Fatalf("expected already-used warning, got:\n%s", out)
+			cmd := testutil.Command(newCourtOrderNoticeCmd(), testutil.DryRun(true), testutil.Quiet(false))
+			cmd.SetArgs(courtOrderNoticeArgs())
+			out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+			for _, want := range tt.want {
+				if !strings.Contains(out, want) {
+					t.Errorf("output missing %q:\n%s", want, out)
+				}
+			}
+			if strings.Contains(out, tt.notWant) {
+				t.Errorf("output must not contain %q:\n%s", tt.notWant, out)
+			}
+		})
+	}
+}
+
+func TestCourtOrderNoticeDryRunRefusesInconsistentCompletion(t *testing.T) {
+	acceptedWithoutTimestamp := previewFixture(noticeAccepted)
+	acceptedWithoutTimestamp["accepted_at"] = nil
+	missingAlreadySent := previewFixture(noticeNew)
+	delete(missingAlreadySent, "already_sent")
+	pendingWithoutComment := previewFixture(noticeNew)
+	pendingWithoutComment["delivery_status"] = deliveryStatusPending
+
+	tests := []struct {
+		name string
+		resp map[string]any
+		want string
+	}{
+		{"accepted without accepted_at", acceptedWithoutTimestamp, `already_sent is true but accepted_at is ""`},
+		{"missing already_sent", missingAlreadySent, "already_sent is missing"},
+		{"pending without comment", pendingWithoutComment, `delivery_status is "pending" without a comment_id`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			testutil.SetupAdmin(t, respondingHandler(respondJSON(t, tt.resp)))
+
+			cmd := testutil.Command(newCourtOrderNoticeCmd(), testutil.DryRun(true), testutil.Quiet(false))
+			cmd.SetArgs(courtOrderNoticeArgs())
+			var err error
+			out := testutil.CaptureStdout(func() { err = cmd.Execute() })
+
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("got %v, want error containing %q", err, tt.want)
+			}
+			if out != "" {
+				t.Fatalf("must not print a preview for an inconsistent receipt, got:\n%s", out)
+			}
+		})
 	}
 }
 
 func TestCourtOrderNoticeDryRunJSONPassesResponseThrough(t *testing.T) {
-	testutil.SetupAdmin(t, respondingHandler(respondJSON(t, previewFixture(false))))
+	testutil.SetupAdmin(t, respondingHandler(respondJSON(t, previewFixture(noticePending))))
 
 	cmd := testutil.Command(newCourtOrderNoticeCmd(), testutil.DryRun(true), testutil.JSONOutput())
 	cmd.SetArgs(courtOrderNoticeArgs())
@@ -218,20 +300,22 @@ func TestCourtOrderNoticeDryRunJSONPassesResponseThrough(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &resp); err != nil {
 		t.Fatalf("not valid JSON: %v\n%s", err, out)
 	}
-	if resp.Status != courtOrderNoticeStatusDryRun || resp.User.UserID != testSellerID || resp.Email.HTMLBody != testEmailBody {
+	if resp.Status != courtOrderNoticeStatusDryRun || resp.User.UserID != testSellerID || resp.Email.HTMLBody != testEmailBody ||
+		resp.AlreadySent == nil || *resp.AlreadySent || stringValue(resp.DeliveryStatus) != deliveryStatusPending || stringValue(resp.CommentID) != testCommentID {
 		t.Fatalf("unexpected JSON payload: %s", out)
 	}
 }
 
 func TestCourtOrderNoticeDryRunPlainOutputIncludesEscapedEmail(t *testing.T) {
-	testutil.SetupAdmin(t, respondingHandler(respondJSON(t, previewFixture(false))))
+	testutil.SetupAdmin(t, respondingHandler(respondJSON(t, previewFixture(noticeAccepted))))
 
 	cmd := testutil.Command(newCourtOrderNoticeCmd(), testutil.DryRun(true), testutil.PlainOutput())
 	cmd.SetArgs(courtOrderNoticeArgs())
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
 	fields := strings.Split(strings.TrimSuffix(out, "\n"), "\t")
-	if len(fields) == 0 || fields[0] != courtOrderNoticeStatusDryRun || fields[len(fields)-1] != `<div>\n  <p>Hi,</p>\n  <p>Law firm: Example Law LLP<br>\n  Email: <a href="mailto:notices@example.com">notices@example.com</a></p>\n</div>\n` {
+	wantCompletion := []string{courtOrderNoticeStatusDryRun, "true", deliveryStatusAccepted, testAcceptedAt, testCommentID}
+	if len(fields) < len(wantCompletion) || strings.Join(fields[:len(wantCompletion)], "\t") != strings.Join(wantCompletion, "\t") || fields[len(fields)-1] != `<div>\n  <p>Hi,</p>\n  <p>Law firm: Example Law LLP<br>\n  Email: <a href="mailto:notices@example.com">notices@example.com</a></p>\n</div>\n` {
 		t.Fatalf("unexpected plain output: %q", out)
 	}
 }
@@ -285,8 +369,10 @@ func TestCourtOrderNoticeSendQueuesOnceAndPrintsCommentID(t *testing.T) {
 		t.Fatalf("send must pass an explicit dry_run false, got %v", recorded.raw[0])
 	}
 	for _, want := range []string{
-		"Queued the court order notice email. It is not delivered yet: a background job sends it.",
+		"Queued the court order notice email. The mail service has not accepted it yet.",
+		"run the same command with --notice-key " + testNoticeKey + " until it answers already_sent",
 		"Status: queued",
+		"Delivery status: pending",
 		"Seller: Seller One <" + testSellerEmail + ">",
 		"User ID: " + testSellerID,
 		"Comment ID: " + testCommentID,
@@ -295,8 +381,10 @@ func TestCourtOrderNoticeSendQueuesOnceAndPrintsCommentID(t *testing.T) {
 			t.Errorf("output missing %q:\n%s", want, out)
 		}
 	}
-	if strings.Contains(out, "Sent") || strings.Contains(out, "was delivered") {
-		t.Errorf("queued notice must not be reported as sent or delivered:\n%s", out)
+	for _, notWant := range []string{"Already sent", "Accepted at", "the mail service accepted"} {
+		if strings.Contains(out, notWant) {
+			t.Errorf("pending notice must not be reported as accepted (%q):\n%s", notWant, out)
+		}
 	}
 }
 
@@ -307,8 +395,17 @@ func TestCourtOrderNoticeSendReportsAlreadySent(t *testing.T) {
 	cmd.SetArgs(courtOrderNoticeArgs())
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
-	if !strings.Contains(out, "Already queued: an earlier call with this notice key queued the email, so nothing new was queued.") || !strings.Contains(out, "Comment ID: "+testCommentID) {
-		t.Fatalf("unexpected already_sent output:\n%s", out)
+	for _, want := range []string{
+		"Already sent: the mail service accepted the court order notice email, so nothing new was queued.",
+		"Acceptance by the mail service is not confirmation of delivery to the seller's inbox.",
+		"Status: already_sent",
+		"Delivery status: accepted",
+		"Accepted at: " + testAcceptedAt,
+		"Comment ID: " + testCommentID,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
 	}
 	if strings.Contains(out, "Queued the court order notice") {
 		t.Fatalf("already_sent must not be reported as queued:\n%s", out)
@@ -316,8 +413,18 @@ func TestCourtOrderNoticeSendReportsAlreadySent(t *testing.T) {
 }
 
 func TestCourtOrderNoticeSendRefusesUnrecognizedResponses(t *testing.T) {
-	missingComment := sendFixture(courtOrderNoticeStatusQueued)
-	missingComment["comment_id"] = nil
+	withFields := func(status string, fields map[string]any) map[string]any {
+		resp := sendFixture(status)
+		for key, value := range fields {
+			if value == nil {
+				delete(resp, key)
+				continue
+			}
+			resp[key] = value
+		}
+		return resp
+	}
+	queued, alreadySent := courtOrderNoticeStatusQueued, courtOrderNoticeStatusAlreadySent
 
 	tests := []struct {
 		name string
@@ -326,7 +433,18 @@ func TestCourtOrderNoticeSendRefusesUnrecognizedResponses(t *testing.T) {
 	}{
 		{"pending status", sendFixture("pending"), `server answered unexpected status "pending"`},
 		{"missing status", sendFixture(""), `server answered unexpected status ""`},
-		{"queued without comment", missingComment, "server answered queued without an admin comment ID"},
+		{"queued without comment", withFields(queued, map[string]any{"comment_id": nil, "delivery_status": nil}), "server answered queued without an admin comment ID"},
+		{"queued pending without comment", withFields(queued, map[string]any{"comment_id": nil}), `delivery_status is "pending" without a comment_id`},
+		{"queued marked accepted", withFields(queued, completionFixture(noticeAccepted)), "inconsistent queued receipt: already_sent is true"},
+		{"queued with accepted_at", withFields(queued, map[string]any{"accepted_at": testAcceptedAt}), "already_sent is false but accepted_at is set"},
+		{"queued with accepted delivery", withFields(queued, map[string]any{"delivery_status": deliveryStatusAccepted}), "already_sent is false but delivery_status is accepted"},
+		{"queued without delivery status", withFields(queued, map[string]any{"delivery_status": nil}), `a recorded notice has delivery_status ""`},
+		{"queued without already_sent", withFields(queued, map[string]any{"already_sent": nil}), "already_sent is missing"},
+		{"already_sent still pending", withFields(alreadySent, completionFixture(noticePending)), "inconsistent already_sent receipt: already_sent is false"},
+		{"already_sent with pending delivery", withFields(alreadySent, map[string]any{"delivery_status": deliveryStatusPending}), `already_sent is true but delivery_status is "pending"`},
+		{"already_sent without accepted_at", withFields(alreadySent, map[string]any{"accepted_at": nil}), `already_sent is true but accepted_at is ""`},
+		{"already_sent with malformed accepted_at", withFields(alreadySent, map[string]any{"accepted_at": "yesterday"}), `already_sent is true but accepted_at is "yesterday"`},
+		{"already_sent without comment", withFields(alreadySent, map[string]any{"comment_id": nil}), "already_sent is true without a comment_id"},
 	}
 
 	for _, tt := range tests {
@@ -348,16 +466,46 @@ func TestCourtOrderNoticeSendRefusesUnrecognizedResponses(t *testing.T) {
 	}
 }
 
-func TestCourtOrderNoticeSendPlainOutput(t *testing.T) {
-	testutil.SetupAdmin(t, respondingHandler(respondJSON(t, sendFixture(courtOrderNoticeStatusQueued))))
+func TestCourtOrderNoticeSendUndecodableResponseExplainsRerun(t *testing.T) {
+	mistyped := sendFixture(courtOrderNoticeStatusAlreadySent)
+	mistyped["already_sent"] = "true"
+	testutil.SetupAdmin(t, respondingHandler(respondJSON(t, mistyped)))
 
-	cmd := testutil.Command(newCourtOrderNoticeCmd(), testutil.Yes(true), testutil.PlainOutput())
+	cmd := testutil.Command(newCourtOrderNoticeCmd(), testutil.Yes(true), testutil.Quiet(false))
 	cmd.SetArgs(courtOrderNoticeArgs())
-	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+	var err error
+	out := testutil.CaptureStdout(func() { err = cmd.Execute() })
 
-	want := strings.Join([]string{courtOrderNoticeStatusQueued, testSellerID, testSellerEmail, testCommentID, testCommentCreatedAt}, "\t")
-	if strings.TrimSpace(out) != want {
-		t.Fatalf("got plain output %q, want %q", out, want)
+	if err == nil || !strings.Contains(err.Error(), "The email may have been queued") || !strings.Contains(err.Error(), "--notice-key "+testNoticeKey) {
+		t.Fatalf("expected rerun guidance on an undecodable send response, got %v", err)
+	}
+	if out != "" {
+		t.Fatalf("must not print a result for an undecodable response, got:\n%s", out)
+	}
+}
+
+func TestCourtOrderNoticeSendPlainOutputIncludesDeliveryStatus(t *testing.T) {
+	tests := []struct {
+		status string
+		want   []string
+	}{
+		{courtOrderNoticeStatusQueued, []string{courtOrderNoticeStatusQueued, deliveryStatusPending, "", testSellerID, testSellerEmail, testCommentID, testCommentCreatedAt}},
+		{courtOrderNoticeStatusAlreadySent, []string{courtOrderNoticeStatusAlreadySent, deliveryStatusAccepted, testAcceptedAt, testSellerID, testSellerEmail, testCommentID, testCommentCreatedAt}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.status, func(t *testing.T) {
+			testutil.SetupAdmin(t, respondingHandler(respondJSON(t, sendFixture(tt.status))))
+
+			cmd := testutil.Command(newCourtOrderNoticeCmd(), testutil.Yes(true), testutil.PlainOutput())
+			cmd.SetArgs(courtOrderNoticeArgs())
+			out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+			want := strings.Join(tt.want, "\t")
+			if strings.TrimSuffix(out, "\n") != want {
+				t.Fatalf("got plain output %q, want %q", out, want)
+			}
+		})
 	}
 }
 
@@ -408,55 +556,55 @@ func TestCourtOrderNoticeSendServerErrorIsNotReplayedAndExplainsRerun(t *testing
 	if !errors.As(err, &apiErr) || apiErr.StatusCode != http.StatusInternalServerError {
 		t.Fatalf("expected 500 API error, got %v", err)
 	}
-	for _, want := range []string{"send failed", "The email may have been queued", "--notice-key " + testNoticeKey, "already_sent"} {
+	for _, want := range []string{"send failed", "The email may have been queued", "--notice-key " + testNoticeKey, "answers already_sent if the mail service has accepted the notice, and queues the email again if not"} {
 		if !strings.Contains(apiErr.Message, want) {
 			t.Errorf("error missing %q: %s", want, apiErr.Message)
 		}
 	}
 }
 
-func TestCourtOrderNoticeSendServiceUnavailableReportsNothingQueued(t *testing.T) {
-	var recorded recordedRequests
-	testutil.SetupAdmin(t, recordingHandler(t, &recorded, respondError(http.StatusServiceUnavailable, "the email job could not be queued")))
-
-	cmd := testutil.Command(newCourtOrderNoticeCmd(), testutil.Yes(true))
-	cmd.SetArgs(courtOrderNoticeArgs())
-	err := cmd.Execute()
-
-	if len(recorded.bodies) != 1 {
-		t.Fatalf("got %d requests, want exactly 1 with no automatic replay", len(recorded.bodies))
+func TestCourtOrderNoticeSendServiceUnavailableLeavesOutcomeUnknown(t *testing.T) {
+	tests := []struct {
+		name    string
+		respond func(http.ResponseWriter)
+		want    string
+	}{
+		{"server message", respondError(http.StatusServiceUnavailable, "the email job could not be queued"), "the email job could not be queued"},
+		{"proxy page", func(w http.ResponseWriter) {
+			w.Header().Set("Content-Type", "text/html")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = w.Write([]byte("<html><body>503 Service Unavailable</body></html>"))
+		}, "API error (HTTP 503)"},
 	}
-	var apiErr *api.APIError
-	if !errors.As(err, &apiErr) || apiErr.StatusCode != http.StatusServiceUnavailable {
-		t.Fatalf("expected 503 API error, got %v", err)
-	}
-	if !strings.Contains(apiErr.Message, "court order notice was not queued: the email job could not be queued") || !strings.Contains(apiErr.Message, "--notice-key "+testNoticeKey) {
-		t.Fatalf("unexpected 503 message: %s", apiErr.Message)
-	}
-	if strings.Contains(apiErr.Message, "may have been queued") {
-		t.Fatalf("503 must not suggest the email was queued: %s", apiErr.Message)
-	}
-}
 
-func TestCourtOrderNoticeSendProxyServiceUnavailableLeavesOutcomeUnknown(t *testing.T) {
-	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/html")
-		w.WriteHeader(http.StatusServiceUnavailable)
-		_, _ = w.Write([]byte("<html><body>503 Service Unavailable</body></html>"))
-	})
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var recorded recordedRequests
+			testutil.SetupAdmin(t, recordingHandler(t, &recorded, tt.respond))
 
-	cmd := testutil.Command(newCourtOrderNoticeCmd(), testutil.Yes(true))
-	cmd.SetArgs(courtOrderNoticeArgs())
-	err := cmd.Execute()
+			cmd := testutil.Command(newCourtOrderNoticeCmd(), testutil.Yes(true))
+			cmd.SetArgs(courtOrderNoticeArgs())
+			err := cmd.Execute()
 
-	if err == nil || !strings.Contains(err.Error(), "The email may have been queued") || strings.Contains(err.Error(), "was not queued") {
-		t.Fatalf("a 503 without the server's message must leave the outcome unknown, got %v", err)
+			if len(recorded.bodies) != 1 {
+				t.Fatalf("got %d requests, want exactly 1 with no automatic replay", len(recorded.bodies))
+			}
+			var apiErr *api.APIError
+			if !errors.As(err, &apiErr) || apiErr.StatusCode != http.StatusServiceUnavailable {
+				t.Fatalf("expected 503 API error, got %v", err)
+			}
+			for _, want := range []string{tt.want, "The email may have been queued", "--notice-key " + testNoticeKey} {
+				if !strings.Contains(apiErr.Message, want) {
+					t.Errorf("error missing %q: %s", want, apiErr.Message)
+				}
+			}
+		})
 	}
 }
 
 func TestCourtOrderNoticeEscapesControlCharactersFromServer(t *testing.T) {
 	const hostileName = "Seller\x1b[2K\x1b[1AOne"
-	preview := previewFixture(false)
+	preview := previewFixture(noticeNew)
 	preview["user"] = map[string]any{"user_id": testSellerID, "email": testSellerEmail, "name": hostileName}
 	preview["email"].(map[string]any)["html_body"] = "<p>Hi,</p>\r\n<p>\x1b]0;title\x07Law firm</p>\r\n"
 	sent := sendFixture(courtOrderNoticeStatusQueued)

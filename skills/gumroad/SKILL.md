@@ -134,8 +134,8 @@ Most responses are wrapped in `{"success": true, ...}` with resource-specific ke
 - `admin purchases search` → `.purchases[]`, `.has_more`, `.limit`
 - `admin purchases lookup` → `.purchases[]`
 - `admin products list` → `.products[]`, `admin products view` → `.product`
-- `admin stripe court-order-notice --dry-run` → `.status` (`dry_run`), `.already_sent`, `.comment_id` (null unless already sent), `.user` (`user_id`, `email`, `name`), `.email` (`from`, `reply_to[]`, `to[]`, `subject`, `html_body`)
-- `admin stripe court-order-notice` → `.status` (`queued` or `already_sent`), `.comment_id`, `.user` (`user_id`, `email`, `name`), `.comment.content`, `.comment.created_at`
+- `admin stripe court-order-notice --dry-run` → `.status` (`dry_run`), `.already_sent`, `.delivery_status`, `.accepted_at`, `.comment_id` (null unless the notice was already recorded), `.user` (`user_id`, `email`, `name`), `.email` (`from`, `reply_to[]`, `to[]`, `subject`, `html_body`)
+- `admin stripe court-order-notice` → `.status` (`queued` or `already_sent`), `.already_sent`, `.delivery_status` (`pending` or `accepted`), `.accepted_at` (null until accepted), `.comment_id`, `.user` (`user_id`, `email`, `name`), `.comment.content`, `.comment.created_at`. Only `already_sent` means the mail service accepted the email; `queued` stays pending until a later call with the same key answers `already_sent`.
 
 Admin pagination models differ by command:
 
@@ -348,10 +348,14 @@ gumroad admin users update-watch --user-id 2245593582708 --expected-email seller
 gumroad admin users unwatch --user-id 2245593582708 --expected-email seller@example.com --yes --json --non-interactive --no-input
 
 # Tell a seller that Stripe paused their connected account under a court order.
-# --dry-run asks the server to render the email: it returns the matched seller and the
-# complete email, and sends and records nothing. A real call records an admin comment
-# keyed by --notice-key and queues the email; "queued" is not "delivered". Repeating a
-# notice key answers already_sent and queues nothing, so rerunning after a failed call is safe.
+# --dry-run asks the server to render the email: it returns the matched seller, the
+# notice's delivery status and the complete email, and sends and records nothing.
+# A real call records an admin comment keyed by --notice-key and queues the email.
+# "queued" (delivery_status pending) means the mail service has not accepted it yet:
+# rerun the same command with the same key; each pending call queues the email again.
+# "already_sent" (delivery_status accepted, accepted_at set) means the mail service
+# accepted it and nothing new is queued. Accepted is not inbox delivery. Confirm the
+# notice to Stripe or archive it only after a call answers already_sent.
 gumroad admin stripe court-order-notice --stripe-account-id acct_1Example --firm-name "Example Law LLP" --firm-email notices@example.com --notice-key <key> --dry-run --json --non-interactive --no-input
 gumroad admin stripe court-order-notice --stripe-account-id acct_1Example --firm-name "Example Law LLP" --firm-email notices@example.com --notice-key <key> --yes --json --non-interactive --no-input
 ```
