@@ -149,6 +149,8 @@ func TestSkillMarkdown_ContainsAdminRolloutCommands(t *testing.T) {
 		"gumroad admin purchases lookup --stripe-fingerprint",
 		"gumroad admin products list --email",
 		"gumroad admin products view <product-id> --with-fraud-context",
+		"gumroad admin stripe court-order-notice --stripe-account-id",
+		"`admin stripe court-order-notice` → `.status` (`queued` or `already_sent`), `.comment_id`",
 		"Cursor-paginated: `admin users affiliates`",
 		"Page-paginated: `admin products list`",
 		"Capped, not continuable: `admin users related`",

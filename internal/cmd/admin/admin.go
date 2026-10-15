@@ -5,6 +5,7 @@ import (
 	adminpayouts "github.com/antiwork/gumroad-cli/internal/cmd/admin/payouts"
 	adminproducts "github.com/antiwork/gumroad-cli/internal/cmd/admin/products"
 	adminpurchases "github.com/antiwork/gumroad-cli/internal/cmd/admin/purchases"
+	adminstripe "github.com/antiwork/gumroad-cli/internal/cmd/admin/stripe"
 	adminusers "github.com/antiwork/gumroad-cli/internal/cmd/admin/users"
 	"github.com/spf13/cobra"
 )
@@ -35,7 +36,8 @@ func NewAdminCmd() *cobra.Command {
   gumroad admin payouts scheduled create --user-id <user-id> --processor stripe
   gumroad admin products list --email <email>
   gumroad admin products view <product-id>
-  gumroad admin products flag-for-tos-violation <product-id> --user-id <user-id>`,
+  gumroad admin products flag-for-tos-violation <product-id> --user-id <user-id>
+  gumroad admin stripe court-order-notice --stripe-account-id <acct-id> --firm-name <name> --firm-email <email> --notice-key <key> --dry-run`,
 	}
 
 	cmd.AddCommand(adminpurchases.NewPurchasesCmd())
@@ -43,6 +45,7 @@ func NewAdminCmd() *cobra.Command {
 	cmd.AddCommand(adminusers.NewUsersCmd())
 	cmd.AddCommand(adminpayouts.NewPayoutsCmd())
 	cmd.AddCommand(adminproducts.NewProductsCmd())
+	cmd.AddCommand(adminstripe.NewStripeCmd())
 
 	return cmd
 }
