@@ -456,8 +456,10 @@ func pollDeviceToken(ctx context.Context, cfg FlowConfig, deviceCode DeviceCodeR
 		cfg.debugf("device poll attempt=%d outcome=%s", poll, oauthErr.Code)
 		switch oauthErr.Code {
 		case "authorization_pending":
+			throttled = false
 			continue
 		case "slow_down":
+			throttled = false
 			interval = nextInterval
 			continue
 		case "access_denied":
@@ -478,10 +480,11 @@ func nextDevicePollWait(retryAfter, interval, remaining time.Duration) time.Dura
 	return max(min(wait, remaining), 0)
 }
 
-// ErrDeviceLoginRateLimited is returned when the device code expired after
-// Gumroad throttled at least one poll, so an approval may have happened but
-// could not be collected. The browser flow shares the same limit, so callers
-// should not suggest it as an alternative.
+// ErrDeviceLoginRateLimited is returned when the device code expired while
+// Gumroad was throttling the polls (no OAuth answer came back after the last
+// throttled poll), so an approval may have happened but could not be
+// collected. The browser flow shares the same limit, so callers should not
+// suggest it as an alternative.
 var ErrDeviceLoginRateLimited error = deviceRateLimitedError{}
 
 type deviceRateLimitedError struct{}

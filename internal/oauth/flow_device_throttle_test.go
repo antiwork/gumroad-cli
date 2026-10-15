@@ -351,7 +351,9 @@ func TestDeviceFlow_ExpiryNamesRateLimitOnlyAfterThrottledPoll(t *testing.T) {
 	}{
 		{"throttled until the code expires", []string{"429"}, true},
 		{"pending until the code expires", []string{"pending"}, false},
-		{"server expires the code after a throttled poll", []string{"429", "pending", "expired"}, true},
+		{"pending after the throttle cleared until the code expires", []string{"429", "pending"}, false},
+		{"server expires the code right after a throttled poll", []string{"pending", "429", "expired"}, true},
+		{"server expires the code after the throttle cleared", []string{"429", "pending", "expired"}, false},
 		{"server expires the code without a throttled poll", []string{"pending", "expired"}, false},
 	}
 	for _, tt := range tests {
