@@ -277,6 +277,8 @@ func devicePollScriptServer(t *testing.T, retryAfter string, script ...string) *
 				}
 				w.WriteHeader(http.StatusTooManyRequests)
 				_, _ = w.Write([]byte("Retry later\n"))
+			case "429-cut":
+				hijackShortBody(t, w, "HTTP/1.1 429 Too Many Requests\r\nContent-Type: text/plain\r\nContent-Length: 500\r\n\r\nRetry later\n")
 			case "503":
 				w.WriteHeader(http.StatusServiceUnavailable)
 				_, _ = w.Write([]byte("Unavailable\n"))
@@ -351,6 +353,7 @@ func TestDeviceFlow_ExpiryNamesRateLimitOnlyAfterThrottledPoll(t *testing.T) {
 		wantRateLimit bool
 	}{
 		{"throttled until the code expires", []string{"429"}, true},
+		{"throttled with cut-off bodies until the code expires", []string{"429-cut"}, true},
 		{"pending until the code expires", []string{"pending"}, false},
 		{"pending after the throttle cleared until the code expires", []string{"429", "pending"}, false},
 		{"server expires the code right after a throttled poll", []string{"pending", "429", "expired"}, true},
@@ -360,7 +363,7 @@ func TestDeviceFlow_ExpiryNamesRateLimitOnlyAfterThrottledPoll(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			srv := devicePollScriptServer(t, "60", tt.script...)
+			srv := devicePollScriptServer(t, "", tt.script...)
 			defer srv.Close()
 
 			cfg := deviceFlowConfig(srv)
@@ -415,5 +418,30 @@ func TestDeviceFlow_NoThrottleLineWhenTheCodeHasExpired(t *testing.T) {
 	}
 	if status.String() != "" {
 		t.Fatalf("got status output %q, want none for a throttle that arrives as the code expires", status.String())
+	}
+}
+
+func TestDeviceFlow_StopsWhenRetryAfterOutlastsTheCode(t *testing.T) {
+	srv := devicePollScriptServer(t, "3600", "429")
+	defer srv.Close()
+
+	var status strings.Builder
+	cfg := deviceFlowConfig(srv)
+	cfg.StatusWriter = &status
+	var clock fakeClock
+	clock.configure(&cfg)
+
+	_, err := DeviceFlowResult(context.Background(), cfg, &strings.Builder{})
+	if !errors.Is(err, ErrDeviceLoginRateLimited) {
+		t.Fatalf("got error %v, want the rate-limited error", err)
+	}
+	if !strings.Contains(err.Error(), "for longer than the code stays valid") {
+		t.Fatalf("got error %q, want it to say the limit outlasts the code", err)
+	}
+	if len(clock.waits) != 1 {
+		t.Fatalf("got waits %v, want only the first poll interval before giving up", clock.waits)
+	}
+	if status.String() != "" {
+		t.Fatalf("got status output %q, want none when the login gives up at once", status.String())
 	}
 }

@@ -443,7 +443,11 @@ func pollDeviceToken(ctx context.Context, cfg FlowConfig, deviceCode DeviceCodeR
 			cfg.debugf("device poll attempt=%d outcome=transient_error retrying retry_after=%s err=%q", poll, transient.retryAfter, err)
 			if transient.status == http.StatusTooManyRequests {
 				throttled = true
-				if left := expiresAt.Sub(cfg.currentTime()); !inThrottle && left > 0 {
+				left := expiresAt.Sub(cfg.currentTime())
+				if transient.retryAfter > 0 && transient.retryAfter >= left {
+					return FlowResult{}, deviceRateLimitedError{outlastsCode: true}
+				}
+				if !inThrottle && left > 0 {
 					inThrottle = true
 					cfg.statusf("Gumroad is rate limiting login requests from this network address; still waiting for approval and retrying in %s...", nextDevicePollWait(nextWait, interval, left).Round(time.Second))
 				}
@@ -478,17 +482,28 @@ func nextDevicePollWait(retryAfter, interval, remaining time.Duration) time.Dura
 	return max(min(wait, remaining), 0)
 }
 
-// ErrDeviceLoginRateLimited is returned when the device code expired while
-// Gumroad was throttling the polls (no OAuth answer came back after the last
-// throttled poll), so an approval may have happened but could not be
-// collected. The browser flow shares the same limit, so callers should not
-// suggest it as an alternative.
+// ErrDeviceLoginRateLimited is returned when Gumroad's rate limit keeps the
+// device login from finishing: the code expired while the polls were being
+// throttled (no OAuth answer came back after the last throttled poll), or a
+// throttle's Retry-After runs past the code's expiry. An approval may have
+// happened but could not be collected. The browser flow shares the same limit,
+// so callers should not suggest it as an alternative.
 var ErrDeviceLoginRateLimited error = deviceRateLimitedError{}
 
-type deviceRateLimitedError struct{}
+type deviceRateLimitedError struct {
+	outlastsCode bool
+}
 
-func (deviceRateLimitedError) Error() string {
+func (e deviceRateLimitedError) Error() string {
+	if e.outlastsCode {
+		return "authorization expires before the rate limit clears: Gumroad is rate limiting the login polls from this network address for longer than the code stays valid, so an approval cannot reach the CLI. Nothing was saved. Wait before running `gumroad auth login` again, and run one login at a time"
+	}
 	return "authorization expired: Gumroad rate limited the login polls from this network address, so an approval may not have reached the CLI before the code expired. Nothing was saved. Wait before running `gumroad auth login` again, and run one login at a time"
+}
+
+func (deviceRateLimitedError) Is(target error) bool {
+	_, ok := target.(deviceRateLimitedError)
+	return ok
 }
 
 func deviceExpiredError(throttled bool) error {
