@@ -55,6 +55,25 @@ func BuildFileRichContent(fileRefs []FileRef) []map[string]any {
 	}}
 }
 
+// BuildFilePage builds one rich-content page that holds a file embed per ref, in order,
+// with a trailing empty paragraph so the editor has a place to type after the last file.
+// Course upload uses this to place a page's files in a single product write.
+func BuildFilePage(pageID, title string, fileRefs []FileRef) map[string]any {
+	if title == "" {
+		title = pageID
+	}
+	content := fileEmbedNodes(fileRefs)
+	content = append(content, map[string]any{"type": "paragraph"})
+	return map[string]any{
+		"id":    pageID,
+		"title": title,
+		"description": map[string]any{
+			"type":    "doc",
+			"content": content,
+		},
+	}
+}
+
 func AppendFileEmbeds(richContent []map[string]any, preservedFileIDs []string, fileRefs []FileRef) ([]map[string]any, error) {
 	if len(fileRefs) == 0 {
 		return Clone(richContent)
