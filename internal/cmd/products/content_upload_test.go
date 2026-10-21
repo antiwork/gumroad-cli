@@ -27,6 +27,7 @@ type courseUploadServers struct {
 	putCalls     atomic.Int32
 	putBodies    []map[string]any
 	files        []existingProductFile
+	fileIDs      map[string]string // external_id -> server id, as the real API assigns them
 	richContent  []map[string]any
 	failPutOn    int32
 }
@@ -34,7 +35,7 @@ type courseUploadServers struct {
 func newCourseUploadServers(t *testing.T) *courseUploadServers {
 	t.Helper()
 
-	s := &courseUploadServers{}
+	s := &courseUploadServers{fileIDs: map[string]string{}}
 	s.s3 = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.Copy(io.Discard, r.Body)
 		w.Header().Set("ETag", `"etag-1"`)
@@ -83,7 +84,7 @@ func (s *courseUploadServers) dispatch(t *testing.T) http.HandlerFunc {
 					for i, page := range raw {
 						content[i], _ = page.(map[string]any)
 					}
-					s.richContent = rewriteEmbedIDs(content)
+					s.richContent = s.resolveEmbedIDs(t, content)
 				}
 				testutil.JSON(t, w, map[string]any{"success": true})
 			default:
@@ -129,7 +130,9 @@ func (s *courseUploadServers) registerFiles(t *testing.T, body map[string]any) {
 		if externalID == "" {
 			t.Fatalf("new file entry has no external_id: %#v", file)
 		}
-		s.files = append(s.files, existingProductFile{ID: "file-" + externalID, Name: "upload"})
+		serverID := fmt.Sprintf("file-%d", len(s.files)+1)
+		s.fileIDs[externalID] = serverID
+		s.files = append(s.files, existingProductFile{ID: serverID, Name: "upload"})
 	}
 }
 
@@ -530,19 +533,40 @@ func TestContentUpload_TextOutput(t *testing.T) {
 	}
 }
 
-func rewriteEmbedIDs(pages []map[string]any) []map[string]any {
+// resolveEmbedIDs maps each embed's local file id to the server id the write registered,
+// failing the test on an embed that points at no registered file.
+func (s *courseUploadServers) resolveEmbedIDs(t *testing.T, pages []map[string]any) []map[string]any {
+	t.Helper()
 	for _, page := range pages {
 		description, _ := page["description"].(map[string]any)
 		nodes, _ := description["content"].([]any)
 		for _, node := range nodes {
 			nodeMap, _ := node.(map[string]any)
 			attrs, _ := nodeMap["attrs"].(map[string]any)
-			if id, _ := attrs["id"].(string); strings.HasPrefix(id, "cli-upload-") {
-				attrs["id"] = "file-" + id
+			id, _ := attrs["id"].(string)
+			if id == "" {
+				continue
 			}
+			serverID, ok := s.fileIDs[id]
+			if !ok {
+				if s.registeredServers()[id] {
+					continue
+				}
+				t.Fatalf("embed %q points at a file the write never registered", id)
+			}
+			attrs["id"] = serverID
 		}
 	}
 	return pages
+}
+
+// registeredServers is the set of server ids this product's files already carry.
+func (s *courseUploadServers) registeredServers() map[string]bool {
+	servers := make(map[string]bool, len(s.files))
+	for _, file := range s.files {
+		servers[file.ID] = true
+	}
+	return servers
 }
 
 func assertEmbedsResolve(t *testing.T, s *courseUploadServers) {
@@ -670,4 +694,26 @@ func TestContentUpload_DryRunSkipsWrittenPages(t *testing.T) {
 	if summary.PagesToWrite != 0 || summary.PagesSkipped != 2 {
 		t.Fatalf("unexpected dry-run summary: %#v", summary)
 	}
+}
+
+// A lesson the seller created but never gave content still receives its files, and keeps
+// its title.
+func TestContentUpload_FillsEmptyExistingPage(t *testing.T) {
+	dir := t.TempDir()
+	files := writeCourseFiles(t, dir, 2)
+	s := newCourseUploadServers(t)
+	s.richContent = []map[string]any{{"id": "week-1", "title": "Old title", "description": map[string]any{"type": "doc"}}}
+	testutil.Setup(t, s.dispatch(t))
+
+	manifestPath := writeCourseManifest(t, dir, map[string][]string{"week-1": files})
+	if err := runCourseUploadCmd(t, manifestPath); err != nil {
+		t.Fatalf("Execute failed: %v", err)
+	}
+	if len(s.richContent) != 1 || s.richContent[0]["title"] != "Old title" {
+		t.Fatalf("existing page must keep its title: %#v", s.richContent)
+	}
+	if counts := courseEmbedCounts(t, s.richContent); counts["week-1"] != 2 {
+		t.Fatalf("embeds = %d, want 2", counts["week-1"])
+	}
+	assertEmbedsResolve(t, s)
 }

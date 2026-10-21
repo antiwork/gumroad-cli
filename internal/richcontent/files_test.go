@@ -111,3 +111,48 @@ func TestAppendFileEmbedsToPageRejectsUnknownPage(t *testing.T) {
 		t.Fatal("expected an error for an unknown page id")
 	}
 }
+
+// A page a seller created but never filled in has no content array (or none at all),
+// and must still accept files while keeping the rest of its fields.
+func TestAddFileEmbedsToPageInitializesEmptyPages(t *testing.T) {
+	refs := []FileRef{{FileID: "file_a", EmbedUID: "uid_a"}}
+	cases := map[string]map[string]any{
+		"doc without content": {"id": "page_1", "title": "Week 1", "description": map[string]any{"type": "doc"}},
+		"null content":        {"id": "page_1", "title": "Week 1", "description": map[string]any{"type": "doc", "content": nil}},
+		"no description":      {"id": "page_1", "title": "Week 1"},
+	}
+	for name, page := range cases {
+		t.Run(name, func(t *testing.T) {
+			AddFileEmbedsToPage(page, refs)
+
+			if page["title"] != "Week 1" {
+				t.Fatalf("title = %#v, want Week 1", page["title"])
+			}
+			description, ok := page["description"].(map[string]any)
+			if !ok || description["type"] != "doc" {
+				t.Fatalf("description = %#v, want a doc", page["description"])
+			}
+			content, ok := description["content"].([]any)
+			if !ok || len(content) != 1 {
+				t.Fatalf("content = %#v, want one embed", description["content"])
+			}
+			if ids := FileEmbedIDs([]map[string]any{page}); len(ids) != 1 || ids[0] != "file_a" {
+				t.Fatalf("file embed ids = %#v, want [file_a]", ids)
+			}
+		})
+	}
+}
+
+func TestAddFileEmbedsToPageKeepsExistingContent(t *testing.T) {
+	page := map[string]any{"id": "page_1", "description": map[string]any{
+		"type":    "doc",
+		"content": []any{map[string]any{"type": "paragraph"}},
+	}}
+
+	AddFileEmbedsToPage(page, []FileRef{{FileID: "file_a", EmbedUID: "uid_a"}})
+
+	content, _ := page["description"].(map[string]any)["content"].([]any)
+	if len(content) != 2 {
+		t.Fatalf("content nodes = %d, want 2", len(content))
+	}
+}

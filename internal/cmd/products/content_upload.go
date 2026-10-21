@@ -439,9 +439,7 @@ func placeCoursePage(richContent []map[string]any, page coursePageSpec, refs []r
 		if richcontent.PageEmbedsAllFiles(existing, refs) {
 			return next, true, nil
 		}
-		if !richcontent.AddFileEmbedsToPage(existing, refs) {
-			return nil, false, cmdutil.InvalidInputErrorf("existing page %s has no editable content to add files to", page.ID)
-		}
+		richcontent.AddFileEmbedsToPage(existing, refs)
 		return next, false, nil
 	}
 	return append(next, richcontent.BuildFilePage(page.ID, page.Title, refs)), false, nil

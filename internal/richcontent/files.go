@@ -71,14 +71,17 @@ func BuildFilePage(pageID, title string, fileRefs []FileRef) map[string]any {
 	}
 }
 
-func AddFileEmbedsToPage(page map[string]any, fileRefs []FileRef) bool {
-	description, _ := page["description"].(map[string]any)
-	content, ok := description["content"].([]any)
+// AddFileEmbedsToPage appends the file embeds to the named page, creating a missing
+// description or content array so a page with no content yet still accepts files.
+func AddFileEmbedsToPage(page map[string]any, fileRefs []FileRef) {
+	description, ok := page["description"].(map[string]any)
 	if !ok {
-		return false
+		description = map[string]any{}
+		page["description"] = description
 	}
+	content, _ := description["content"].([]any)
+	description["type"] = "doc"
 	description["content"] = append(content, fileEmbedNodes(fileRefs)...)
-	return true
 }
 
 func PageEmbedsAllFiles(page map[string]any, fileRefs []FileRef) bool {
