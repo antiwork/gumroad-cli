@@ -387,3 +387,167 @@ func TestContentUpload_DryRunPlansPageWrites(t *testing.T) {
 		t.Fatalf("dry run wrote the product %d times, want 0", got)
 	}
 }
+
+func TestParseCourseManifest_RejectsBadManifests(t *testing.T) {
+	cases := map[string]string{
+		"invalid JSON":              `{`,
+		"no pages":                  `{"pages":[]}`,
+		"page without id":           `{"pages":[{"title":"Week 1","files":[]}]}`,
+		"file without path":         `{"pages":[{"id":"w1","files":[{"name":"Notes"}]}]}`,
+		"empty file path":           `{"pages":[{"id":"w1","files":[""]}]}`,
+		"file not a path or object": `{"pages":[{"id":"w1","files":[42]}]}`,
+	}
+	for name, body := range cases {
+		if _, err := parseCourseManifest([]byte(body)); err == nil {
+			t.Fatalf("%s: expected an error, got none", name)
+		}
+	}
+}
+
+func TestParseCourseManifest_AcceptsPathAndObjectFiles(t *testing.T) {
+	manifest, err := parseCourseManifest([]byte(
+		`{"pages":[{"page":"w1","files":["a.mp4",{"path":"b.pdf","name":"Notes","description":"Week brief"}]}]}`))
+	if err != nil {
+		t.Fatalf("parse failed: %v", err)
+	}
+	if len(manifest.Pages) != 1 || manifest.Pages[0].ID != "w1" {
+		t.Fatalf("unexpected pages: %#v", manifest.Pages)
+	}
+	files := manifest.Pages[0].Files
+	if len(files) != 2 || files[0].Path != "a.mp4" || files[1].DisplayName != "Notes" || files[1].Description != "Week brief" {
+		t.Fatalf("unexpected files: %#v", files)
+	}
+}
+
+func TestContentUpload_RejectsDuplicatePagesAndDirectories(t *testing.T) {
+	dir := t.TempDir()
+	files := writeCourseFiles(t, dir, 1)
+	s := newCourseUploadServers(t)
+	testutil.Setup(t, s.dispatch(t))
+
+	duplicate := filepath.Join(dir, "duplicate.json")
+	if err := os.WriteFile(duplicate, []byte(fmt.Sprintf(
+		`{"pages":[{"id":"w1","files":[%q]},{"id":"w1","files":[%q]}]}`, files[0], files[0])), 0o600); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+	if err := runCourseUploadCmd(t, duplicate); err == nil || !strings.Contains(err.Error(), "twice") {
+		t.Fatalf("expected a duplicate-page error, got %v", err)
+	}
+
+	directory := filepath.Join(dir, "directory.json")
+	if err := os.WriteFile(directory, []byte(fmt.Sprintf(
+		`{"pages":[{"id":"w1","files":[%q]}]}`, dir)), 0o600); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+	if err := runCourseUploadCmd(t, directory); err == nil || !strings.Contains(err.Error(), "directory") {
+		t.Fatalf("expected a directory error, got %v", err)
+	}
+	if got := s.presignCalls.Load(); got != 0 {
+		t.Fatalf("uploads = %d, want 0", got)
+	}
+}
+
+func TestContentUpload_RejectsPerVariantProduct(t *testing.T) {
+	dir := t.TempDir()
+	files := writeCourseFiles(t, dir, 1)
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{
+			"product": map[string]any{
+				"id":                                     "prod1",
+				"has_same_rich_content_for_all_variants": false,
+				"variants":                               []map[string]any{{"options": []map[string]any{{"name": "Blue"}}}},
+			},
+		})
+	})
+
+	manifestPath := writeCourseManifest(t, dir, map[string][]string{"week-1": files})
+	err := runCourseUploadCmd(t, manifestPath)
+	if err == nil || !strings.Contains(err.Error(), "per-variant") {
+		t.Fatalf("expected a per-variant guard error, got %v", err)
+	}
+}
+
+func TestContentUpload_ReplacesExistingPage(t *testing.T) {
+	dir := t.TempDir()
+	files := writeCourseFiles(t, dir, 2)
+	s := newCourseUploadServers(t)
+	s.richContent = []map[string]any{{"id": "week-1", "title": "Old title", "description": map[string]any{"type": "doc", "content": []any{}}}}
+	testutil.Setup(t, s.dispatch(t))
+
+	manifestPath := writeCourseManifest(t, dir, map[string][]string{"week-1": files})
+	if err := runCourseUploadCmd(t, manifestPath); err != nil {
+		t.Fatalf("Execute failed: %v", err)
+	}
+
+	if len(s.richContent) != 1 {
+		t.Fatalf("pages = %d, want the existing page replaced in place", len(s.richContent))
+	}
+	if title, _ := s.richContent[0]["title"].(string); title != "WEEK-1" {
+		t.Fatalf("title = %q, want the manifest title", title)
+	}
+	if counts := courseEmbedCounts(t, s.richContent); counts["week-1"] != 2 {
+		t.Fatalf("embeds = %d, want 2", counts["week-1"])
+	}
+}
+
+func TestContentUpload_StateProductMismatch(t *testing.T) {
+	dir := t.TempDir()
+	files := writeCourseFiles(t, dir, 1)
+	s := newCourseUploadServers(t)
+	testutil.Setup(t, s.dispatch(t))
+
+	manifestPath := writeCourseManifest(t, dir, map[string][]string{"week-1": files})
+	statePath := manifestPath + defaultCourseStateSuffix
+	if err := writeCourseUploadState(statePath, courseUploadState{Version: 1, ProductID: "other", Uploads: map[string]string{}, Pages: map[string]bool{}}); err != nil {
+		t.Fatalf("write state: %v", err)
+	}
+
+	err := runCourseUploadCmd(t, manifestPath)
+	if err == nil || !strings.Contains(err.Error(), "belongs to product other") {
+		t.Fatalf("expected a resume-file product mismatch, got %v", err)
+	}
+}
+
+func TestReadCourseUploadState_RejectsCorruptFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.json")
+	if err := os.WriteFile(path, []byte("{not json"), 0o600); err != nil {
+		t.Fatalf("write state: %v", err)
+	}
+	if _, err := readCourseUploadState(path); err == nil {
+		t.Fatal("expected a corrupt resume file to fail")
+	}
+}
+
+func TestContentUpload_TextOutput(t *testing.T) {
+	dir := t.TempDir()
+	files := writeCourseFiles(t, dir, 2)
+	s := newCourseUploadServers(t)
+	testutil.Setup(t, s.dispatch(t))
+
+	manifestPath := writeCourseManifest(t, dir, map[string][]string{"week-1": files})
+
+	cmd := testutil.Command(newContentUploadCmd())
+	cmd.SetArgs([]string{"prod1", manifestPath})
+	out := testutil.CaptureStdout(func() {
+		if err := cmd.Execute(); err != nil {
+			t.Fatalf("Execute failed: %v", err)
+		}
+	})
+	if !strings.Contains(out, "Uploaded 2 files and wrote 1 pages") {
+		t.Fatalf("unexpected summary: %s", out)
+	}
+
+	dryDir := t.TempDir()
+	dryFiles := writeCourseFiles(t, dryDir, 1)
+	dryManifest := writeCourseManifest(t, dryDir, map[string][]string{"week-1": dryFiles})
+	dryCmd := testutil.Command(newContentUploadCmd(), testutil.DryRun(true))
+	dryCmd.SetArgs([]string{"prod1", dryManifest})
+	dryOut := testutil.CaptureStdout(func() {
+		if err := dryCmd.Execute(); err != nil {
+			t.Fatalf("dry run failed: %v", err)
+		}
+	})
+	if !strings.Contains(dryOut, "1 product writes") || !strings.Contains(dryOut, "No files uploaded.") {
+		t.Fatalf("unexpected dry-run output: %s", dryOut)
+	}
+}

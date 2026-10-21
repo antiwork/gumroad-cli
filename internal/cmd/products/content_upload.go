@@ -21,16 +21,10 @@ import (
 
 const defaultCourseStateSuffix = ".state.json"
 
-type courseFileSpec struct {
-	Path        string
-	DisplayName string
-	Description string
-}
-
 type coursePageSpec struct {
 	ID    string
 	Title string
-	Files []courseFileSpec
+	Files []requestedProductUpload
 }
 
 type courseManifest struct {
@@ -153,7 +147,7 @@ func parseCourseManifest(data []byte) (courseManifest, error) {
 		if pageID == "" {
 			return courseManifest{}, fmt.Errorf("page %d has no id; take it from `gumroad products content list <product_id>`", i+1)
 		}
-		files := make([]courseFileSpec, len(page.Files))
+		files := make([]requestedProductUpload, len(page.Files))
 		for j, fileEntry := range page.Files {
 			spec, err := parseCourseFileSpec(fileEntry)
 			if err != nil {
@@ -166,13 +160,13 @@ func parseCourseManifest(data []byte) (courseManifest, error) {
 	return manifest, nil
 }
 
-func parseCourseFileSpec(data json.RawMessage) (courseFileSpec, error) {
+func parseCourseFileSpec(data json.RawMessage) (requestedProductUpload, error) {
 	var path string
 	if err := json.Unmarshal(data, &path); err == nil {
 		if strings.TrimSpace(path) == "" {
-			return courseFileSpec{}, fmt.Errorf("file path is empty")
+			return requestedProductUpload{}, fmt.Errorf("file path is empty")
 		}
-		return courseFileSpec{Path: path}, nil
+		return requestedProductUpload{Path: path}, nil
 	}
 
 	var object struct {
@@ -181,12 +175,12 @@ func parseCourseFileSpec(data json.RawMessage) (courseFileSpec, error) {
 		Description string `json:"description"`
 	}
 	if err := json.Unmarshal(data, &object); err != nil {
-		return courseFileSpec{}, fmt.Errorf("file entry must be a path or an object with \"path\": %w", err)
+		return requestedProductUpload{}, fmt.Errorf("file entry must be a path or an object with \"path\": %w", err)
 	}
 	if strings.TrimSpace(object.Path) == "" {
-		return courseFileSpec{}, fmt.Errorf("file entry is missing \"path\"")
+		return requestedProductUpload{}, fmt.Errorf("file entry is missing \"path\"")
 	}
-	return courseFileSpec{
+	return requestedProductUpload{
 		Path:        object.Path,
 		DisplayName: strings.TrimSpace(object.Name),
 		Description: strings.TrimSpace(object.Description),
@@ -336,7 +330,7 @@ func runCourseUpload(
 			return summary, fmt.Errorf("could not decode merged rich content: %w", err)
 		}
 
-		plan := productFileUpdatePlan{Preserved: productState.Files, Uploads: courseRequestedUploads(page.Files)}
+		plan := productFileUpdatePlan{Preserved: productState.Files, Uploads: page.Files}
 		body := map[string]any{
 			"files":        buildProductUpdateFilesPayload(plan, urls, refs),
 			"rich_content": nextRichContent,
@@ -361,18 +355,6 @@ func runCourseUpload(
 	}
 
 	return summary, nil
-}
-
-func courseRequestedUploads(files []courseFileSpec) []requestedProductUpload {
-	uploads := make([]requestedProductUpload, len(files))
-	for i, file := range files {
-		uploads[i] = requestedProductUpload{
-			Path:        file.Path,
-			DisplayName: file.DisplayName,
-			Description: file.Description,
-		}
-	}
-	return uploads
 }
 
 func printCourseUploadPlan(opts cmdutil.Options, productID string, manifest courseManifest, pagesSkipped, filesSkipped int, statePath string) error {
