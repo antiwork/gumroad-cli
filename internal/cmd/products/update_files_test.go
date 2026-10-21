@@ -1216,3 +1216,175 @@ func TestRenderProductUpdateDryRun_JSONDirect(t *testing.T) {
 		t.Fatalf("unexpected file delta: preserved=%+v removed=%+v", payload.Preserved, payload.Removed)
 	}
 }
+
+func productUpdatePageFileEmbedIDs(t *testing.T, body map[string]any, pageID string) []string {
+	t.Helper()
+
+	for _, page := range productUpdateJSONRichContent(t, body) {
+		if page["id"] != pageID {
+			continue
+		}
+		var ids []string
+		for _, node := range richContentPageContent(t, page) {
+			nodeMap, ok := node.(map[string]any)
+			if !ok || nodeMap["type"] != "fileEmbed" {
+				continue
+			}
+			attrs, ok := nodeMap["attrs"].(map[string]any)
+			if !ok {
+				t.Fatalf("fileEmbed attrs has wrong type: %T", nodeMap["attrs"])
+			}
+			id, _ := attrs["id"].(string)
+			ids = append(ids, id)
+		}
+		return ids
+	}
+	t.Fatalf("rich_content has no page %q: %#v", pageID, body["rich_content"])
+	return nil
+}
+
+func coursePageRichContent(t *testing.T) []map[string]any {
+	t.Helper()
+
+	return []map[string]any{
+		{
+			"id":       "page_1",
+			"title":    "Welcome",
+			"position": 0,
+			"description": map[string]any{
+				"type":    "doc",
+				"content": []any{map[string]any{"type": "fileEmbed", "attrs": map[string]any{"id": "file_a", "uid": "uid-a"}}},
+			},
+		},
+		{
+			"id":          "page_2",
+			"title":       "Module 2",
+			"position":    1,
+			"description": map[string]any{"type": "doc", "content": []any{map[string]any{"type": "paragraph"}}},
+		},
+		{
+			"id":          "page_3",
+			"title":       "Module 3",
+			"position":    2,
+			"description": map[string]any{"type": "doc", "content": []any{map[string]any{"type": "paragraph"}}},
+		},
+	}
+}
+
+func TestUpdate_FilePlacesEveryUploadOnTheNamedPageInOneWrite(t *testing.T) {
+	srv := newProductUpdateFileServers(t)
+	srv.existingFiles = []existingProductFile{{ID: "file_a", Name: "Welcome.mp4"}}
+	srv.existingRichContent = coursePageRichContent(t)
+	testutil.Setup(t, srv.dispatch(t))
+
+	first := writeProductUploadFixture(t, "module two part one")
+	second := writeProductUploadFixture(t, "module two part two")
+	cmd := testutil.Command(newUpdateCmd(), testutil.Yes(true))
+	cmd.SetArgs([]string{"prod1", "--file", first, "--file", second, "--page", "page_2"})
+	testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	if srv.getCalls.Load() != 1 {
+		t.Fatalf("GET calls = %d, want 1", srv.getCalls.Load())
+	}
+	if srv.putCalls.Load() != 1 || srv.jsonPutCalls.Load() != 1 {
+		t.Fatalf("PUT calls = %d (JSON %d), want exactly one product write per page", srv.putCalls.Load(), srv.jsonPutCalls.Load())
+	}
+	if srv.s3Calls.Load() != 2 {
+		t.Fatalf("S3 calls = %d, want 2 uploads", srv.s3Calls.Load())
+	}
+
+	page2 := productUpdatePageFileEmbedIDs(t, srv.putJSON, "page_2")
+	if len(page2) != 2 {
+		t.Fatalf("page_2 file embeds = %#v, want the two uploads", page2)
+	}
+	for _, id := range page2 {
+		if !strings.HasPrefix(id, "cli-upload-") {
+			t.Fatalf("page_2 file embed id = %q, want a generated cli upload id", id)
+		}
+	}
+	if page1 := productUpdatePageFileEmbedIDs(t, srv.putJSON, "page_1"); !reflect.DeepEqual(page1, []string{"file_a"}) {
+		t.Fatalf("page_1 file embeds = %#v, want untouched", page1)
+	}
+	if page3 := productUpdatePageFileEmbedIDs(t, srv.putJSON, "page_3"); len(page3) != 0 {
+		t.Fatalf("page_3 file embeds = %#v, want none", page3)
+	}
+
+	pages := productUpdateJSONRichContent(t, srv.putJSON)
+	if len(pages) != 3 {
+		t.Fatalf("rich_content page count = %d, want 3 (no pages added or dropped)", len(pages))
+	}
+}
+
+func TestUpdate_FileRejectsUnknownPageBeforeAnyUpload(t *testing.T) {
+	srv := newProductUpdateFileServers(t)
+	srv.existingRichContent = coursePageRichContent(t)
+	testutil.Setup(t, srv.dispatch(t))
+
+	path := writeProductUploadFixture(t, "orphan bytes")
+	cmd := testutil.Command(newUpdateCmd(), testutil.Yes(true))
+	cmd.SetArgs([]string{"prod1", "--file", path, "--page", "missing_page"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected an unknown page id error")
+	}
+	if !strings.Contains(err.Error(), "missing_page") || !strings.Contains(err.Error(), "products content list") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if srv.s3Calls.Load() != 0 {
+		t.Fatalf("S3 calls = %d, want 0 (page checked before uploads)", srv.s3Calls.Load())
+	}
+	if srv.putCalls.Load() != 0 {
+		t.Fatalf("PUT calls = %d, want 0", srv.putCalls.Load())
+	}
+}
+
+func TestUpdate_PageRequiresAFile(t *testing.T) {
+	srv := newProductUpdateFileServers(t)
+	srv.existingRichContent = coursePageRichContent(t)
+	testutil.Setup(t, srv.dispatch(t))
+
+	cmd := testutil.Command(newUpdateCmd(), testutil.Yes(true))
+	cmd.SetArgs([]string{"prod1", "--page", "page_2"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected --page without --file to be refused")
+	}
+	if !strings.Contains(err.Error(), "--file") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if srv.getCalls.Load() != 0 || srv.putCalls.Load() != 0 {
+		t.Fatalf("GET/PUT calls = %d/%d, want none", srv.getCalls.Load(), srv.putCalls.Load())
+	}
+}
+
+func TestUpdate_PageDryRunShowsBatchOnNamedPageWithoutWriting(t *testing.T) {
+	srv := newProductUpdateFileServers(t)
+	srv.existingRichContent = coursePageRichContent(t)
+	testutil.Setup(t, srv.dispatch(t))
+
+	first := writeProductUploadFixture(t, "module two part one")
+	second := writeProductUploadFixture(t, "module two part two")
+	cmd := testutil.Command(newUpdateCmd(), testutil.DryRun(true), testutil.JSONOutput())
+	cmd.SetArgs([]string{"prod1", "--file", first, "--file", second, "--page", "page_2"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	if srv.s3Calls.Load() != 0 || srv.putCalls.Load() != 0 {
+		t.Fatalf("dry run uploaded (%d) or wrote (%d)", srv.s3Calls.Load(), srv.putCalls.Load())
+	}
+
+	var payload dryRunUpdateBody
+	if err := json.Unmarshal([]byte(out), &payload); err != nil {
+		t.Fatalf("parse JSON: %v\n%s", err, out)
+	}
+	if len(payload.Uploads) != 2 {
+		t.Fatalf("uploads = %d, want 2", len(payload.Uploads))
+	}
+
+	pageIDs := productUpdatePageFileEmbedIDs(t, payload.Request.Body, "page_2")
+	if len(pageIDs) != 2 {
+		t.Fatalf("dry-run page_2 file embeds = %#v, want the two placeholders", pageIDs)
+	}
+	if page1 := productUpdatePageFileEmbedIDs(t, payload.Request.Body, "page_1"); !reflect.DeepEqual(page1, []string{"file_a"}) {
+		t.Fatalf("dry-run page_1 file embeds = %#v, want untouched", page1)
+	}
+}
