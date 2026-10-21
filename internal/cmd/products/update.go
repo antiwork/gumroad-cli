@@ -8,6 +8,7 @@ import (
 
 	"github.com/antiwork/gumroad-cli/internal/cmdutil"
 	"github.com/antiwork/gumroad-cli/internal/config"
+	"github.com/antiwork/gumroad-cli/internal/richcontent"
 	"github.com/spf13/cobra"
 )
 
@@ -21,6 +22,7 @@ func newUpdateCmd() *cobra.Command {
 	var files []string
 	var fileNames []string
 	var fileDescriptions []string
+	var pageID string
 	var coverImage, thumbnail string
 	var previewImages []string
 	var previewVideos []string
@@ -38,6 +40,7 @@ func newUpdateCmd() *cobra.Command {
   gumroad products update <id> --preview-image ./gallery-1.jpg --preview-image ./gallery-2.jpg
   gumroad products update <id> --preview-video ./demo.mp4
   gumroad products update <id> --file ./pack.zip
+  gumroad products update <id> --file ./lesson-1.mp4 --file ./lesson-2.pdf --page <page_id>
   gumroad products update <id> --custom-html ./landing.html
   gumroad products update <id> --custom-html ''
   gumroad products update <id> --refund-period none --refund-fine-print "No refunds once downloaded."
@@ -52,7 +55,7 @@ func newUpdateCmd() *cobra.Command {
 				"custom-permalink", "custom-summary", "custom-receipt",
 				"pay-what-you-want", "suggested-price", "max-purchase-count",
 				"category", "taxonomy-id", "tag",
-				"file", "file-name", "file-description",
+				"file", "file-name", "file-description", "page",
 				"cover-image", "preview-image", "preview-video", "thumbnail",
 				"custom-html",
 				"refund-period", "refund-fine-print",
@@ -76,6 +79,9 @@ func newUpdateCmd() *cobra.Command {
 			requestedUploads, err := collectRequestedProductUploads(c, files, fileNames, fileDescriptions)
 			if err != nil {
 				return err
+			}
+			if flags.Changed("page") && len(files) == 0 {
+				return cmdutil.UsageErrorf(c, "--page places uploaded files on a content page, so it needs at least one --file")
 			}
 			if err := validateProductMediaFlagPaths(c, coverImage, previewImages, previewVideos, thumbnail); err != nil {
 				return err
@@ -151,7 +157,8 @@ func newUpdateCmd() *cobra.Command {
 			productFieldsChanged := productUpdateFieldFlagsChanged(c)
 			fileFlagsChanged := flags.Changed("file") ||
 				flags.Changed("file-name") ||
-				flags.Changed("file-description")
+				flags.Changed("file-description") ||
+				flags.Changed("page")
 			if !fileFlagsChanged {
 				if len(media) > 0 {
 					if opts.DryRun {
@@ -229,7 +236,15 @@ func newUpdateCmd() *cobra.Command {
 					args[0], args[0])
 			}
 
-			richContent, includeRichContent, err := buildProductUpdateRichContent(existingState.RichContent, existingState.Files, fileRefs)
+			if pageID != "" {
+				if _, ok := richcontent.PageIndex(existingState.RichContent, pageID); !ok {
+					return cmdutil.InvalidInputErrorf(
+						"page %q not found in product content; run: gumroad products content list %s",
+						pageID, args[0])
+				}
+			}
+
+			richContent, includeRichContent, err := buildProductUpdateRichContent(existingState.RichContent, existingState.Files, pageID, fileRefs)
 			if err != nil {
 				return err
 			}
@@ -286,6 +301,7 @@ func newUpdateCmd() *cobra.Command {
 	cmd.Flags().StringArrayVar(&files, "file", nil, "Add a local file to product content without replacing existing embeds (repeatable)")
 	cmd.Flags().StringArrayVar(&fileNames, "file-name", nil, "Display name for the matching --file (repeatable)")
 	cmd.Flags().StringArrayVar(&fileDescriptions, "file-description", nil, "Description for the matching --file (repeatable)")
+	cmd.Flags().StringVar(&pageID, "page", "", "Rich content page ID to place the uploaded files on, instead of the last page with files (see gumroad products content list)")
 	cmd.Flags().StringVar(&coverImage, "cover-image", "", "Local JPEG, PNG, or GIF cover image to upload")
 	cmd.Flags().StringArrayVar(&previewImages, "preview-image", nil, "Additional local JPEG, PNG, or GIF preview image to upload as a product cover (repeatable)")
 	cmd.Flags().StringArrayVar(&previewVideos, "preview-video", nil, "Local MP4, MOV, M4V, MPEG, WMV, or WebM preview video to upload as a product cover (repeatable)")

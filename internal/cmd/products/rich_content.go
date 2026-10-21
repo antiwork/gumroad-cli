@@ -19,13 +19,22 @@ func buildFileRichContent(fileRefs []richContentFileRef) []map[string]any {
 func buildProductUpdateRichContent(
 	existingRichContent []map[string]any,
 	existingFiles []existingProductFile,
+	pageID string,
 	fileRefs []richContentFileRef,
 ) ([]map[string]any, bool, error) {
 	if len(fileRefs) == 0 {
 		return nil, false, nil
 	}
 
-	richContent, err := richcontent.AppendFileEmbeds(existingRichContent, preservedProductFileIDs(existingFiles), fileRefs)
+	var (
+		richContent []map[string]any
+		err         error
+	)
+	if pageID != "" {
+		richContent, err = richcontent.AppendFileEmbedsToPage(existingRichContent, pageID, fileRefs)
+	} else {
+		richContent, err = richcontent.AppendFileEmbeds(existingRichContent, preservedProductFileIDs(existingFiles), fileRefs)
+	}
 	if err != nil {
 		return nil, false, err
 	}

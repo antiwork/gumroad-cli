@@ -56,3 +56,58 @@ func TestReplaceFileEmbedIDsRewritesMatchingEmbedsOnly(t *testing.T) {
 		t.Fatal("ReplaceFileEmbedIDs mutated the input")
 	}
 }
+
+func TestAppendFileEmbedsToPageTargetsNamedPageOnly(t *testing.T) {
+	richContent := []map[string]any{
+		{
+			"id":    "page_1",
+			"title": "Start",
+			"description": map[string]any{
+				"type":    "doc",
+				"content": []any{map[string]any{"type": "fileEmbed", "attrs": map[string]any{"id": "file_old", "uid": "old-uid"}}},
+			},
+		},
+		{
+			"id":    "page_2",
+			"title": "Files",
+			"description": map[string]any{
+				"type":    "doc",
+				"content": []any{map[string]any{"type": "paragraph"}},
+			},
+		},
+		{
+			"id":          "page_3",
+			"title":       "Finish",
+			"description": map[string]any{"type": "doc", "content": []any{}},
+		},
+	}
+
+	next, err := AppendFileEmbedsToPage(richContent, "page_2", []FileRef{
+		{FileID: "file_new_a", EmbedUID: "uid-a"},
+		{FileID: "file_new_b", EmbedUID: "uid-b"},
+	})
+	if err != nil {
+		t.Fatalf("AppendFileEmbedsToPage failed: %v", err)
+	}
+
+	if ids := FileEmbedIDs(next[:1]); !reflect.DeepEqual(ids, []string{"file_old"}) {
+		t.Fatalf("page_1 file embed ids = %#v, want untouched", ids)
+	}
+	if ids := FileEmbedIDs(next[1:2]); !reflect.DeepEqual(ids, []string{"file_new_a", "file_new_b"}) {
+		t.Fatalf("page_2 file embed ids = %#v, want both new files", ids)
+	}
+	if ids := FileEmbedIDs(next[2:]); len(ids) != 0 {
+		t.Fatalf("page_3 file embed ids = %#v, want none", ids)
+	}
+	if ids := FileEmbedIDs(richContent[1:2]); len(ids) != 0 {
+		t.Fatal("AppendFileEmbedsToPage mutated the input")
+	}
+}
+
+func TestAppendFileEmbedsToPageRejectsUnknownPage(t *testing.T) {
+	richContent := []map[string]any{{"id": "page_1", "description": map[string]any{"type": "doc"}}}
+
+	if _, err := AppendFileEmbedsToPage(richContent, "missing", []FileRef{{FileID: "file_new", EmbedUID: "uid"}}); err == nil {
+		t.Fatal("expected an error for an unknown page id")
+	}
+}
