@@ -83,6 +83,7 @@ func newContentCmd() *cobra.Command {
 	cmd.AddCommand(newContentGetCmd())
 	cmd.AddCommand(newContentListCmd())
 	cmd.AddCommand(newContentSetCmd())
+	cmd.AddCommand(newContentUploadCmd())
 	return cmd
 }
 

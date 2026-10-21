@@ -55,6 +55,57 @@ func BuildFileRichContent(fileRefs []FileRef) []map[string]any {
 	}}
 }
 
+func BuildFilePage(pageID, title string, fileRefs []FileRef) map[string]any {
+	if title == "" {
+		title = pageID
+	}
+	content := fileEmbedNodes(fileRefs)
+	content = append(content, map[string]any{"type": "paragraph"})
+	return map[string]any{
+		"id":    pageID,
+		"title": title,
+		"description": map[string]any{
+			"type":    "doc",
+			"content": content,
+		},
+	}
+}
+
+// AddFileEmbedsToPage appends the file embeds to the named page, creating a missing
+// description or content array so a page with no content yet still accepts files.
+func AddFileEmbedsToPage(page map[string]any, fileRefs []FileRef) {
+	description, ok := page["description"].(map[string]any)
+	if !ok {
+		description = map[string]any{}
+		page["description"] = description
+	}
+	content, _ := description["content"].([]any)
+	description["type"] = "doc"
+	description["content"] = append(content, fileEmbedNodes(fileRefs)...)
+}
+
+func PageEmbedsAllFiles(page map[string]any, fileRefs []FileRef) bool {
+	if len(fileRefs) == 0 {
+		return false
+	}
+	description, _ := page["description"].(map[string]any)
+	content, _ := description["content"].([]any)
+	present := map[string]bool{}
+	for _, node := range content {
+		nodeMap, _ := node.(map[string]any)
+		attrs, _ := nodeMap["attrs"].(map[string]any)
+		if uid, _ := attrs["uid"].(string); uid != "" {
+			present[uid] = true
+		}
+	}
+	for _, ref := range fileRefs {
+		if !present[ref.EmbedUID] {
+			return false
+		}
+	}
+	return true
+}
+
 func AppendFileEmbeds(richContent []map[string]any, preservedFileIDs []string, fileRefs []FileRef) ([]map[string]any, error) {
 	if len(fileRefs) == 0 {
 		return Clone(richContent)
