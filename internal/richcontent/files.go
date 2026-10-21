@@ -76,8 +76,6 @@ func AppendFileEmbeds(richContent []map[string]any, preservedFileIDs []string, f
 	return cloned, nil
 }
 
-// PageIndex returns the position of the page whose id matches pageID. Callers
-// use it to check a page id exists before any upload starts.
 func PageIndex(richContent []map[string]any, pageID string) (int, bool) {
 	for i, page := range richContent {
 		if id, ok := page["id"].(string); ok && id == pageID {
@@ -87,9 +85,6 @@ func PageIndex(richContent []map[string]any, pageID string) (int, bool) {
 	return 0, false
 }
 
-// AppendFileEmbedsToPage appends fileRefs to the page identified by pageID
-// instead of the last page that already holds file embeds. Callers that place
-// a whole page of files do one product write per page rather than one per file.
 func AppendFileEmbedsToPage(richContent []map[string]any, pageID string, fileRefs []FileRef) ([]map[string]any, error) {
 	if len(fileRefs) == 0 {
 		return Clone(richContent)
