@@ -1,6 +1,8 @@
 package products
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -31,17 +33,36 @@ type courseManifest struct {
 	Pages []coursePageSpec
 }
 
+type courseUploadedFile struct {
+	URL         string `json:"url"`
+	Size        int64  `json:"size"`
+	ModTimeNano int64  `json:"mod_time_nano"`
+	Name        string `json:"name,omitempty"`
+}
+
+type courseFileRef struct {
+	FileID   string `json:"file_id"`
+	EmbedUID string `json:"embed_uid"`
+}
+
+type coursePageState struct {
+	Fingerprint string          `json:"fingerprint"`
+	Refs        []courseFileRef `json:"refs"`
+	Written     bool            `json:"written,omitempty"`
+}
+
 type courseUploadState struct {
-	Version   int               `json:"version"`
-	ProductID string            `json:"product_id,omitempty"`
-	Uploads   map[string]string `json:"uploads,omitempty"`
-	Pages     map[string]bool   `json:"pages,omitempty"`
+	Version   int                           `json:"version"`
+	ProductID string                        `json:"product_id,omitempty"`
+	Uploads   map[string]courseUploadedFile `json:"uploads,omitempty"`
+	Pages     map[string]coursePageState    `json:"pages,omitempty"`
 }
 
 type courseUploadSummary struct {
 	ProductID    string `json:"product_id"`
 	Pages        int    `json:"pages"`
 	PagesWritten int    `json:"pages_written"`
+	PagesToWrite int    `json:"pages_to_write"`
 	PagesSkipped int    `json:"pages_skipped"`
 	Files        int    `json:"files"`
 	Uploads      int    `json:"uploads"`
@@ -58,7 +79,7 @@ func newContentUploadCmd() *cobra.Command {
 		Long: "Upload every file in a course and place it on its page, with one product write per page.\n\n" +
 			"The manifest maps page ids (as listed by `products content list`) to local files:\n\n" +
 			"  {\"pages\": [{\"id\": \"week-1\", \"title\": \"Week 1\", \"files\": [\"./intro.mp4\", {\"path\": \"./notes.pdf\", \"name\": \"Notes\"}]}]}\n\n" +
-			"A file entry is a path or an object with path, name and description. Every path is checked before the first upload starts. " +
+			"A file entry is a path or an object with path, name and description. Every path is checked before the first upload starts. A page id that already exists keeps its content and gets the files appended. " +
 			"Finished uploads and pages are recorded in a resume file, so re-running after an interruption neither uploads a file twice nor places an embed twice.",
 		Example: `  gumroad products content upload <product_id> course.json
   gumroad products content upload <product_id> course.json --state ./my-course.state.json
@@ -90,7 +111,7 @@ func newContentUploadCmd() *cobra.Command {
 			state.ProductID = productID
 
 			if opts.DryRun {
-				return printCourseUploadPlan(opts, productID, manifest, 0, 0, statePath)
+				return printCourseUploadPlan(opts, productID, manifest, state, statePath)
 			}
 
 			token, err := config.Token()
@@ -197,12 +218,8 @@ func validateCourseManifest(manifest courseManifest) error {
 		}
 		seenPages[page.ID] = true
 		for _, file := range page.Files {
-			info, err := os.Stat(file.Path)
-			if err != nil {
-				return fmt.Errorf("page %s: cannot read %s: %w", page.ID, file.Path, err)
-			}
-			if info.IsDir() {
-				return fmt.Errorf("page %s: %s is a directory, not a file", page.ID, file.Path)
+			if _, err := upload.Describe(file.Path, upload.Options{Filename: file.DisplayName}); err != nil {
+				return fmt.Errorf("page %s: %w", page.ID, err)
 			}
 		}
 	}
@@ -211,9 +228,9 @@ func validateCourseManifest(manifest courseManifest) error {
 
 func readCourseUploadState(path string) (courseUploadState, error) {
 	state := courseUploadState{
-		Version: 1,
-		Uploads: map[string]string{},
-		Pages:   map[string]bool{},
+		Version: 2,
+		Uploads: map[string]courseUploadedFile{},
+		Pages:   map[string]coursePageState{},
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -229,16 +246,16 @@ func readCourseUploadState(path string) (courseUploadState, error) {
 		return state, fmt.Errorf("resume file %s is not valid JSON: %w", path, err)
 	}
 	if state.Uploads == nil {
-		state.Uploads = map[string]string{}
+		state.Uploads = map[string]courseUploadedFile{}
 	}
 	if state.Pages == nil {
-		state.Pages = map[string]bool{}
+		state.Pages = map[string]coursePageState{}
 	}
 	return state, nil
 }
 
 func writeCourseUploadState(path string, state courseUploadState) error {
-	state.Version = 1
+	state.Version = 2
 	data, err := json.MarshalIndent(state, "", "  ")
 	if err != nil {
 		return fmt.Errorf("could not encode resume file: %w", err)
@@ -282,15 +299,27 @@ func runCourseUpload(
 	}
 
 	for _, page := range manifest.Pages {
-		if state.Pages[page.ID] {
+		fingerprint := coursePageFingerprint(page)
+		pageState, known := state.Pages[page.ID]
+		if known && pageState.Fingerprint != fingerprint {
+			if pageState.Written {
+				return summary, cmdutil.InvalidInputErrorf("page %s changed after it was written; use a new --state file to write it again", page.ID)
+			}
+			known = false
+		}
+		if known && pageState.Written {
 			summary.PagesSkipped++
 			continue
 		}
 
 		urls := make([]string, len(page.Files))
 		for i, file := range page.Files {
-			if resumeURL := state.Uploads[file.Path]; resumeURL != "" {
-				urls[i] = resumeURL
+			info, err := os.Stat(file.Path)
+			if err != nil {
+				return summary, fmt.Errorf("page %s: cannot read %s: %w", page.ID, file.Path, err)
+			}
+			if recorded, ok := state.Uploads[file.Path]; ok && recorded.matches(info, file) {
+				urls[i] = recorded.URL
 				continue
 			}
 			plan, err := upload.Describe(file.Path, upload.Options{Filename: file.DisplayName})
@@ -303,31 +332,46 @@ func runCourseUpload(
 			}
 			urls[i] = fileURL[0]
 			summary.Uploads++
-			state.Uploads[file.Path] = fileURL[0]
+			state.Uploads[file.Path] = courseUploadedFile{URL: fileURL[0], Size: info.Size(), ModTimeNano: info.ModTime().UnixNano(), Name: file.DisplayName}
 			if err := writeCourseUploadState(statePath, state); err != nil {
 				return summary, err
 			}
 		}
 
-		refs, err := richcontent.NewFileRefs(len(page.Files))
+		var refs []richcontent.FileRef
+		if known {
+			for _, ref := range pageState.Refs {
+				refs = append(refs, richcontent.FileRef{FileID: ref.FileID, EmbedUID: ref.EmbedUID})
+			}
+		} else {
+			var err error
+			refs, err = richcontent.NewFileRefs(len(page.Files))
+			if err != nil {
+				return summary, err
+			}
+		}
+		pageState = coursePageState{Fingerprint: fingerprint}
+		for _, ref := range refs {
+			pageState.Refs = append(pageState.Refs, courseFileRef{FileID: ref.FileID, EmbedUID: ref.EmbedUID})
+		}
+
+		nextRichContent, alreadyPlaced, err := placeCoursePage(richContent, page, refs)
 		if err != nil {
 			return summary, err
 		}
-		pageDocument, err := json.Marshal(richcontent.BuildFilePage(page.ID, page.Title, refs))
-		if err != nil {
-			return summary, fmt.Errorf("could not encode page %s: %w", page.ID, err)
+		if alreadyPlaced {
+			// A previous run's write landed but its response was lost.
+			pageState.Written = true
+			state.Pages[page.ID] = pageState
+			summary.PagesSkipped++
+			if err := writeCourseUploadState(statePath, state); err != nil {
+				return summary, err
+			}
+			continue
 		}
-		existingDocument, err := json.Marshal(richContent)
-		if err != nil {
-			return summary, fmt.Errorf("could not encode rich content: %w", err)
-		}
-		mergedDocument, err := upsertRichContentPage(existingDocument, pageDocument, page.ID)
-		if err != nil {
+		state.Pages[page.ID] = pageState
+		if err := writeCourseUploadState(statePath, state); err != nil {
 			return summary, err
-		}
-		var nextRichContent []map[string]any
-		if err := json.Unmarshal(mergedDocument, &nextRichContent); err != nil {
-			return summary, fmt.Errorf("could not decode merged rich content: %w", err)
 		}
 
 		plan := productFileUpdatePlan{Preserved: productState.Files, Uploads: page.Files}
@@ -340,34 +384,83 @@ func runCourseUpload(
 			return summary, fmt.Errorf("page %s: %w", page.ID, err)
 		}
 		summary.PagesWritten++
-		richContent = nextRichContent
-		state.Pages[page.ID] = true
+		pageState.Written = true
+		state.Pages[page.ID] = pageState
 		if err := writeCourseUploadState(statePath, state); err != nil {
 			return summary, err
 		}
 
-		// The server assigns real file ids on each write; re-read them so the next page
-		// preserves every file placed so far.
+		// The server assigns real file ids and rewrites the saved embeds to match; re-read
+		// both so the next page preserves every file placed so far.
 		productState, err = fetchExistingProductFileState(client, productID)
 		if err != nil {
 			return summary, err
+		}
+		if richContent, err = richcontent.Clone(productState.RichContent); err != nil {
+			return summary, err
+		}
+		if richContent == nil {
+			richContent = []map[string]any{}
 		}
 	}
 
 	return summary, nil
 }
 
-func printCourseUploadPlan(opts cmdutil.Options, productID string, manifest courseManifest, pagesSkipped, filesSkipped int, statePath string) error {
+func (f courseUploadedFile) matches(info os.FileInfo, spec requestedProductUpload) bool {
+	return f.URL != "" && f.Size == info.Size() && f.ModTimeNano == info.ModTime().UnixNano() && f.Name == spec.DisplayName
+}
+
+func coursePageFingerprint(page coursePageSpec) string {
+	h := sha256.New()
+	fmt.Fprintf(h, "%s\x00%s\x00", page.ID, page.Title)
+	for _, file := range page.Files {
+		size, mod := int64(-1), int64(0)
+		if info, err := os.Stat(file.Path); err == nil {
+			size, mod = info.Size(), info.ModTime().UnixNano()
+		}
+		fmt.Fprintf(h, "%s\x00%s\x00%s\x00%d\x00%d\x00", file.Path, file.DisplayName, file.Description, size, mod)
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+// placeCoursePage adds the page's file embeds to an existing page of the same id,
+// keeping its text and fields, or builds a new page. alreadyPlaced reports that the
+// existing page already holds every embed.
+func placeCoursePage(richContent []map[string]any, page coursePageSpec, refs []richcontent.FileRef) ([]map[string]any, bool, error) {
+	next, err := richcontent.Clone(richContent)
+	if err != nil {
+		return nil, false, err
+	}
+	for _, existing := range next {
+		if id, _ := existing["id"].(string); id != page.ID {
+			continue
+		}
+		if richcontent.PageEmbedsAllFiles(existing, refs) {
+			return next, true, nil
+		}
+		if !richcontent.AddFileEmbedsToPage(existing, refs) {
+			return nil, false, cmdutil.InvalidInputErrorf("existing page %s has no editable content to add files to", page.ID)
+		}
+		return next, false, nil
+	}
+	return append(next, richcontent.BuildFilePage(page.ID, page.Title, refs)), false, nil
+}
+
+func printCourseUploadPlan(opts cmdutil.Options, productID string, manifest courseManifest, state courseUploadState, statePath string) error {
 	summary := courseUploadSummary{
-		ProductID:    productID,
-		Pages:        len(manifest.Pages),
-		PagesSkipped: pagesSkipped,
-		StatePath:    statePath,
-		DryRun:       true,
+		ProductID: productID,
+		Pages:     len(manifest.Pages),
+		StatePath: statePath,
+		DryRun:    true,
 	}
 	for _, page := range manifest.Pages {
 		summary.Files += len(page.Files)
+		if ps, ok := state.Pages[page.ID]; ok && ps.Written && ps.Fingerprint == coursePageFingerprint(page) {
+			summary.PagesSkipped++
+		}
 	}
+	summary.PagesToWrite = summary.Pages - summary.PagesSkipped
 
 	if opts.UsesJSONOutput() {
 		data, err := json.Marshal(summary)
@@ -378,7 +471,7 @@ func printCourseUploadPlan(opts cmdutil.Options, productID string, manifest cour
 	}
 
 	style := opts.Style()
-	if err := output.Writeln(opts.Out(), style.Yellow("Dry run")+fmt.Sprintf(": %d product writes for %d files across %d pages", len(manifest.Pages)-pagesSkipped, summary.Files, len(manifest.Pages))); err != nil {
+	if err := output.Writeln(opts.Out(), style.Yellow("Dry run")+fmt.Sprintf(": %d product writes for %d files across %d pages", summary.PagesToWrite, summary.Files, summary.Pages)); err != nil {
 		return err
 	}
 	return output.Writeln(opts.Out(), "No files uploaded.")

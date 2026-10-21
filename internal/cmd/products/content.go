@@ -418,42 +418,6 @@ func mergeRichContentPage(richContent, page json.RawMessage, pageID string) (jso
 	return data, nil
 }
 
-// upsertRichContentPage is mergeRichContentPage for a page that may not exist yet: an
-// unknown id is appended in manifest order instead of failing. `products content upload`
-// builds a course from scratch, so every page it writes is new on the first run.
-func upsertRichContentPage(richContent, page json.RawMessage, pageID string) (json.RawMessage, error) {
-	id, err := richContentPageID(page)
-	if err != nil {
-		return nil, err
-	}
-	if id == "" {
-		return nil, cmdutil.InvalidInputErrorf("rich content page JSON must include id %q", pageID)
-	}
-	if id != pageID {
-		return nil, cmdutil.InvalidInputErrorf("rich content page JSON id %q does not match %q", id, pageID)
-	}
-
-	pages, err := decodeRichContentPages(richContent)
-	if err != nil {
-		return nil, err
-	}
-	for idx, existing := range pages {
-		existingID, err := richContentPageID(existing)
-		if err != nil {
-			return nil, err
-		}
-		if existingID == pageID {
-			pages[idx] = page
-			return json.Marshal(pages)
-		}
-	}
-	merged, err := json.Marshal(append(pages, page))
-	if err != nil {
-		return nil, fmt.Errorf("could not encode merged rich_content JSON: %w", err)
-	}
-	return merged, nil
-}
-
 func validateRichContentArray(data []byte) error {
 	if !bytes.HasPrefix(data, []byte("[")) {
 		return fmt.Errorf("rich content JSON must be an array")
