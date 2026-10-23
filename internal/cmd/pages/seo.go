@@ -6,10 +6,10 @@ import (
 
 	"github.com/antiwork/gumroad-cli/internal/cmdutil"
 	"github.com/antiwork/gumroad-cli/internal/output"
+	"github.com/antiwork/gumroad-cli/internal/pageutil"
 	"github.com/spf13/cobra"
 )
 
-// The search fields of a page, or of the home page on the user object.
 type seoFields struct {
 	SeoTitle       *string `json:"seo_title"`
 	SeoDescription *string `json:"seo_description"`
@@ -65,9 +65,10 @@ func newSeoCmd() *cobra.Command {
 					return renderSeo(opts, slug, resp.Page, false)
 				})
 			}
-			return cmdutil.RunRequestDecoded[seoPageResponse](opts, "Saving search fields...", http.MethodPut, pagePath(slug), params, func(resp seoPageResponse) error {
+			err := cmdutil.RunRequestDecoded[seoPageResponse](opts, "Saving search fields...", http.MethodPut, pagePath(slug), params, func(resp seoPageResponse) error {
 				return renderSeo(opts, slug, resp.Page, true)
 			})
+			return pageutil.TranslateMissingScopeError(err)
 		},
 	}
 

@@ -156,3 +156,32 @@ func TestSeo_QuietSilencesASave(t *testing.T) {
 		t.Errorf("a quiet save must print nothing, got %q", out)
 	}
 }
+
+func TestSeo_MissingScopeGetsReauthHint(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		testutil.RawJSON(t, w, `{"success": false, "message": "This endpoint requires the edit_profile scope."}`)
+	})
+
+	cmd := testutil.Command(newSeoCmd(), testutil.Quiet(false), testutil.NoColor(true))
+	cmd.SetArgs([]string{"about", "--title", "About Jane"})
+	err := cmd.Execute()
+	hinted, ok := err.(interface{ GetHint() string })
+	if !ok || !strings.Contains(hinted.GetHint(), "gumroad auth login") {
+		t.Fatalf("expected re-auth hint, got: %v", err)
+	}
+}
+
+func TestSeo_PlainOutputPrintsSlugTitleAndDescription(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{"success": true, "page": seoPageJSON("About Jane", nil)})
+	})
+
+	cmd := testutil.Command(newSeoCmd(), testutil.PlainOutput())
+	cmd.SetArgs([]string{"about"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	if out != "about\tAbout Jane\t\n" {
+		t.Errorf("got %q, want slug, title and an empty description column", out)
+	}
+}
