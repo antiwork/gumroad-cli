@@ -37,7 +37,8 @@ func NewPagesCmd() *cobra.Command {
   gumroad pages scaffold about
   gumroad pages push about ./about.html
   gumroad pages push profile ./landing.html
-  gumroad pages preview ./about.html`,
+  gumroad pages preview ./about.html
+  gumroad pages seo about --title "About Jane's studio"`,
 	}
 
 	cmd.AddCommand(newListCmd())
@@ -46,6 +47,7 @@ func NewPagesCmd() *cobra.Command {
 	cmd.AddCommand(newScaffoldCmd())
 	cmd.AddCommand(newPushCmd())
 	cmd.AddCommand(newPreviewCmd())
+	cmd.AddCommand(newSeoCmd())
 	return cmd
 }
 
