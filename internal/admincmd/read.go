@@ -88,7 +88,6 @@ func FetchPostJSON(opts cmdutil.Options, spinnerMessage, path string, payload an
 	})
 }
 
-// FetchPutJSON is the PUT counterpart of FetchPostJSON.
 func FetchPutJSON(opts cmdutil.Options, spinnerMessage, path string, payload any) (json.RawMessage, error) {
 	return runMutationData(opts, spinnerMessage, func(client *adminapi.Client) (json.RawMessage, error) {
 		return client.PutJSON(path, payload)

@@ -2,6 +2,7 @@ package announcements
 
 import (
 	"io"
+	"strconv"
 	"strings"
 
 	"github.com/antiwork/gumroad-cli/internal/cmdutil"
@@ -66,7 +67,11 @@ through the server's final checks for consent, account state and audience.`,
 func renderCampaign(opts cmdutil.Options, headline string, resp campaignResponse) error {
 	c := resp.Campaign
 	if opts.PlainOutput {
-		return output.PrintPlain(opts.Out(), [][]string{{c.Key, c.State, c.Audience, c.Subject, c.ContentDigest}})
+		rows := [][]string{{c.Key, c.State, c.Audience, c.Subject, c.ContentDigest}}
+		for _, d := range resp.Deliveries {
+			rows = append(rows, []string{"delivery", d.State, d.Reason, strconv.Itoa(d.Count)})
+		}
+		return output.PrintPlain(opts.Out(), rows)
 	}
 	if opts.Quiet {
 		return nil

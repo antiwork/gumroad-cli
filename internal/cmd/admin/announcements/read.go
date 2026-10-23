@@ -99,7 +99,7 @@ func renderList(opts cmdutil.Options, campaigns []campaign) error {
 
 func renderPreview(opts cmdutil.Options, resp previewResponse) error {
 	if opts.PlainOutput {
-		return output.PrintPlain(opts.Out(), [][]string{{resp.Campaign.Key, resp.Campaign.State, resp.Campaign.ContentDigest, resp.Email.Subject}})
+		return output.PrintPlain(opts.Out(), [][]string{{resp.Campaign.Key, resp.Campaign.State, resp.Campaign.ContentDigest, resp.Email.Subject, resp.Email.HTMLBody}})
 	}
 	if opts.Quiet {
 		return nil

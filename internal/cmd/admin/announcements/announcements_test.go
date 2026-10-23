@@ -17,7 +17,7 @@ func campaignJSON(state string) map[string]any {
 		"key":            "new_feature",
 		"subject":        "Try it",
 		"body":           "<p>Hi creator</p>",
-		"reply_to":       "support@gumroad.com",
+		"reply_to":       "support@example.com",
 		"audience":       "creators",
 		"state":          state,
 		"content_digest": "abc123",
@@ -129,7 +129,7 @@ func TestPreviewPrintsDigestAndBody(t *testing.T) {
 		"success":          true,
 		"campaign":         campaignJSON("draft"),
 		"subscribed_count": 42,
-		"email":            map[string]any{"from": "Gumroad <gumroad@example.com>", "reply_to": []string{"support@gumroad.com"}, "subject": "Try it", "html_body": "<html>\n<p>Rendered copy</p>\n</html>"},
+		"email":            map[string]any{"from": "Gumroad <gumroad@example.com>", "reply_to": []string{"support@example.com"}, "subject": "Try it", "html_body": "<html>\n<p>Rendered copy</p>\n</html>"},
 	}))
 
 	out := run(t, testutil.Command(newPreviewCmd(), testutil.Quiet(false)), "new_feature")
@@ -137,7 +137,7 @@ func TestPreviewPrintsDigestAndBody(t *testing.T) {
 	if got.method != http.MethodGet || got.path != "/internal/admin/feature_announcement_campaigns/new_feature/preview" {
 		t.Fatalf("got %s %s", got.method, got.path)
 	}
-	for _, s := range []string{"Content digest: abc123", "Subscribed accounts: 42", "Reply-To: support@gumroad.com", "<p>Rendered copy</p>\n</html>"} {
+	for _, s := range []string{"Content digest: abc123", "Subscribed accounts: 42", "Reply-To: support@example.com", "<p>Rendered copy</p>\n</html>"} {
 		if !strings.Contains(out, s) {
 			t.Fatalf("output missing %q: %q", s, out)
 		}
@@ -321,5 +321,42 @@ func TestViewEscapesControlCharacters(t *testing.T) {
 
 	if strings.ContainsAny(out, "\x1b\x07") {
 		t.Fatalf("output kept control characters: %q", out)
+	}
+}
+
+func TestPreviewPlainIncludesRenderedBody(t *testing.T) {
+	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{
+			"success":  true,
+			"campaign": campaignJSON("draft"),
+			"email":    map[string]any{"subject": "Try it", "html_body": "<html>\n<p>Rendered copy</p>\n</html>"},
+		})
+	})
+
+	out := run(t, testutil.Command(newPreviewCmd(), testutil.PlainOutput()), "new_feature")
+
+	want := "new_feature\tdraft\tabc123\tTry it\t<html>\\n<p>Rendered copy</p>\\n</html>"
+	if strings.TrimSpace(out) != want {
+		t.Fatalf("unexpected plain output: %q", out)
+	}
+}
+
+func TestViewPlainIncludesDeliveryCounts(t *testing.T) {
+	testutil.SetupAdmin(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{
+			"success":  true,
+			"campaign": campaignJSON("sending"),
+			"deliveries": []map[string]any{
+				{"state": "delivered", "reason": nil, "count": 3},
+				{"state": "skipped", "reason": "not_in_audience", "count": 2},
+			},
+		})
+	})
+
+	out := run(t, testutil.Command(newViewCmd(), testutil.PlainOutput()), "new_feature")
+
+	want := "new_feature\tsending\tcreators\tTry it\tabc123\ndelivery\tdelivered\t\t3\ndelivery\tskipped\tnot_in_audience\t2"
+	if strings.TrimSpace(out) != want {
+		t.Fatalf("unexpected plain output: %q", out)
 	}
 }
