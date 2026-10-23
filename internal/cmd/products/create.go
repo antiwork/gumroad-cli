@@ -283,13 +283,13 @@ func newCreateCmd() *cobra.Command {
 					}
 					return cmdutil.PrintJSONResponse(opts, data)
 				}
-				return renderCreateProductResult(opts, resp)
+				return renderCreateProductResult(opts, resp, nativeType)
 			}
 
 			return cmdutil.RunRequestDecoded[createProductResponse](opts,
 				"Creating product...", "POST", "/products", params,
 				func(resp createProductResponse) error {
-					return renderCreateProductResult(opts, resp)
+					return renderCreateProductResult(opts, resp, nativeType)
 				})
 		},
 	}
@@ -509,7 +509,7 @@ func renderProductUploadDryRun(opts cmdutil.Options, plan upload.Plan) error {
 	return output.Writef(opts.Out(), "Size: %s (%s)\n", uploadui.HumanBytes(plan.Size), parts)
 }
 
-func renderCreateProductResult(opts cmdutil.Options, resp createProductResponse) error {
+func renderCreateProductResult(opts cmdutil.Options, resp createProductResponse, nativeType string) error {
 	p := resp.Product
 	if opts.PlainOutput {
 		if err := output.PrintPlain(opts.Out(), [][]string{
@@ -533,6 +533,12 @@ func renderCreateProductResult(opts cmdutil.Options, resp createProductResponse)
 	}
 	if err := writeCreateWarning(opts.Out(), resp.Warning); err != nil {
 		return err
+	}
+	if nativeType == "bundle" {
+		if err := output.Writef(opts.Out(), "\n%s gumroad products bundle set %s --product <product_id>\n",
+			s.Dim("Add bundle contents with:"), p.ID); err != nil {
+			return err
+		}
 	}
 	return output.Writef(opts.Out(), "\n%s gumroad products %s %s\n",
 		s.Dim(followUp), verb, p.ID)
