@@ -125,6 +125,9 @@ Most responses are wrapped in `{"success": true, ...}` with resource-specific ke
 - `admin users related` → `.related_users[]`, `.truncated`, `.per_signal_limit`
 - `admin users mark-compliant`, `admin users suspend`, `admin users suspend-for-tos-violation` → `.status`, `.message`, `.user_id`
 - `admin products flag-for-tos-violation` → `.status`, `.message`, `.user_id`, `.product_id`
+- `admin announcements create`, `update`, `view`, `approve`, `send`, `cancel` → `.campaign` (`key`, `state`, `audience`, `content_digest`); `view` adds `.deliveries[]` (`state`, `reason`, `count`)
+- `admin announcements preview` → `.campaign`, `.subscribed_count`, `.email` (`from`, `reply_to`, `subject`, `html_body`)
+- `admin announcements list` → `.campaigns[]`
 - `admin payouts list` → `.recent_payouts[]`, `.pagination.next`. Each payout carries `stripe_transfer_id` (a `po_…` payout or `py_…` destination payment, or null), `bank_account` (null for PayPal and debit-card payouts; otherwise `bank_number` routing/BIC, `account_holder_full_name`, `account_type`, `currency`), and `trace_id` (currently always null).
 - `admin payouts scheduled create` → `.message`, `.user_id`, `.scheduled_payout`
 - `admin users refund-balance` → `.status`, `.message`, `.user_id`, `.count`, `.total_amount_cents`, `.currency`
@@ -300,6 +303,17 @@ gumroad admin users mark-compliant --user-id 2245593582708 --expected-email sell
 gumroad admin users suspend --user-id 2245593582708 --expected-email seller@example.com --note "Chargeback risk confirmed" --yes --json --non-interactive --no-input
 gumroad admin users suspend-for-tos-violation --user-id 2245593582708 --expected-email seller@example.com --note "DMCA takedown notice confirmed" --yes --json --non-interactive --no-input
 gumroad admin products flag-for-tos-violation <product-id> --user-id 2245593582708 --expected-email seller@example.com --yes --json --non-interactive --no-input
+
+# Feature announcement emails to opted-in accounts. A campaign starts as a draft.
+# Show the preview to a human and get their approval before you approve. approve
+# takes the content_digest from that preview, so the server refuses it if the
+# copy changed after the human saw it. Approval freezes the copy. send starts the
+# emails; the server rechecks consent, account state and audience for each one.
+gumroad admin announcements create new_feature --audience creators --subject "Try the new feature" --body-file body.html --json --non-interactive --no-input
+gumroad admin announcements preview new_feature --json --non-interactive --no-input
+gumroad admin announcements approve new_feature --content-digest <digest> --yes --json --non-interactive --no-input
+gumroad admin announcements send new_feature --yes --json --non-interactive --no-input
+gumroad admin announcements view new_feature --json --non-interactive --no-input
 gumroad admin payouts scheduled create --user-id 2245593582708 --expected-email seller@example.com --processor stripe --payout-date 2026-06-15 --note "Appeal window closes before payout." --yes --json --non-interactive --no-input
 gumroad admin payouts scheduled list --status pending --user-id 2245593582708 --json --non-interactive --no-input
 

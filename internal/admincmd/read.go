@@ -88,6 +88,12 @@ func FetchPostJSON(opts cmdutil.Options, spinnerMessage, path string, payload an
 	})
 }
 
+func FetchPutJSON(opts cmdutil.Options, spinnerMessage, path string, payload any) (json.RawMessage, error) {
+	return runMutationData(opts, spinnerMessage, func(client *adminapi.Client) (json.RawMessage, error) {
+		return client.PutJSON(path, payload)
+	})
+}
+
 // ResolveMutationToken resolves the token policy used by mutating admin commands.
 func ResolveMutationToken(opts cmdutil.Options) (adminconfig.TokenInfo, error) {
 	return resolveMutationToken(opts)
