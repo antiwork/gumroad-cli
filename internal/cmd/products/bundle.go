@@ -186,13 +186,25 @@ func buildBundleItems(productIDs, variants, quantities []string) ([]bundleItem, 
 }
 
 func splitBundlePair(flag, raw string, index map[string]int) (string, string, error) {
-	id, value, ok := strings.Cut(raw, "=")
-	id, value = strings.TrimSpace(id), strings.TrimSpace(value)
-	if !ok || id == "" || value == "" {
+	// Product IDs are base64 and may end in "=", so the separator is found by
+	// matching a supplied --product value rather than the first '=' in raw.
+	id, value, matched := "", "", false
+	for known := range index {
+		if !strings.HasPrefix(raw, known+"=") {
+			continue
+		}
+		if !matched || len(known) > len(id) {
+			id, value, matched = known, strings.TrimSpace(raw[len(known)+1:]), true
+		}
+	}
+	if !matched {
+		if guess, _, ok := strings.Cut(raw, "="); ok && guess != "" {
+			return "", "", fmt.Errorf("%s refers to %s, which is not one of the --product values", flag, guess)
+		}
 		return "", "", fmt.Errorf("%s must look like <product_id>=<value>, got %q", flag, raw)
 	}
-	if _, found := index[id]; !found {
-		return "", "", fmt.Errorf("%s refers to %s, which is not one of the --product values", flag, id)
+	if value == "" {
+		return "", "", fmt.Errorf("%s must look like <product_id>=<value>, got %q", flag, raw)
 	}
 	return id, value, nil
 }

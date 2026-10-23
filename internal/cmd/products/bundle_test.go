@@ -58,6 +58,69 @@ func TestBundleSet_SendsProductsInOrder(t *testing.T) {
 	}
 }
 
+func TestBundleSet_PaddedProductIDs(t *testing.T) {
+	const paddedProduct = "-cGksPcArAUU8j_XTYsrnQ=="
+	const paddedVariant = "vGksPcArAUU8j_XTYsrnQ=="
+	var gotBody struct {
+		Products []bundleItem `json:"products"`
+	}
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		if err := json.Unmarshal(raw, &gotBody); err != nil {
+			t.Fatalf("body is not JSON: %v: %s", err, raw)
+		}
+		testutil.JSON(t, w, bundleResponse(map[string]any{"product_id": paddedProduct, "variant_id": paddedVariant, "quantity": 2, "position": 0}))
+	})
+
+	cmd := testutil.Command(newBundleSetCmd(), testutil.Quiet(false))
+	cmd.SetArgs([]string{
+		"bun_1",
+		"--product", paddedProduct,
+		"--variant", paddedProduct + "=" + paddedVariant,
+		"--quantity", paddedProduct + "=2",
+	})
+	testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	if len(gotBody.Products) != 1 {
+		t.Fatalf("products = %+v", gotBody.Products)
+	}
+	if got := gotBody.Products[0]; got.ProductID != paddedProduct || got.VariantID != paddedVariant || got.Quantity != 2 {
+		t.Fatalf("item = %+v", got)
+	}
+}
+
+func TestSplitBundlePair(t *testing.T) {
+	index := map[string]int{"p_a": 0, "p_a==": 1, "-cGksPcArAUU8j_XTYsrnQ==": 2}
+	cases := []struct {
+		name, raw, wantID, wantValue string
+		wantErr                      bool
+	}{
+		{"plain", "p_a=v_1", "p_a", "v_1", false},
+		{"padded id", "p_a===v_1", "p_a==", "v_1", false},
+		{"real padded id", "-cGksPcArAUU8j_XTYsrnQ===2", "-cGksPcArAUU8j_XTYsrnQ==", "2", false},
+		{"no separator", "p_a", "", "", true},
+		{"empty value", "p_a=", "", "", true},
+		{"unknown id", "p_z=v_1", "", "", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			id, value, err := splitBundlePair("--variant", tc.raw, index)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("expected error, got %q=%q", id, value)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if id != tc.wantID || value != tc.wantValue {
+				t.Fatalf("got %q=%q, want %q=%q", id, value, tc.wantID, tc.wantValue)
+			}
+		})
+	}
+}
+
 func TestBundleSet_JSONPassesResponseThrough(t *testing.T) {
 	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
 		testutil.JSON(t, w, bundleResponse(map[string]any{"product_id": "p_a", "quantity": 1, "position": 0}))
