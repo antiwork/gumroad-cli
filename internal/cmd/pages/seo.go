@@ -78,7 +78,6 @@ func newSeoCmd() *cobra.Command {
 	return cmd
 }
 
-// --quiet silences the echo after a save; a read still prints what was asked for.
 func renderSeo(opts cmdutil.Options, slug string, fields seoFields, saved bool) error {
 	title, description := valueOrEmpty(fields.SeoTitle), valueOrEmpty(fields.SeoDescription)
 	if opts.PlainOutput {

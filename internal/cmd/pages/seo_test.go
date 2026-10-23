@@ -185,3 +185,17 @@ func TestSeo_PlainOutputPrintsSlugTitleAndDescription(t *testing.T) {
 		t.Errorf("got %q, want slug, title and an empty description column", out)
 	}
 }
+
+func TestSeo_PlainOutputForProfilePrintsBothFields(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{"success": true, "user": map[string]any{"seo_title": "Hand-lettered posters", "seo_description": "Posters and prints."}})
+	})
+
+	cmd := testutil.Command(newSeoCmd(), testutil.PlainOutput())
+	cmd.SetArgs([]string{"profile"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	if out != "profile\tHand-lettered posters\tPosters and prints.\n" {
+		t.Errorf("got %q, want slug, title and description columns in that order", out)
+	}
+}
