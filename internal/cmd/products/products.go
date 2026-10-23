@@ -28,6 +28,8 @@ func NewProductsCmd() *cobra.Command {
   gumroad products covers add <product_id> --image ./cover.jpg
   gumroad products thumbnail set <product_id> --image ./thumb.jpg
   gumroad products update <product_id> --file ./pack.zip
+  gumroad products create --name "Starter Bundle" --type bundle --price 29
+  gumroad products bundle set <bundle_id> --product <product_id> --product <product_id>
   gumroad products content get <product_id> > content.json
   gumroad products content get <product_id> --variant <variant_id> --category <cat_id> > content.json
   gumroad products content set <product_id> content.json --dry-run
@@ -51,6 +53,7 @@ func NewProductsCmd() *cobra.Command {
 	cmd.AddCommand(newUnpublishCmd())
 	cmd.AddCommand(newPageCmd())
 	cmd.AddCommand(newContentCmd())
+	cmd.AddCommand(newBundleCmd())
 	cmd.AddCommand(newCoversCmd())
 	cmd.AddCommand(newThumbnailCmd())
 	cmd.AddCommand(skus.NewProductSKUsCmd())

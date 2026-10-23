@@ -83,6 +83,7 @@ Most responses are wrapped in `{"success": true, ...}` with resource-specific ke
 - `products content get` → rich content page array directly, or one page object with `--page`
 - `products content list` → rich content page summary array directly
 - `products content set` → mutation envelope with `.result`
+- `products bundle list` / `products bundle set` → `.product.bundle_products[]` (`product_id`, `variant_id`, `quantity`, `position`)
 - `sales list` → `.sales[]`
 - `sales buyers` → `.buyers[]` (`email`, `name`, `purchase_count`, `last_purchase_date`, `utm_source`, `utm_medium`, `utm_campaign`, `utm_term`, `utm_content`)
 - `sales view` → `.sale` (includes `.currency`, the ISO code the sale is priced in — the same currency a refund amount is read in)
@@ -453,6 +454,12 @@ gumroad products content get <id> --variant <variant_id> --category <cat_id> --j
 gumroad products content set <id> content.json --variant <variant_id> --category <cat_id> --dry-run --json --no-input
 gumroad products content set <id> content.json --variant <variant_id> --category <cat_id> --yes --json --no-input
 
+# Bundles: create with --type bundle, then set its contents (whole-list replace, order = position)
+gumroad products create --name "Starter Bundle" --type bundle --price 29 --json --no-input
+gumroad products bundle set <bundle_id> --product <id_a> --product <id_b> --dry-run --json --no-input
+gumroad products bundle set <bundle_id> --product <id_a> --variant <id_a>=<variant_id> --quantity <id_a>=2 --json --no-input
+gumroad products bundle list <bundle_id> --json --no-input
+
 # Publish / unpublish
 gumroad products publish <id> --json --no-input
 gumroad products unpublish <id> --json --no-input
@@ -484,6 +491,8 @@ In custom HTML, use Gumroad data attributes for live product values and checkout
 **Comps:** `products comps [--category <path>] [--query <text>] [--currency <iso>]` (category or query required) reports the price distribution of comparable priced public products: count of discoverable priced listings (free products excluded), p25/p50/p75 of `price_cents` in one currency (default `usd`), and the top five products by sales volume with name, formatted price, and public URL. `--category` includes descendant categories. Use it to anchor pricing advice in real marketplace numbers instead of static defaults.
 
 **Create flags:** `--name` (required), `--price`, `--type` (digital|course|ebook|membership|bundle|coffee|call|commission), `--currency`, `--pay-what-you-want`, `--suggested-price`, `--description`, `--custom-summary`, `--custom-permalink`, `--custom-receipt`, `--max-purchase-count`, `--category`, `--taxonomy-id`, `--tag` (repeatable), `--file` (repeatable), `--file-name` (repeatable, aligned to `--file`), `--file-description` (repeatable, aligned to `--file`), `--cover-image`, `--preview-image` (repeatable), `--preview-video` (repeatable), `--thumbnail`.
+
+**Bundles:** `products create --type bundle` makes an empty bundle; `products update` cannot change its contents. Use `products bundle set <bundle_id> --product <id> [--product <id> ...]` (`--variant <product_id>=<variant_id>`, `--quantity <product_id>=<n>`) to replace the full list of bundled products, and `products bundle list <bundle_id>` to read it back. Products left out of `set` are removed from the bundle.
 
 **Update flags:** `--name`, `--price`, `--currency`, `--description`, `--custom-summary`, `--custom-permalink`, `--custom-receipt`, `--max-purchase-count`, `--category`, `--taxonomy-id`, `--tag` (repeatable), `--custom-html`, `--file` (repeatable), `--file-name`, `--file-description`, `--page`, `--cover-image`, `--preview-image` (repeatable), `--preview-video` (repeatable), `--thumbnail`. Prefer `products page preview/publish/clear/url` for custom HTML page workflows; `products update --custom-html` remains supported as a low-level product update flag.
 
