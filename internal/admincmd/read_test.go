@@ -2,6 +2,8 @@ package admincmd
 
 import (
 	"bytes"
+	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -114,5 +116,43 @@ func TestRunPostJSONDecodedAllowsEnvTokenForReadEndpoints(t *testing.T) {
 	}
 	if gotAuth != "Bearer env-admin-token" {
 		t.Fatalf("got Authorization=%q, want Bearer env-admin-token", gotAuth)
+	}
+}
+
+func TestFetchMutationDoesNotRunRequestWhenTokenPolicyFails(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv(adminconfig.EnvAccessToken, "env-admin-token")
+	ran := false
+
+	_, err := FetchMutation(testutil.TestOptions(), "Posting...", func(*adminapi.Client) (json.RawMessage, error) {
+		ran = true
+		return nil, nil
+	})
+	if !errors.Is(err, adminconfig.ErrNotAuthenticated) {
+		t.Fatalf("expected stored-token policy error, got %v", err)
+	}
+	if ran {
+		t.Fatal("request runner must not be called when the token policy fails")
+	}
+}
+
+func TestFetchMutationReturnsRunnerResultAndError(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv(adminconfig.EnvAccessToken, "env-admin-token")
+	opts := testutil.TestOptions(testutil.NonInteractive(true))
+
+	data, err := FetchMutation(opts, "Posting...", func(*adminapi.Client) (json.RawMessage, error) {
+		return json.RawMessage(`{"success":true}`), nil
+	})
+	if err != nil || string(data) != `{"success":true}` {
+		t.Fatalf("got data=%q err=%v", data, err)
+	}
+
+	runnerErr := errors.New("request outcome unknown")
+	_, err = FetchMutation(opts, "Posting...", func(*adminapi.Client) (json.RawMessage, error) {
+		return nil, runnerErr
+	})
+	if !errors.Is(err, runnerErr) {
+		t.Fatalf("expected runner error to pass through, got %v", err)
 	}
 }

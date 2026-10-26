@@ -83,9 +83,16 @@ func RunPostJSONDecoded[T any](opts cmdutil.Options, spinnerMessage, path string
 // failures distinguishable from post-success render/decode errors (e.g. so
 // only the POST failure gets a "request failed" wrapper).
 func FetchPostJSON(opts cmdutil.Options, spinnerMessage, path string, payload any) (json.RawMessage, error) {
-	return runMutationData(opts, spinnerMessage, func(client *adminapi.Client) (json.RawMessage, error) {
+	return FetchMutation(opts, spinnerMessage, func(client *adminapi.Client) (json.RawMessage, error) {
 		return client.PostJSON(path, payload)
 	})
+}
+
+// FetchMutation runs a mutating request with the mutation token policy and
+// returns the raw response. Errors from token resolution are returned before
+// run is called, so run can classify failures of the request itself.
+func FetchMutation(opts cmdutil.Options, spinnerMessage string, run ClientRunner) (json.RawMessage, error) {
+	return runMutationData(opts, spinnerMessage, run)
 }
 
 func FetchPutJSON(opts cmdutil.Options, spinnerMessage, path string, payload any) (json.RawMessage, error) {

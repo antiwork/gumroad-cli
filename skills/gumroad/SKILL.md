@@ -127,6 +127,7 @@ Most responses are wrapped in `{"success": true, ...}` with resource-specific ke
 - `admin users related` → `.related_users[]`, `.truncated`, `.per_signal_limit`
 - `admin users mark-compliant`, `admin users suspend`, `admin users suspend-for-tos-violation` → `.status`, `.message`, `.user_id`
 - `admin products flag-for-tos-violation` → `.status`, `.message`, `.user_id`, `.product_id`
+- `admin products hold-sales`, `admin products release-sales-hold` → `.status` (`held`, `already_held`, `released`, `already_released`), `.sales_hold` (`id`, `active`, `unpublished_listing`, `held_at`, `held_by_id`, `released_at`, `released_by_id`), `.product` (`id`, `alive`, `published`, `draft`, `purchase_disabled_at`, `deleted_at`, `banned_at`, `unpublished_by_admin`, `active_sales_hold_id`)
 - `admin announcements create`, `update`, `view`, `approve`, `send`, `cancel` → `.campaign` (`key`, `state`, `audience`, `content_digest`); `view` adds `.deliveries[]` (`state`, `reason`, `count`)
 - `admin announcements preview` → `.campaign`, `.subscribed_count`, `.email` (`from`, `reply_to`, `subject`, `html_body`)
 - `admin announcements list` → `.campaigns[]`
@@ -305,6 +306,26 @@ gumroad admin users mark-compliant --user-id 2245593582708 --expected-email sell
 gumroad admin users suspend --user-id 2245593582708 --expected-email seller@example.com --note "Chargeback risk confirmed" --yes --json --non-interactive --no-input
 gumroad admin users suspend-for-tos-violation --user-id 2245593582708 --expected-email seller@example.com --note "DMCA takedown notice confirmed" --yes --json --non-interactive --no-input
 gumroad admin products flag-for-tos-violation <product-id> --user-id 2245593582708 --expected-email seller@example.com --yes --json --non-interactive --no-input
+
+# Hold or release new sales of one product without suspending its seller.
+# Needs a per-actor admin token (legacy shared tokens get a 401) and a Gumroad API
+# deploy that includes product sales holds (antiwork/gumroad#8667); before that
+# deploy both commands fail with a 404.
+# A hold unpublishes the listing if live, blocks new checkouts (bundles included)
+# and seller republishing; it sends no email and leaves the account, other
+# products and existing buyers alone. Holding an already-held product returns the
+# existing hold (status already_held). Keep .sales_hold.id: release needs it.
+# Read the current hold with: products view <product-id> --json --jq '.product.active_sales_hold'
+gumroad admin products view <product-id> --json --jq '.product.active_sales_hold' --non-interactive --no-input
+gumroad admin products hold-sales <product-id> --user-id 2245593582708 --expected-email seller@example.com --dry-run --json --non-interactive --no-input
+gumroad admin products hold-sales <product-id> --user-id 2245593582708 --expected-email seller@example.com --yes --json --non-interactive --no-input
+# Release only lifts the named --hold-id. Releasing an older hold leaves a newer
+# one active: check .product.active_sales_hold_id in the response and do not
+# release that newer hold unless a human asked for it. Release never republishes
+# the listing; the seller has to publish it again.
+gumroad admin products release-sales-hold <product-id> --user-id 2245593582708 --expected-email seller@example.com --hold-id <hold-id> --yes --json --non-interactive --no-input
+# A timeout, lost connection, 408, 429 or 5xx leaves the result unknown; the CLI
+# does not resend. Re-read .product.active_sales_hold before running either command again.
 
 # Feature announcement emails to opted-in accounts. A campaign starts as a draft.
 # Show the preview to a human and get their approval before you approve. approve
