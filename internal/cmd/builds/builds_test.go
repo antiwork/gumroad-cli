@@ -180,8 +180,6 @@ type deployServer struct {
 	promoted  atomic.Bool
 }
 
-// setupDeployServer fakes the upload, deploy, and promote endpoints for product prod1.
-// promote answers the promote call for build b1.
 func setupDeployServer(t *testing.T, promote http.HandlerFunc) *deployServer {
 	t.Helper()
 	s3 := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
