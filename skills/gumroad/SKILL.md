@@ -100,6 +100,7 @@ Most responses are wrapped in `{"success": true, ...}` with resource-specific ke
 - `variant-categories list` → `.variant_categories[]`
 - `variants list` → `.variants[]`
 - `files upload` / `files complete` → `.file_url`
+- `builds list` → `.builds[]`, `builds deploy` → mutation envelope with `.result.build`
 - `media upload` → `.media` (`.id`, `.name`, `.url`, `.file_size`), `media list` → `.media[]`, `media delete` → `.message`
 - `products create` → `.product` (`.product.published` reports whether it went live; a blocked publish adds a top-level `.warning`); with media flags also `.media[]`
 - `products update` with media flags → `.product` plus `.media[]`
@@ -516,6 +517,10 @@ gumroad files abort --upload-id up-123 --key attachments/u/k/original/pack.zip -
 ```
 
 `files upload` and `files complete` both return `.file_url`. When a JSON upload fails with recovery details, reuse `.error.recovery` with `files complete` to finish it or `files abort` to reclaim the orphaned multipart upload.
+
+### builds — Deploy web builds (games, interactive courses)
+
+`gumroad builds deploy <dir|zip> --product <id> [--promote]` uploads a build on the multipart path and records it as a new immutable build. A directory is zipped for you and must have a regular `index.html` file at its top level; dotfiles and dot-folders are skipped. The directory may itself be a symlink, but links inside it are not followed: deploy fails on one instead of leaving the file out, so copy the real file in or deploy a .zip. `gumroad builds list --product <id>` shows builds (`.builds[]`: `.id`, `.number`, `.status`, `.byte_size`); `gumroad builds promote <build-id> --product <id>` makes a build live (superseding the previous one; promoting an older build rolls back). A deployed build is not live until promoted, and the live build is attached to the product as its download. `builds deploy --json` wraps the API response in the mutation envelope, so read the build at `.result.build` (`.id`, `.number`, `.status`).
 
 ### media — Public media library (page images)
 
