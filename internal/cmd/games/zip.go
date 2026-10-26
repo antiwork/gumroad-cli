@@ -12,9 +12,21 @@ import (
 
 // zipDir writes the contents of dir to a temporary zip with paths relative to dir, so the
 // directory's index.html sits at the archive root. The caller removes the returned file.
+//
+// dir itself may be a symlink, since the user named it. Links inside it are never followed:
+// following one could pack files from anywhere on disk, and skipping it would ship a build
+// that is silently missing a file, so the walk fails on them instead.
 func zipDir(dir string) (string, error) {
-	if _, err := os.Stat(filepath.Join(dir, "index.html")); err != nil {
+	root, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		return "", fmt.Errorf("could not resolve %s: %w", dir, err)
+	}
+	index, err := os.Lstat(filepath.Join(root, "index.html"))
+	if err != nil {
 		return "", fmt.Errorf("%s has no index.html at its top level; point deploy at the folder that contains it", dir)
+	}
+	if !index.Mode().IsRegular() {
+		return "", fmt.Errorf("%s: index.html must be a regular file, not a link or folder", dir)
 	}
 
 	out, err := os.CreateTemp("", "gumroad-game-*.zip")
@@ -29,20 +41,29 @@ func zipDir(dir string) (string, error) {
 	}
 
 	zw := zip.NewWriter(out)
-	walkErr := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+	walkErr := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		if path == dir || !d.Type().IsRegular() {
+		if path == root {
 			return nil
 		}
-		rel, err := filepath.Rel(dir, path)
+		if strings.HasPrefix(d.Name(), ".") {
+			if d.IsDir() {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if d.IsDir() {
+			return nil
+		}
+		rel, err := filepath.Rel(root, path)
 		if err != nil {
 			return err
 		}
 		rel = filepath.ToSlash(rel)
-		if strings.HasPrefix(rel, ".") || strings.Contains(rel, "/.") {
-			return nil
+		if !d.Type().IsRegular() {
+			return fmt.Errorf("%s is not a regular file or folder; links are not followed, so copy in the file it points to", rel)
 		}
 		w, err := zw.Create(rel)
 		if err != nil {

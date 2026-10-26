@@ -100,6 +100,7 @@ Most responses are wrapped in `{"success": true, ...}` with resource-specific ke
 - `variant-categories list` → `.variant_categories[]`
 - `variants list` → `.variants[]`
 - `files upload` / `files complete` → `.file_url`
+- `games list` → `.game_builds[]`, `games deploy` → mutation envelope with `.result.game_build`
 - `media upload` → `.media` (`.id`, `.name`, `.url`, `.file_size`), `media list` → `.media[]`, `media delete` → `.message`
 - `products create` → `.product` (`.product.published` reports whether it went live; a blocked publish adds a top-level `.warning`); with media flags also `.media[]`
 - `products update` with media flags → `.product` plus `.media[]`
@@ -517,9 +518,11 @@ gumroad files abort --upload-id up-123 --key attachments/u/k/original/pack.zip -
 
 `files upload` and `files complete` both return `.file_url`. When a JSON upload fails with recovery details, reuse `.error.recovery` with `files complete` to finish it or `files abort` to reclaim the orphaned multipart upload.
 
-### media — Public media library (page images)
+### games — Deploy browser game builds
 
-Browser games: `gumroad games deploy <dir|zip> --product <id> [--promote]` uploads a build on the multipart path (a directory is zipped for you and must have `index.html` at its top level; dotfiles are skipped) and records it as a new immutable build; `gumroad games list --product <id>` shows builds (`.game_builds[]`: `.id`, `.number`, `.status`, `.byte_size`); `gumroad games promote <build-id> --product <id>` makes a build live (superseding the previous one; promoting an older build rolls back). A deployed build is not live until promoted, and the live build is attached to the product as its download. Deploy responses carry `.game_build`.
+`gumroad games deploy <dir|zip> --product <id> [--promote]` uploads a build on the multipart path and records it as a new immutable build. A directory is zipped for you and must have a regular `index.html` file at its top level; dotfiles and dot-folders are skipped. The directory may itself be a symlink, but links inside it are not followed: deploy fails on one instead of leaving the file out, so copy the real file in or deploy a .zip. `gumroad games list --product <id>` shows builds (`.game_builds[]`: `.id`, `.number`, `.status`, `.byte_size`); `gumroad games promote <build-id> --product <id>` makes a build live (superseding the previous one; promoting an older build rolls back). A deployed build is not live until promoted, and the live build is attached to the product as its download. `games deploy --json` wraps the API response in the mutation envelope, so read the build at `.result.game_build` (`.id`, `.number`, `.status`).
+
+### media — Public media library (page images)
 
 Files from `files upload` are stored privately and can never be displayed on custom product landing pages or profile pages — the pages' Content-Security-Policy only allows Gumroad's public CDN, and page moderation cannot fetch private URLs, so a page embedding one fails review every time. To put an image on a page, upload it to the public media library instead and embed the returned `.media.url` in the page HTML before `pages push` / `products page publish`.
 

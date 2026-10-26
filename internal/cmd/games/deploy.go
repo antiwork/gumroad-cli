@@ -25,7 +25,8 @@ func newDeployCmd() *cobra.Command {
 		Use:   "deploy <dir|zip>",
 		Short: "Upload a game build and record it as a new version",
 		Long: "Upload a game build and record it as a new immutable version of the product's game.\n\n" +
-			"<dir|zip> is a .zip, or a folder with index.html at its top level (zipped for you; dotfiles are skipped). " +
+			"<dir|zip> is a .zip, or a folder with index.html at its top level (zipped for you; dotfiles and dot-folders are skipped). " +
+			"The folder may itself be a symlink, but links inside it are not followed: deploy fails on one rather than leave the file out. " +
 			"The build is not live until promoted — pass --promote to do both.",
 		Args: cmdutil.ExactArgs(1),
 		Example: `  gumroad games deploy ./dist --product abc123
