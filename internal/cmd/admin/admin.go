@@ -38,6 +38,8 @@ func NewAdminCmd() *cobra.Command {
   gumroad admin products list --email <email>
   gumroad admin products view <product-id>
   gumroad admin products flag-for-tos-violation <product-id> --user-id <user-id>
+  gumroad admin products hold-sales <product-id> --user-id <user-id>
+  gumroad admin products release-sales-hold <product-id> --user-id <user-id> --hold-id <hold-id>
   gumroad admin stripe court-order-notice --stripe-account-id <acct-id> --firm-name <name> --firm-email <email> --notice-key <key> --dry-run`,
 	}
 
