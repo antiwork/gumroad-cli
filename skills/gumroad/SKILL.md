@@ -519,6 +519,8 @@ gumroad files abort --upload-id up-123 --key attachments/u/k/original/pack.zip -
 
 ### media — Public media library (page images)
 
+Browser games: `gumroad games deploy <dir|zip> --product <id> [--promote]` uploads a build on the multipart path (a directory is zipped for you and must have `index.html` at its top level; dotfiles are skipped) and records it as a new immutable build; `gumroad games list --product <id>` shows builds (`.game_builds[]`: `.id`, `.number`, `.status`, `.byte_size`); `gumroad games promote <build-id> --product <id>` makes a build live (superseding the previous one; promoting an older build rolls back). A deployed build is not live until promoted, and the live build is attached to the product as its download. Deploy responses carry `.game_build`.
+
 Files from `files upload` are stored privately and can never be displayed on custom product landing pages or profile pages — the pages' Content-Security-Policy only allows Gumroad's public CDN, and page moderation cannot fetch private URLs, so a page embedding one fails review every time. To put an image on a page, upload it to the public media library instead and embed the returned `.media.url` in the page HTML before `pages push` / `products page publish`.
 
 ```sh
