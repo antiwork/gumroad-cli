@@ -1,4 +1,4 @@
-package games
+package builds
 
 import (
 	"archive/zip"
@@ -17,7 +17,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func gameDir(t *testing.T) string {
+func buildDir(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "index.html"), []byte("<html></html>"), 0600); err != nil {
@@ -36,7 +36,7 @@ func gameDir(t *testing.T) string {
 }
 
 func TestZipDir_RootIndexAndSkipsDotfiles(t *testing.T) {
-	zipPath, err := zipDir(gameDir(t))
+	zipPath, err := zipDir(buildDir(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,7 +87,7 @@ func requireSymlinks(t *testing.T) {
 func TestZipDir_FollowsSymlinkedRootDirectory(t *testing.T) {
 	requireSymlinks(t)
 	link := filepath.Join(t.TempDir(), "dist")
-	if err := os.Symlink(gameDir(t), link); err != nil {
+	if err := os.Symlink(buildDir(t), link); err != nil {
 		t.Fatal(err)
 	}
 	zipPath, err := zipDir(link)
@@ -131,7 +131,7 @@ func TestZipDir_RejectsSymlinkedAssetInsteadOfDroppingIt(t *testing.T) {
 	if err := os.WriteFile(secret, []byte("SECRET"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	dir := gameDir(t)
+	dir := buildDir(t)
 	if err := os.Symlink(secret, filepath.Join(dir, "assets", "b.js")); err != nil {
 		t.Fatal(err)
 	}
@@ -149,7 +149,7 @@ func TestZipDir_SkipsHiddenDirectoriesWithoutReadingThem(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("Windows does not enforce Unix directory permissions")
 	}
-	dir := gameDir(t)
+	dir := buildDir(t)
 	hidden := filepath.Join(dir, "assets", ".cache")
 	if err := os.MkdirAll(hidden, 0700); err != nil {
 		t.Fatal(err)
@@ -198,16 +198,16 @@ func setupDeployServer(t *testing.T, promote http.HandlerFunc) *deployServer {
 		switch r.URL.Path {
 		case "/files/presign":
 			testutil.JSON(t, w, map[string]any{
-				"upload_id": "up", "key": "attachments/u/k/original/game-build.zip",
-				"file_url": "https://example.com/attachments/u/k/original/game-build.zip",
+				"upload_id": "up", "key": "attachments/u/k/original/build.zip",
+				"file_url": "https://example.com/attachments/u/k/original/build.zip",
 				"parts":    []map[string]any{{"part_number": 1, "presigned_url": s3.URL + "/p/1"}},
 			})
 		case "/files/complete":
-			testutil.JSON(t, w, map[string]any{"file_url": "https://example.com/attachments/u/k/original/game-build.zip"})
-		case "/products/prod1/games/builds/deploy":
+			testutil.JSON(t, w, map[string]any{"file_url": "https://example.com/attachments/u/k/original/build.zip"})
+		case "/products/prod1/builds/deploy":
 			srv.deployURL = r.PostForm.Get("url")
-			testutil.JSON(t, w, map[string]any{"success": true, "game_build": map[string]any{"id": "b1", "number": 1, "status": "uploaded"}})
-		case "/products/prod1/games/builds/b1/promote":
+			testutil.JSON(t, w, map[string]any{"success": true, "build": map[string]any{"id": "b1", "number": 1, "status": "uploaded"}})
+		case "/products/prod1/builds/b1/promote":
 			srv.promoted.Store(true)
 			promote(w, r)
 		default:
@@ -231,21 +231,21 @@ func decodeDeployOutput(t *testing.T, out string) build {
 
 func TestDeploy_UploadsZipThenDeploysAndPromotes(t *testing.T) {
 	srv := setupDeployServer(t, func(w http.ResponseWriter, r *http.Request) {
-		testutil.JSON(t, w, map[string]any{"success": true, "game_build": map[string]any{"id": "b1", "number": 1, "status": "live"}})
+		testutil.JSON(t, w, map[string]any{"success": true, "build": map[string]any{"id": "b1", "number": 1, "status": "live"}})
 	})
 
 	cmd := testutil.Command(newDeployCmd(), testutil.JSONOutput())
-	cmd.SetArgs([]string{gameDir(t), "--product", "prod1", "--promote"})
+	cmd.SetArgs([]string{buildDir(t), "--product", "prod1", "--promote"})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
-	if srv.deployURL != "https://example.com/attachments/u/k/original/game-build.zip" {
+	if srv.deployURL != "https://example.com/attachments/u/k/original/build.zip" {
 		t.Errorf("deploy url = %q", srv.deployURL)
 	}
 	if !srv.promoted.Load() {
 		t.Error("expected promote call")
 	}
 	if got := decodeDeployOutput(t, out); got.ID != "b1" || got.Status != "live" {
-		t.Errorf(".result.game_build = %+v, out = %q", got, out)
+		t.Errorf(".result.build = %+v, out = %q", got, out)
 	}
 }
 
@@ -255,14 +255,14 @@ func TestDeploy_WithoutPromoteLeavesBuildUploaded(t *testing.T) {
 	})
 
 	cmd := testutil.Command(newDeployCmd(), testutil.JSONOutput())
-	cmd.SetArgs([]string{gameDir(t), "--product", "prod1"})
+	cmd.SetArgs([]string{buildDir(t), "--product", "prod1"})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
 
 	if srv.promoted.Load() {
 		t.Error("expected no promote call")
 	}
 	if got := decodeDeployOutput(t, out); got.ID != "b1" || got.Number != 1 || got.Status != "uploaded" {
-		t.Errorf(".result.game_build = %+v, out = %q", got, out)
+		t.Errorf(".result.build = %+v, out = %q", got, out)
 	}
 }
 
@@ -274,13 +274,13 @@ func TestDeploy_PromoteFailureNamesTheDeployedBuild(t *testing.T) {
 	})
 
 	cmd := testutil.Command(newDeployCmd(), testutil.JSONOutput())
-	cmd.SetArgs([]string{gameDir(t), "--product", "prod1", "--promote"})
+	cmd.SetArgs([]string{buildDir(t), "--product", "prod1", "--promote"})
 	var err error
 	testutil.CaptureStdout(func() { err = cmd.Execute() })
 	if err == nil {
 		t.Fatal("expected promote failure")
 	}
-	if want := "build 1 was deployed (id b1) but promoting it failed; run `gumroad games promote b1 --product prod1`"; !strings.Contains(err.Error(), want) {
+	if want := "build 1 was deployed (id b1) but promoting it failed; run `gumroad builds promote b1 --product prod1`"; !strings.Contains(err.Error(), want) {
 		t.Errorf("err = %v, want it to contain %q", err, want)
 	}
 }
@@ -289,7 +289,7 @@ func TestDeploy_DryRunDescribesTheDeployWithoutRequests(t *testing.T) {
 	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
 		t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
 	})
-	dir := gameDir(t)
+	dir := buildDir(t)
 	for _, tc := range []struct {
 		args []string
 		want string
@@ -340,7 +340,7 @@ func TestZipDir_RejectsMissingDirectory(t *testing.T) {
 
 func TestDeploy_RequiresProduct(t *testing.T) {
 	cmd := testutil.Command(newDeployCmd())
-	cmd.SetArgs([]string{gameDir(t)})
+	cmd.SetArgs([]string{buildDir(t)})
 	if err := cmd.Execute(); err == nil {
 		t.Error("expected error without --product")
 	}
@@ -359,10 +359,10 @@ func TestDeploy_RejectsNonZipFile(t *testing.T) {
 func TestPromoteAndList(t *testing.T) {
 	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.Method == "POST" && r.URL.Path == "/products/p/games/builds/b2/promote":
+		case r.Method == "POST" && r.URL.Path == "/products/p/builds/b2/promote":
 			testutil.JSON(t, w, map[string]any{"success": true})
-		case r.Method == "GET" && r.URL.Path == "/products/p/games/builds":
-			testutil.JSON(t, w, map[string]any{"success": true, "game_builds": []map[string]any{{"id": "b2", "number": 2, "status": "live", "byte_size": 10}}})
+		case r.Method == "GET" && r.URL.Path == "/products/p/builds":
+			testutil.JSON(t, w, map[string]any{"success": true, "builds": []map[string]any{{"id": "b2", "number": 2, "status": "live", "byte_size": 10}}})
 		default:
 			t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
 		}
@@ -382,14 +382,14 @@ func TestPromoteAndList(t *testing.T) {
 func TestList_EmptyAndTableOutput(t *testing.T) {
 	builds := []map[string]any{}
 	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
-		testutil.JSON(t, w, map[string]any{"success": true, "game_builds": builds})
+		testutil.JSON(t, w, map[string]any{"success": true, "builds": builds})
 	})
 
 	var out strings.Builder
 	l := testutil.Command(newListCmd(), testutil.Quiet(false), testutil.Stdout(&out))
 	l.SetArgs([]string{"--product", "p"})
 	testutil.MustExecute(t, l)
-	if want := "No game builds found.\n"; out.String() != want {
+	if want := "No builds found.\n"; out.String() != want {
 		t.Errorf("out = %q, want %q", out.String(), want)
 	}
 
@@ -412,7 +412,7 @@ func TestPromote_DryRunSkipsTheRequest(t *testing.T) {
 	p := testutil.Command(newPromoteCmd(), testutil.DryRun(true), testutil.JSONOutput())
 	p.SetArgs([]string{"b2", "--product", "p"})
 	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, p) })
-	if !strings.Contains(out, "/products/p/games/builds/b2/promote") {
+	if !strings.Contains(out, "/products/p/builds/b2/promote") {
 		t.Errorf("out = %q", out)
 	}
 }
@@ -433,9 +433,9 @@ func TestListAndPromote_RequireProduct(t *testing.T) {
 	}
 }
 
-func TestNewGamesCmd_RegistersSubcommands(t *testing.T) {
+func TestNewBuildsCmd_RegistersSubcommands(t *testing.T) {
 	var names []string
-	for _, c := range NewGamesCmd().Commands() {
+	for _, c := range NewBuildsCmd().Commands() {
 		names = append(names, c.Name())
 	}
 	if want := []string{"deploy", "list", "promote"}; !slices.Equal(names, want) {

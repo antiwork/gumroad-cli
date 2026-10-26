@@ -1,4 +1,4 @@
-package games
+package builds
 
 import (
 	"fmt"
@@ -23,14 +23,14 @@ func newDeployCmd() *cobra.Command {
 	var promote bool
 	c := &cobra.Command{
 		Use:   "deploy <dir|zip>",
-		Short: "Upload a game build and record it as a new version",
-		Long: "Upload a game build and record it as a new immutable version of the product's game.\n\n" +
+		Short: "Upload a web build and record it as a new version",
+		Long: "Upload a web build and record it as a new immutable version of the product's build.\n\n" +
 			"<dir|zip> is a .zip, or a folder with index.html at its top level (zipped for you; dotfiles and dot-folders are skipped). " +
 			"The folder may itself be a symlink, but links inside it are not followed: deploy fails on one rather than leave the file out. " +
 			"The build is not live until promoted — pass --promote to do both.",
 		Args: cmdutil.ExactArgs(1),
-		Example: `  gumroad games deploy ./dist --product abc123
-  gumroad games deploy ./game.zip --product abc123 --promote --json`,
+		Example: `  gumroad builds deploy ./dist --product abc123
+  gumroad builds deploy ./game.zip --product abc123 --promote --json`,
 		RunE: func(c *cobra.Command, args []string) error {
 			opts := cmdutil.OptionsFrom(c)
 			path := args[0]
@@ -57,7 +57,7 @@ func newDeployCmd() *cobra.Command {
 				defer func() { _ = os.Remove(zipPath) }()
 			}
 
-			plan, err := upload.Describe(zipPath, upload.Options{Filename: "game-build.zip"})
+			plan, err := upload.Describe(zipPath, upload.Options{Filename: "build.zip"})
 			if err != nil {
 				return err
 			}
@@ -85,7 +85,7 @@ func newDeployCmd() *cobra.Command {
 				data, err = cmdutil.RunRequestWithTokenData(opts, token, "Promoting build...", http.MethodPost,
 					buildsPath(product, resp.Build.ID, "promote"), url.Values{})
 				if err != nil {
-					return fmt.Errorf("build %d was deployed (id %s) but promoting it failed; run `gumroad games promote %s --product %s`: %w",
+					return fmt.Errorf("build %d was deployed (id %s) but promoting it failed; run `gumroad builds promote %s --product %s`: %w",
 						resp.Build.Number, resp.Build.ID, resp.Build.ID, product, err)
 				}
 				if resp, err = cmdutil.DecodeJSON[buildResponse](data); err != nil {

@@ -11,12 +11,12 @@ import (
 
 	"github.com/antiwork/gumroad-cli/internal/cmd/admin"
 	"github.com/antiwork/gumroad-cli/internal/cmd/auth"
+	"github.com/antiwork/gumroad-cli/internal/cmd/builds"
 	"github.com/antiwork/gumroad-cli/internal/cmd/categories"
 	"github.com/antiwork/gumroad-cli/internal/cmd/completion"
 	"github.com/antiwork/gumroad-cli/internal/cmd/customfields"
 	"github.com/antiwork/gumroad-cli/internal/cmd/emails"
 	"github.com/antiwork/gumroad-cli/internal/cmd/files"
-	"github.com/antiwork/gumroad-cli/internal/cmd/games"
 	"github.com/antiwork/gumroad-cli/internal/cmd/licenses"
 	"github.com/antiwork/gumroad-cli/internal/cmd/marketing"
 	"github.com/antiwork/gumroad-cli/internal/cmd/mcp"
@@ -143,7 +143,7 @@ func NewRootCmd() *cobra.Command {
 	cmd.AddCommand(variants.NewVariantsCmd())
 	cmd.AddCommand(customfields.NewCustomFieldsCmd())
 	cmd.AddCommand(files.NewFilesCmd())
-	cmd.AddCommand(games.NewGamesCmd())
+	cmd.AddCommand(builds.NewBuildsCmd())
 	cmd.AddCommand(media.NewMediaCmd())
 	cmd.AddCommand(webhooks.NewWebhooksCmd())
 	cmd.AddCommand(completion.NewCompletionCmd())

@@ -1,4 +1,4 @@
-package games
+package builds
 
 import (
 	"archive/zip"
@@ -29,7 +29,7 @@ func zipDir(dir string) (string, error) {
 		return "", fmt.Errorf("%s: index.html must be a regular file, not a link or folder", dir)
 	}
 
-	out, err := os.CreateTemp("", "gumroad-game-*.zip")
+	out, err := os.CreateTemp("", "gumroad-build-*.zip")
 	if err != nil {
 		return "", fmt.Errorf("could not create temporary zip: %w", err)
 	}

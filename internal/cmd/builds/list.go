@@ -1,4 +1,4 @@
-package games
+package builds
 
 import (
 	"net/url"
@@ -13,7 +13,7 @@ func newListCmd() *cobra.Command {
 	var product string
 	c := &cobra.Command{
 		Use:   "list",
-		Short: "List a product's game builds",
+		Short: "List a product's builds",
 		Args:  cmdutil.ExactArgs(0),
 		RunE: func(c *cobra.Command, args []string) error {
 			opts := cmdutil.OptionsFrom(c)
@@ -22,7 +22,7 @@ func newListCmd() *cobra.Command {
 			}
 			return cmdutil.RunRequestDecoded[buildsResponse](opts, "Fetching builds...", "GET", buildsPath(product), url.Values{}, func(resp buildsResponse) error {
 				if len(resp.Builds) == 0 {
-					return cmdutil.PrintInfo(opts, "No game builds found.")
+					return cmdutil.PrintInfo(opts, "No builds found.")
 				}
 				if opts.PlainOutput {
 					var rows [][]string
