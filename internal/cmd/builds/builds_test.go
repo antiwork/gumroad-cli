@@ -436,7 +436,7 @@ func TestNewBuildsCmd_RegistersSubcommands(t *testing.T) {
 	for _, c := range NewBuildsCmd().Commands() {
 		names = append(names, c.Name())
 	}
-	if want := []string{"deploy", "list", "promote"}; !slices.Equal(names, want) {
+	if want := []string{"deploy", "init", "list", "promote"}; !slices.Equal(names, want) {
 		t.Errorf("subcommands = %v, want %v", names, want)
 	}
 }
