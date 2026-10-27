@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"slices"
 	"strings"
@@ -188,5 +189,23 @@ func TestInit_RejectsDestinationSymlink(t *testing.T) {
 	}
 	if got := readStarter(t, outside); got != "<html>untouched</html>" {
 		t.Errorf("init wrote through the link: %q", got)
+	}
+}
+
+func TestInit_StarterScriptDeclaresEachConstantOnce(t *testing.T) {
+	script := regexp.MustCompile(`(?s)<script>(.*?)</script>`).FindStringSubmatch(starterIndexHTML)
+	if script == nil {
+		t.Fatal("starter has no inline script")
+	}
+	// A repeated top-level const is a SyntaxError, so nothing in the page runs.
+	seen := map[string]bool{}
+	for _, match := range regexp.MustCompile(`\bconst ([A-Za-z_$][\w$]*)`).FindAllStringSubmatch(script[1], -1) {
+		if seen[match[1]] {
+			t.Errorf("starter declares const %s twice", match[1])
+		}
+		seen[match[1]] = true
+	}
+	if len(seen) == 0 {
+		t.Error("starter script declares no constants")
 	}
 }
