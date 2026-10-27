@@ -37,11 +37,13 @@ func NewBuildsCmd() *cobra.Command {
 			"immutable build. A deployed build is not live until it is promoted: pass --promote to deploy, or run " +
 			"`gumroad builds promote`. The live build is attached to the product as its download. Promoting an older " +
 			"build rolls back.",
-		Example: `  gumroad builds deploy ./dist --product abc123
+		Example: `  gumroad builds init ./my-game --product abc123
+  gumroad builds deploy ./dist --product abc123
   gumroad builds deploy ./game.zip --product abc123 --promote
   gumroad builds list --product abc123
   gumroad builds promote <build-id> --product abc123`,
 	}
+	cmd.AddCommand(newInitCmd())
 	cmd.AddCommand(newDeployCmd())
 	cmd.AddCommand(newListCmd())
 	cmd.AddCommand(newPromoteCmd())
