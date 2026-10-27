@@ -2,7 +2,6 @@ package builds
 
 import (
 	"encoding/json"
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -41,8 +40,6 @@ const starterIndexHTML = `<!doctype html>
       const SQUARE_SIZE = 48;
       const canvas = document.getElementById("game");
       const ctx = canvas.getContext("2d");
-      const SPEED = 6;
-      const SQUARE_SIZE = 48;
       const keys = new Set();
       let x = 0, y = 0;
       addEventListener("keydown", (event) => keys.add(event.key));
