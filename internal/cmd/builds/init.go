@@ -2,6 +2,7 @@ package builds
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,12 +16,12 @@ const (
 	starterIndexFile  = "index.html"
 	starterDeployFile = "deploy.sh"
 	// productEnvVar is read by a deploy.sh written without --product, so the
-	// script is useful before the seller knows the product it belongs to.
+	// starter is usable before the seller knows the product it belongs to.
 	productEnvVar = "GUMROAD_PRODUCT"
 )
 
-// starterIndexHTML is a playable page, not a placeholder: it proves the deploy
-// round trip (index.html at the top level, relative assets) on the first run.
+// A playable page, not a placeholder: it proves the deploy round trip on the
+// first run and shows where a real build's index.html goes.
 const starterIndexHTML = `<!doctype html>
 <html lang="en">
   <head>
@@ -35,25 +36,29 @@ const starterIndexHTML = `<!doctype html>
   <body>
     <canvas id="game"></canvas>
     <script>
-      // Replace this file with your build's entry point; keep index.html at the top level.
+      // Replace this file with your build's entry point; index.html must stay at the top level.
+      const MOVEMENT_SPEED = 6;
+      const SQUARE_SIZE = 48;
       const canvas = document.getElementById("game");
       const ctx = canvas.getContext("2d");
+      const SPEED = 6;
+      const SQUARE_SIZE = 48;
       const keys = new Set();
       let x = 0, y = 0;
       addEventListener("keydown", (event) => keys.add(event.key));
       addEventListener("keyup", (event) => keys.delete(event.key));
       function frame() {
         const width = (canvas.width = innerWidth), height = (canvas.height = innerHeight);
-        if (keys.has("ArrowLeft")) x -= 6;
-        if (keys.has("ArrowRight")) x += 6;
-        if (keys.has("ArrowUp")) y -= 6;
-        if (keys.has("ArrowDown")) y += 6;
-        x = Math.max(0, Math.min(width - 48, x));
-        y = Math.max(0, Math.min(height - 48, y));
+        if (keys.has("ArrowLeft")) x -= MOVEMENT_SPEED;
+        if (keys.has("ArrowRight")) x += MOVEMENT_SPEED;
+        if (keys.has("ArrowUp")) y -= MOVEMENT_SPEED;
+        if (keys.has("ArrowDown")) y += MOVEMENT_SPEED;
+        x = Math.max(0, Math.min(width - SQUARE_SIZE, x));
+        y = Math.max(0, Math.min(height - SQUARE_SIZE, y));
         ctx.fillStyle = "#111";
         ctx.fillRect(0, 0, width, height);
         ctx.fillStyle = "#f4c430";
-        ctx.fillRect(x, y, 48, 48);
+        ctx.fillRect(x, y, SQUARE_SIZE, SQUARE_SIZE);
         requestAnimationFrame(frame);
       }
       frame();
@@ -133,25 +138,46 @@ func shellQuote(value string) string {
 }
 
 // writeStarter checks every destination before writing any of them, so a
-// refusal never leaves a half-created starter behind.
+// refusal never leaves a half-created starter behind. Destinations are read
+// with Lstat and created with O_EXCL: writing through a link would land the
+// file outside the folder the seller named.
 func writeStarter(dir string, files []starterFile, force bool) error {
-	if !force {
-		for _, file := range files {
-			path := filepath.Join(dir, file.name)
-			if _, err := os.Stat(path); err == nil {
-				return cmdutil.InvalidInputErrorf("%s already exists (use --force to overwrite, or init an empty directory)", path)
-			}
+	for _, file := range files {
+		path := filepath.Join(dir, file.name)
+		info, err := os.Lstat(path)
+		if err != nil {
+			continue
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return cmdutil.InvalidInputErrorf("%s is a symbolic link (remove it, or init a different directory)", path)
+		}
+		if !force {
+			return cmdutil.InvalidInputErrorf("%s already exists (use --force to overwrite, or init an empty directory)", path)
 		}
 	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
 	for _, file := range files {
+		flags := os.O_WRONLY | os.O_CREATE | os.O_EXCL
+		if force {
+			flags = os.O_WRONLY | os.O_CREATE | os.O_TRUNC
+		}
 		path := filepath.Join(dir, file.name)
-		if err := os.WriteFile(path, []byte(file.content), file.mode); err != nil {
+		handle, err := os.OpenFile(path, flags, file.mode)
+		if err != nil {
 			return err
 		}
-		// WriteFile applies the umask, so set the mode the file was created for.
+		_, writeErr := handle.WriteString(file.content)
+		closeErr := handle.Close()
+		if writeErr != nil {
+			return writeErr
+		}
+		if closeErr != nil {
+			return closeErr
+		}
+		// The create mode is filtered by the umask, so set it explicitly:
+		// deploy.sh has to be executable for the starter to run.
 		if err := os.Chmod(path, file.mode); err != nil {
 			return err
 		}
@@ -160,10 +186,11 @@ func writeStarter(dir string, files []starterFile, force bool) error {
 }
 
 func printStarterResult(opts cmdutil.Options, dir string, paths []string, product string) error {
-	next := "gumroad builds deploy " + dir + " --product <product-id> --promote"
+	productArg := "<product-id>"
 	if product != "" {
-		next = "gumroad builds deploy " + dir + " --product " + product + " --promote"
+		productArg = shellQuote(product)
 	}
+	next := strings.Join([]string{"gumroad builds deploy", shellQuote(dir), "--product", productArg, "--promote"}, " ")
 	if opts.UsesJSONOutput() {
 		payload, err := json.Marshal(map[string]any{"success": true, "files": paths, "next": next})
 		if err != nil {
