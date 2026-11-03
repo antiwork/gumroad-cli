@@ -244,8 +244,7 @@ const phaserIndexHTML = `<!doctype html>
 </html>
 `
 
-const phaserMainJS = `// Phaser 4 has named exports only, so there is no default import.
-import { AUTO, Game, Scene, Scale } from "phaser";
+const phaserMainJS = `import { AUTO, Game, Scene, Scale } from "phaser";
 
 // In the player, localStorage is the purchase's own save store, so this keeps
 // working in production and in a local browser.
@@ -339,9 +338,6 @@ Keep vendor/ in the folder you deploy.
 - vendor/ holds Phaser. The import map in index.html points "phaser" at it.
 - Files and folders starting with a dot are skipped on deploy.
 
-Phaser 4 exports names, not a default, so main.js imports { AUTO, Game, Scene,
-Scale }. A default import of "phaser" would be undefined at runtime.
-
 ## Saves
 
 In the player, localStorage is backed by a key-value store for each purchase,
@@ -364,7 +360,9 @@ purpose: the exporter writes one, and init never overwrites a file.
 1. In Godot: Project > Export, add a Web preset.
 2. Turn thread support off. The player runs a build in a frame that is not
    cross-origin isolated, so a threaded export cannot start (no
-   SharedArrayBuffer) and the page stays blank.
+   SharedArrayBuffer) and the page stays blank. The option is in Godot 4.3
+   and later; Godot 4.0 to 4.2 can only export with threads, so use 4.3 or
+   later (or Godot 3).
 3. Export into this folder. index.html has to land at the top level, next to
    index.wasm and index.pck.
 4. ./deploy.sh
@@ -396,9 +394,13 @@ purpose: the exporter writes one, and init never overwrites a file.
    that is not cross-origin isolated, so a build that needs SharedArrayBuffer
    cannot start and the page stays blank. If your build reports that error,
    re-export with threading off.
-3. Set the build's output folder to this one. index.html has to land at the top
+3. In Player Settings > Publishing Settings, set Compression Format to
+   Disabled, or keep compression and turn on Decompression Fallback. The
+   player serves a build's files without a Content-Encoding header, so a
+   compressed build without the fallback fails to load.
+4. Set the build's output folder to this one. index.html has to land at the top
    level, next to the Build folder.
-4. ./deploy.sh
+5. ./deploy.sh
 
 ## Saves
 
@@ -668,7 +670,11 @@ func printStarterResult(opts cmdutil.Options, dir string, paths []string, produc
 	next := strings.Join([]string{"gumroad builds deploy", shellQuote(dir), "--product", productArg, "--promote"}, " ")
 	setupPath := starterSetupPath(dir, setup)
 	if opts.UsesJSONOutput() {
-		payload, err := json.Marshal(map[string]any{"success": true, "files": paths, "next": next, "setup": setupPath})
+		result := map[string]any{"success": true, "files": paths, "next": next}
+		if setupPath != "" {
+			result["setup"] = setupPath
+		}
+		payload, err := json.Marshal(result)
 		if err != nil {
 			return err
 		}
