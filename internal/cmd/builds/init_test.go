@@ -433,6 +433,36 @@ func TestInit_GodotAndUnityLeaveIndexHTMLToTheExporter(t *testing.T) {
 	}
 }
 
+func TestInit_ExportStartersPointAtTheExportBeforeTheDeploy(t *testing.T) {
+	for name, engine := range map[string]string{"godot": "Godot", "unity": "Unity"} {
+		t.Run(name, func(t *testing.T) {
+			dir := filepath.Join(t.TempDir(), "my-game")
+			cmd := testutil.Command(newInitCmd(), testutil.JSONOutput())
+			cmd.SetArgs([]string{dir, "--framework", name})
+			out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+			var got struct {
+				Export string `json:"export"`
+			}
+			if err := json.Unmarshal([]byte(out), &got); err != nil {
+				t.Fatalf("out = %q: %v", out, err)
+			}
+			if want := filepath.Join(dir, starterReadmeFile); got.Export != want {
+				t.Errorf("export = %q, want %q", got.Export, want)
+			}
+
+			text := testutil.Command(newInitCmd(), testutil.Quiet(false))
+			text.SetArgs([]string{filepath.Join(t.TempDir(), "other"), "--framework", name})
+			printed := testutil.CaptureStdout(func() { testutil.MustExecute(t, text) })
+			first := strings.Index(printed, "First: export your "+engine+" web build")
+			next := strings.Index(printed, "Next: gumroad builds deploy")
+			if first < 0 || next < 0 || first > next {
+				t.Errorf("the export step is not printed before the deploy: %q", printed)
+			}
+		})
+	}
+}
+
 func TestInit_ExportGuidanceCoversWhatThePlayerCannotRun(t *testing.T) {
 	for name, want := range map[string][]string{
 		"godot": {"Godot 4.3"},

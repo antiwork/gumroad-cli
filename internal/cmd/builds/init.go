@@ -433,7 +433,10 @@ type frameworkStarter struct {
 	// setup is the script to run before the first deploy, empty when the
 	// starter is deployable as written.
 	setup string
-	files func(product string) []starterFile
+	// exporter is the engine whose web export writes index.html, empty when
+	// init writes it: there is nothing to deploy until the seller exports.
+	exporter string
+	files    func(product string) []starterFile
 }
 
 // A slice, not the map, so --help and the unknown-framework error list the
@@ -477,7 +480,8 @@ var frameworkStarters = map[string]frameworkStarter{
 		},
 	},
 	"godot": {
-		summary: "the deploy script for a single-threaded Godot web export",
+		summary:  "the deploy script for a single-threaded Godot web export",
+		exporter: "Godot",
 		files: func(product string) []starterFile {
 			return []starterFile{
 				{name: starterDeployFile, content: deployScript(product), mode: 0o755},
@@ -486,7 +490,8 @@ var frameworkStarters = map[string]frameworkStarter{
 		},
 	},
 	"unity": {
-		summary: "the deploy script for a single-threaded Unity WebGL export",
+		summary:  "the deploy script for a single-threaded Unity WebGL export",
+		exporter: "Unity",
 		files: func(product string) []starterFile {
 			return []starterFile{
 				{name: starterDeployFile, content: deployScript(product), mode: 0o755},
@@ -556,7 +561,7 @@ func newInitCmd() *cobra.Command {
 			if err := writeStarter(dir, files, force); err != nil {
 				return err
 			}
-			return printStarterResult(opts, dir, paths, product, starter.setup)
+			return printStarterResult(opts, dir, paths, product, starter)
 		},
 	}
 	c.Flags().StringVar(&product, "product", "", "Product ID or permalink to deploy to (written into deploy.sh)")
@@ -662,17 +667,24 @@ func writeStarter(dir string, files []starterFile, force bool) error {
 	return nil
 }
 
-func printStarterResult(opts cmdutil.Options, dir string, paths []string, product string, setup string) error {
+func printStarterResult(opts cmdutil.Options, dir string, paths []string, product string, starter frameworkStarter) error {
 	productArg := "<product-id>"
 	if product != "" {
 		productArg = shellQuote(product)
 	}
 	next := strings.Join([]string{"gumroad builds deploy", shellQuote(dir), "--product", productArg, "--promote"}, " ")
-	setupPath := starterSetupPath(dir, setup)
+	setupPath := starterSetupPath(dir, starter.setup)
+	exportGuide := ""
+	if starter.exporter != "" {
+		exportGuide = filepath.Join(dir, starterReadmeFile)
+	}
 	if opts.UsesJSONOutput() {
 		result := map[string]any{"success": true, "files": paths, "next": next}
 		if setupPath != "" {
 			result["setup"] = setupPath
+		}
+		if exportGuide != "" {
+			result["export"] = exportGuide
 		}
 		payload, err := json.Marshal(result)
 		if err != nil {
@@ -692,6 +704,11 @@ func printStarterResult(opts cmdutil.Options, dir string, paths []string, produc
 	}
 	if setupPath != "" {
 		if err := cmdutil.PrintInfo(opts, "First: "+shellQuote(setupPath)+" to download the framework into vendor/"); err != nil {
+			return err
+		}
+	}
+	if exportGuide != "" {
+		if err := cmdutil.PrintInfo(opts, "First: export your "+starter.exporter+" web build into "+shellQuote(dir)+" with the settings in "+exportGuide); err != nil {
 			return err
 		}
 	}
