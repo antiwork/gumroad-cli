@@ -209,3 +209,158 @@ func TestInit_StarterScriptDeclaresEachConstantOnce(t *testing.T) {
 		t.Error("starter script declares no constants")
 	}
 }
+
+func TestInit_FrameworkStartersWriteADeployableFolder(t *testing.T) {
+	for _, name := range frameworkOrder {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			cmd := testutil.Command(newInitCmd(), testutil.JSONOutput())
+			cmd.SetArgs([]string{dir, "--framework", name, "--product", "abc123"})
+			out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+			var got struct {
+				Files []string `json:"files"`
+			}
+			if err := json.Unmarshal([]byte(out), &got); err != nil {
+				t.Fatalf("out = %q: %v", out, err)
+			}
+			if len(got.Files) == 0 {
+				t.Fatalf("no files reported: %q", out)
+			}
+			script := readStarter(t, filepath.Join(dir, starterDeployFile))
+			if !strings.Contains(script, "gumroad builds deploy . --product \"$product\" --promote") {
+				t.Errorf("deploy.sh does not deploy this folder: %q", script)
+			}
+			if !strings.Contains(script, "product='abc123'") {
+				t.Errorf("deploy.sh does not carry --product: %q", script)
+			}
+			if runtime.GOOS != "windows" {
+				info, err := os.Stat(filepath.Join(dir, starterDeployFile))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if info.Mode().Perm()&0o111 == 0 {
+					t.Errorf("deploy.sh is not executable: %v", info.Mode().Perm())
+				}
+			}
+			// A page that loads a script from a public CDN works locally and
+			// then fails in the player, whose CSP allows scripts only from the
+			// app host and the asset host.
+			for _, file := range got.Files {
+				if !strings.HasSuffix(file, ".html") {
+					continue
+				}
+				if page := readStarter(t, file); strings.Contains(page, `src="http`) {
+					t.Errorf("%s loads a script from a remote host: %q", file, page)
+				}
+			}
+		})
+	}
+}
+
+func TestInit_ThreeVendorsTheWholeModule(t *testing.T) {
+	dir := t.TempDir()
+	cmd := testutil.Command(newInitCmd(), testutil.JSONOutput())
+	cmd.SetArgs([]string{dir, "--framework", "three"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	var got struct {
+		Setup string `json:"setup"`
+	}
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("out = %q: %v", out, err)
+	}
+	if want := "./" + starterSetupFile; got.Setup != want {
+		t.Errorf("setup = %q, want %q", got.Setup, want)
+	}
+	index := readStarter(t, filepath.Join(dir, starterIndexFile))
+	if !strings.Contains(index, `"three": "./vendor/three.module.js"`) {
+		t.Errorf("index.html does not map three to the vendored file: %q", index)
+	}
+	// three.module.js imports three.core.js, so vendoring only the entry point
+	// leaves the page with no renderer.
+	setup := readStarter(t, filepath.Join(dir, starterSetupFile))
+	for _, want := range []string{"vendor/three.module.js", "vendor/three.core.js"} {
+		if !strings.Contains(setup, want) {
+			t.Errorf("setup.sh does not fetch %s: %q", want, setup)
+		}
+	}
+	if main := readStarter(t, filepath.Join(dir, starterMainFile)); !strings.Contains(main, `from "three"`) {
+		t.Errorf("main.js does not import three: %q", main)
+	}
+}
+
+func TestInit_PhaserUsesNamedImports(t *testing.T) {
+	dir := t.TempDir()
+	cmd := testutil.Command(newInitCmd(), testutil.JSONOutput())
+	cmd.SetArgs([]string{dir, "--framework", "phaser"})
+	testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	index := readStarter(t, filepath.Join(dir, starterIndexFile))
+	if !strings.Contains(index, `"phaser": "./vendor/phaser.esm.min.js"`) {
+		t.Errorf("index.html does not map phaser to the vendored file: %q", index)
+	}
+	main := readStarter(t, filepath.Join(dir, starterMainFile))
+	// Phaser 4 exports names, not a default, so a default import is undefined.
+	if strings.Contains(main, "import Phaser from") {
+		t.Errorf("main.js default-imports phaser, which has no default export: %q", main)
+	}
+	if !strings.Contains(main, `import { AUTO, Game, Scene, Scale } from "phaser"`) {
+		t.Errorf("main.js does not named-import phaser: %q", main)
+	}
+}
+
+func TestInit_GodotAndUnityLeaveIndexHTMLToTheExporter(t *testing.T) {
+	for _, name := range []string{"godot", "unity"} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			cmd := testutil.Command(newInitCmd(), testutil.JSONOutput())
+			cmd.SetArgs([]string{dir, "--framework", name})
+			testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+			// The exporter writes index.html. A placeholder would be left next
+			// to the export, or the export would overwrite it.
+			if _, err := os.Stat(filepath.Join(dir, starterIndexFile)); err == nil {
+				t.Error("init wrote an index.html the exporter owns")
+			}
+			readme := readStarter(t, filepath.Join(dir, starterReadmeFile))
+			if !strings.Contains(strings.ToLower(readme), "thread") {
+				t.Errorf("README does not mention the single-threaded export: %q", readme)
+			}
+		})
+	}
+}
+
+func TestInit_RejectsUnknownFramework(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "my-game")
+	cmd := testutil.Command(newInitCmd())
+	cmd.SetArgs([]string{dir, "--framework", "unreal"})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "unknown framework") {
+		t.Fatalf("err = %v", err)
+	}
+	for _, name := range frameworkOrder {
+		if !strings.Contains(err.Error(), name) {
+			t.Errorf("error does not list %s: %v", name, err)
+		}
+	}
+	if _, statErr := os.Stat(dir); statErr == nil {
+		t.Error("an unknown framework created the directory")
+	}
+}
+
+func TestInit_FrameworkStarterZipsWithIndexHTMLAtTheTop(t *testing.T) {
+	dir := t.TempDir()
+	cmd := testutil.Command(newInitCmd(), testutil.JSONOutput())
+	cmd.SetArgs([]string{dir, "--framework", "three"})
+	testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	zipPath, err := zipDir(dir)
+	if err != nil {
+		t.Fatalf("zipDir(starter) = %v", err)
+	}
+	defer func() { _ = os.Remove(zipPath) }()
+	if entries := zipEntries(t, zipPath); !slices.Contains(entries, starterIndexFile) {
+		t.Errorf("zip entries = %v, want %s at the top level", entries, starterIndexFile)
+	}
+}
