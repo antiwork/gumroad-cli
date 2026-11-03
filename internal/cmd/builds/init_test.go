@@ -270,7 +270,7 @@ func TestInit_ThreeVendorsTheWholeModule(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &got); err != nil {
 		t.Fatalf("out = %q: %v", out, err)
 	}
-	if want := "./" + starterSetupFile; got.Setup != want {
+	if want := filepath.Join(dir, starterSetupFile); got.Setup != want {
 		t.Errorf("setup = %q, want %q", got.Setup, want)
 	}
 	index := readStarter(t, filepath.Join(dir, starterIndexFile))
@@ -285,8 +285,14 @@ func TestInit_ThreeVendorsTheWholeModule(t *testing.T) {
 			t.Errorf("setup.sh does not fetch %s: %q", want, setup)
 		}
 	}
-	if main := readStarter(t, filepath.Join(dir, starterMainFile)); !strings.Contains(main, `from "three"`) {
+	main := readStarter(t, filepath.Join(dir, starterMainFile))
+	if !strings.Contains(main, `from "three"`) {
 		t.Errorf("main.js does not import three: %q", main)
+	}
+	for _, want := range []string{"MOVEMENT_SPEED", "SAVE_INTERVAL_MS"} {
+		if !strings.Contains(main, want) {
+			t.Errorf("main.js does not name %s: %q", want, main)
+		}
 	}
 }
 
@@ -307,6 +313,77 @@ func TestInit_PhaserUsesNamedImports(t *testing.T) {
 	}
 	if !strings.Contains(main, `import { AUTO, Game, Scene, Scale } from "phaser"`) {
 		t.Errorf("main.js does not named-import phaser: %q", main)
+	}
+	for _, want := range []string{"MOVEMENT_SPEED", "SAVE_INTERVAL_MS"} {
+		if !strings.Contains(main, want) {
+			t.Errorf("main.js does not name %s: %q", want, main)
+		}
+	}
+}
+
+func TestInit_SetupPathFollowsTheTargetFolder(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "my-game")
+	cmd := testutil.Command(newInitCmd(), testutil.JSONOutput())
+	cmd.SetArgs([]string{dir, "--framework", "phaser"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	var got struct {
+		Setup string `json:"setup"`
+	}
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("out = %q: %v", out, err)
+	}
+	if want := filepath.Join(dir, starterSetupFile); got.Setup != want {
+		t.Errorf("setup = %q, want %q", got.Setup, want)
+	}
+	if _, err := os.Stat(got.Setup); err != nil {
+		t.Errorf("the printed setup command names no file: %v", err)
+	}
+}
+
+func TestInit_SetupPathInTheCurrentDirectory(t *testing.T) {
+	dir := t.TempDir()
+	previous, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(previous) })
+
+	cmd := testutil.Command(newInitCmd(), testutil.JSONOutput())
+	cmd.SetArgs([]string{"--framework", "three"})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	var got struct {
+		Setup string `json:"setup"`
+	}
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("out = %q: %v", out, err)
+	}
+	if want := "./" + starterSetupFile; got.Setup != want {
+		t.Errorf("setup = %q, want %q", got.Setup, want)
+	}
+	if _, err := os.Stat(got.Setup); err != nil {
+		t.Errorf("the printed setup command names no file: %v", err)
+	}
+}
+
+func TestInit_FrameworkTemplatesDeclareEachConstantOnce(t *testing.T) {
+	for name, source := range map[string]string{"three": threeMainJS, "phaser": phaserMainJS} {
+		t.Run(name, func(t *testing.T) {
+			seen := map[string]bool{}
+			for _, match := range regexp.MustCompile(`(?m)^const ([A-Za-z_$][\w$]*)`).FindAllStringSubmatch(source, -1) {
+				if seen[match[1]] {
+					t.Errorf("%s/main.js declares const %s twice", name, match[1])
+				}
+				seen[match[1]] = true
+			}
+			if len(seen) == 0 {
+				t.Errorf("%s/main.js declares no constants", name)
+			}
+		})
 	}
 }
 

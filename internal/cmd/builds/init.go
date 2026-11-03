@@ -96,25 +96,39 @@ const threeIndexHTML = `<!doctype html>
 const threeMainJS = `import * as THREE from "three";
 
 // In the player, localStorage is the purchase's own save store, so this keeps
-// working in production and in a local browser. See main.js in the README.
+// working in production and in a local browser.
 const SAVE_KEY = "cube";
+const SAVE_INTERVAL_MS = 1000;
+const MOVEMENT_SPEED = 4;
+const ROTATION_SPEED = 1;
+const MAX_FRAME_SECONDS = 0.1;
+const CUBE_SIZE = 1;
+const CUBE_COLOR = 0xf4c430;
+const BACKGROUND_COLOR = 0x111111;
+const CAMERA_FOV = 60;
+const CAMERA_NEAR = 0.1;
+const CAMERA_FAR = 100;
+const CAMERA_DISTANCE = 5;
+const LIGHT_SKY_COLOR = 0xffffff;
+const LIGHT_GROUND_COLOR = 0x222222;
+const LIGHT_INTENSITY = 2;
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x111111);
+scene.background = new THREE.Color(BACKGROUND_COLOR);
 
-const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 100);
-camera.position.set(0, 0, 5);
+const camera = new THREE.PerspectiveCamera(CAMERA_FOV, innerWidth / innerHeight, CAMERA_NEAR, CAMERA_FAR);
+camera.position.set(0, 0, CAMERA_DISTANCE);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(innerWidth, innerHeight);
 document.body.appendChild(renderer.domElement);
 
 const cube = new THREE.Mesh(
-  new THREE.BoxGeometry(1, 1, 1),
-  new THREE.MeshStandardMaterial({ color: 0xf4c430 })
+  new THREE.BoxGeometry(CUBE_SIZE, CUBE_SIZE, CUBE_SIZE),
+  new THREE.MeshStandardMaterial({ color: CUBE_COLOR })
 );
 scene.add(cube);
-scene.add(new THREE.HemisphereLight(0xffffff, 0x222222, 2));
+scene.add(new THREE.HemisphereLight(LIGHT_SKY_COLOR, LIGHT_GROUND_COLOR, LIGHT_INTENSITY));
 
 function restore() {
   try {
@@ -141,7 +155,6 @@ function save() {
   }
 }
 
-const SPEED = 4;
 const keys = new Set();
 addEventListener("keydown", (event) => keys.add(event.key));
 addEventListener("keyup", (event) => keys.delete(event.key));
@@ -154,22 +167,22 @@ addEventListener("resize", () => {
 let previous = performance.now();
 
 function frame(now) {
-  const seconds = Math.min((now - previous) / 1000, 0.1);
+  const seconds = Math.min((now - previous) / 1000, MAX_FRAME_SECONDS);
   previous = now;
   const right = (keys.has("ArrowRight") || keys.has("d") ? 1 : 0) - (keys.has("ArrowLeft") || keys.has("a") ? 1 : 0);
   const up = (keys.has("ArrowUp") || keys.has("w") ? 1 : 0) - (keys.has("ArrowDown") || keys.has("s") ? 1 : 0);
   if (right !== 0 || up !== 0) {
-    cube.position.x += right * SPEED * seconds;
-    cube.position.y += up * SPEED * seconds;
+    cube.position.x += right * MOVEMENT_SPEED * seconds;
+    cube.position.y += up * MOVEMENT_SPEED * seconds;
     dirty = true;
   }
-  cube.rotation.y += seconds;
+  cube.rotation.y += ROTATION_SPEED * seconds;
   renderer.render(scene, camera);
   requestAnimationFrame(frame);
 }
 
 restore();
-setInterval(save, 1000);
+setInterval(save, SAVE_INTERVAL_MS);
 requestAnimationFrame(frame);
 `
 
@@ -237,6 +250,12 @@ import { AUTO, Game, Scene, Scale } from "phaser";
 // In the player, localStorage is the purchase's own save store, so this keeps
 // working in production and in a local browser.
 const SAVE_KEY = "square";
+const SAVE_INTERVAL_MS = 1000;
+const MOVEMENT_SPEED = 240;
+const SQUARE_SIZE = 48;
+const SQUARE_COLOR = 0xf4c430;
+const BACKGROUND_COLOR = "#111111";
+const GAME_PARENT = "game";
 
 class Play extends Scene {
   create() {
@@ -244,9 +263,9 @@ class Play extends Scene {
     this.square = this.add.rectangle(
       this.scale.width / 2,
       this.scale.height / 2,
-      48,
-      48,
-      0xf4c430
+      SQUARE_SIZE,
+      SQUARE_SIZE,
+      SQUARE_COLOR
     );
     this.dirty = false;
     try {
@@ -255,11 +274,11 @@ class Play extends Scene {
     } catch (error) {
       console.warn("starter: could not read the save", error);
     }
-    this.time.addEvent({ delay: 1000, loop: true, callback: () => this.save() });
+    this.time.addEvent({ delay: SAVE_INTERVAL_MS, loop: true, callback: () => this.save() });
   }
 
   update(_time, delta) {
-    const step = (delta / 1000) * 240;
+    const step = (delta / 1000) * MOVEMENT_SPEED;
     const cursors = this.cursors;
     if (cursors.left.isDown) {
       this.square.x -= step;
@@ -292,8 +311,8 @@ class Play extends Scene {
 
 new Game({
   type: AUTO,
-  parent: "game",
-  backgroundColor: "#111111",
+  parent: GAME_PARENT,
+  backgroundColor: BACKGROUND_COLOR,
   scale: { mode: Scale.RESIZE, autoCenter: Scale.CENTER_BOTH },
   scene: Play,
 });
@@ -400,8 +419,6 @@ type starterFile struct {
 	mode    os.FileMode
 }
 
-// frameworkStarter is the set of files `builds init --framework <name>` writes.
-//
 // Every starter ends with the same deploy.sh, so the seller's only other step
 // is producing the files. A starter that needs a framework vendors it into the
 // folder (setup.sh) instead of loading it from a public CDN at play time: the
@@ -410,17 +427,15 @@ type starterFile struct {
 // 'unsafe-inline', 'wasm-unsafe-eval' and blob:. A CDN import renders locally
 // and then fails in the player, which is the worst way to find out.
 type frameworkStarter struct {
-	// summary is the one-line description shown by --help and in the error for
-	// an unknown framework.
 	summary string
-	// setup is the command the seller runs before the first deploy, empty when
-	// the starter is deployable as written.
+	// setup is the script to run before the first deploy, empty when the
+	// starter is deployable as written.
 	setup string
 	files func(product string) []starterFile
 }
 
-// frameworkOrder is the order --help and the unknown-framework error list the
-// starters in, plainest first.
+// A slice, not the map, so --help and the unknown-framework error list the
+// starters in a stable order.
 var frameworkOrder = []string{"html", "three", "phaser", "godot", "unity"}
 
 var frameworkStarters = map[string]frameworkStarter{
@@ -435,7 +450,7 @@ var frameworkStarters = map[string]frameworkStarter{
 	},
 	"three": {
 		summary: "a three.js scene that saves the cube's position",
-		setup:   "./" + starterSetupFile,
+		setup:   starterSetupFile,
 		files: func(product string) []starterFile {
 			return []starterFile{
 				{name: starterIndexFile, content: threeIndexHTML, mode: 0o644},
@@ -448,7 +463,7 @@ var frameworkStarters = map[string]frameworkStarter{
 	},
 	"phaser": {
 		summary: "a Phaser scene that saves the square's position",
-		setup:   "./" + starterSetupFile,
+		setup:   starterSetupFile,
 		files: func(product string) []starterFile {
 			return []starterFile{
 				{name: starterIndexFile, content: phaserIndexHTML, mode: 0o644},
@@ -479,7 +494,6 @@ var frameworkStarters = map[string]frameworkStarter{
 	},
 }
 
-// threeDownloads and phaserDownloads are the framework files setup.sh fetches.
 // three.module.js imports three.core.js, so a starter that vendors only the
 // entry point renders nothing.
 var (
@@ -549,8 +563,6 @@ func newInitCmd() *cobra.Command {
 	return c
 }
 
-// joinList renders a list the way the messages read: "a", "a and b",
-// "a, b and c".
 func joinList(items []string) string {
 	switch len(items) {
 	case 0:
@@ -561,9 +573,8 @@ func joinList(items []string) string {
 	return strings.Join(items[:len(items)-1], ", ") + " and " + items[len(items)-1]
 }
 
-// vendorScript writes a script that downloads a framework into vendor/, so the
-// deployed build carries it. It runs on the seller's machine, where the network
-// is open; the player's CSP only governs play time.
+// The setup script runs on the seller's machine, where the network is open;
+// the player's CSP only governs play time.
 func vendorScript(framework string, downloads [][2]string) string {
 	var script strings.Builder
 	script.WriteString("#!/usr/bin/env bash\n")
@@ -655,8 +666,9 @@ func printStarterResult(opts cmdutil.Options, dir string, paths []string, produc
 		productArg = shellQuote(product)
 	}
 	next := strings.Join([]string{"gumroad builds deploy", shellQuote(dir), "--product", productArg, "--promote"}, " ")
+	setupPath := starterSetupPath(dir, setup)
 	if opts.UsesJSONOutput() {
-		payload, err := json.Marshal(map[string]any{"success": true, "files": paths, "next": next, "setup": setup})
+		payload, err := json.Marshal(map[string]any{"success": true, "files": paths, "next": next, "setup": setupPath})
 		if err != nil {
 			return err
 		}
@@ -672,10 +684,23 @@ func printStarterResult(opts cmdutil.Options, dir string, paths []string, produc
 	if err := cmdutil.PrintSuccess(opts, "Created "+joinList(paths)+"."); err != nil {
 		return err
 	}
-	if setup != "" {
-		if err := cmdutil.PrintInfo(opts, "First: "+setup+" to download the framework into vendor/"); err != nil {
+	if setupPath != "" {
+		if err := cmdutil.PrintInfo(opts, "First: "+shellQuote(setupPath)+" to download the framework into vendor/"); err != nil {
 			return err
 		}
 	}
 	return cmdutil.PrintInfo(opts, "Next: "+next)
+}
+
+// starterSetupPath is where the setup script landed, written the way the seller
+// runs it from the shell they ran init in.
+func starterSetupPath(dir string, setup string) string {
+	if setup == "" {
+		return ""
+	}
+	path := filepath.Join(dir, setup)
+	if !filepath.IsAbs(path) {
+		path = "./" + path
+	}
+	return path
 }
