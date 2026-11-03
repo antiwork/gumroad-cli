@@ -370,9 +370,23 @@ func TestInit_SetupPathInTheCurrentDirectory(t *testing.T) {
 	}
 }
 
-func TestInit_FrameworkTemplatesDeclareEachConstantOnce(t *testing.T) {
+func TestInit_FrameworkTemplatesNameAndUseTheirSettings(t *testing.T) {
+	settings := map[string][]string{
+		"three":  {"MOVEMENT_SPEED", "SAVE_INTERVAL_MS", "MAX_FRAME_SECONDS", "CUBE_COLOR", "CAMERA_FOV"},
+		"phaser": {"MOVEMENT_SPEED", "SAVE_INTERVAL_MS", "SQUARE_SIZE", "SQUARE_COLOR", "BACKGROUND_COLOR"},
+	}
 	for name, source := range map[string]string{"three": threeMainJS, "phaser": phaserMainJS} {
 		t.Run(name, func(t *testing.T) {
+			for _, setting := range settings[name] {
+				if !strings.Contains(source, "const "+setting+" ") {
+					t.Errorf("%s/main.js does not declare %s", name, setting)
+				}
+				// Declared but never referenced means the raw literal is back in
+				// the body, which is what naming the setting was for.
+				if strings.Count(source, setting) < 2 {
+					t.Errorf("%s/main.js declares %s but never uses it", name, setting)
+				}
+			}
 			seen := map[string]bool{}
 			for _, match := range regexp.MustCompile(`(?m)^const ([A-Za-z_$][\w$]*)`).FindAllStringSubmatch(source, -1) {
 				if seen[match[1]] {
