@@ -307,10 +307,6 @@ func TestInit_PhaserUsesNamedImports(t *testing.T) {
 		t.Errorf("index.html does not map phaser to the vendored file: %q", index)
 	}
 	main := readStarter(t, filepath.Join(dir, starterMainFile))
-	// Phaser 4 exports names, not a default, so a default import is undefined.
-	if strings.Contains(main, "import Phaser from") {
-		t.Errorf("main.js default-imports phaser, which has no default export: %q", main)
-	}
 	if !strings.Contains(main, `import { AUTO, Game, Scene, Scale } from "phaser"`) {
 		t.Errorf("main.js does not named-import phaser: %q", main)
 	}
@@ -318,6 +314,21 @@ func TestInit_PhaserUsesNamedImports(t *testing.T) {
 		if !strings.Contains(main, want) {
 			t.Errorf("main.js does not name %s: %q", want, main)
 		}
+	}
+}
+
+func TestInit_DefaultStarterReportsNoSetupStep(t *testing.T) {
+	dir := t.TempDir()
+	cmd := testutil.Command(newInitCmd(), testutil.JSONOutput())
+	cmd.SetArgs([]string{dir})
+	out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+	var got map[string]any
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("out = %q: %v", out, err)
+	}
+	if setup, ok := got["setup"]; ok {
+		t.Errorf("the html starter has no setup step, but reported setup = %q", setup)
 	}
 }
 
@@ -417,6 +428,57 @@ func TestInit_GodotAndUnityLeaveIndexHTMLToTheExporter(t *testing.T) {
 			readme := readStarter(t, filepath.Join(dir, starterReadmeFile))
 			if !strings.Contains(strings.ToLower(readme), "thread") {
 				t.Errorf("README does not mention the single-threaded export: %q", readme)
+			}
+		})
+	}
+}
+
+func TestInit_ExportStartersPointAtTheExportBeforeTheDeploy(t *testing.T) {
+	for name, engine := range map[string]string{"godot": "Godot", "unity": "Unity"} {
+		t.Run(name, func(t *testing.T) {
+			dir := filepath.Join(t.TempDir(), "my-game")
+			cmd := testutil.Command(newInitCmd(), testutil.JSONOutput())
+			cmd.SetArgs([]string{dir, "--framework", name})
+			out := testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+			var got struct {
+				Export string `json:"export"`
+			}
+			if err := json.Unmarshal([]byte(out), &got); err != nil {
+				t.Fatalf("out = %q: %v", out, err)
+			}
+			if want := filepath.Join(dir, starterReadmeFile); got.Export != want {
+				t.Errorf("export = %q, want %q", got.Export, want)
+			}
+
+			text := testutil.Command(newInitCmd(), testutil.Quiet(false))
+			text.SetArgs([]string{filepath.Join(t.TempDir(), "other"), "--framework", name})
+			printed := testutil.CaptureStdout(func() { testutil.MustExecute(t, text) })
+			first := strings.Index(printed, "First: export your "+engine+" web build")
+			next := strings.Index(printed, "Next: gumroad builds deploy")
+			if first < 0 || next < 0 || first > next {
+				t.Errorf("the export step is not printed before the deploy: %q", printed)
+			}
+		})
+	}
+}
+
+func TestInit_ExportGuidanceCoversWhatThePlayerCannotRun(t *testing.T) {
+	for name, want := range map[string][]string{
+		"godot": {"Godot 4.3"},
+		"unity": {"Compression Format", "Decompression Fallback"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			cmd := testutil.Command(newInitCmd(), testutil.JSONOutput())
+			cmd.SetArgs([]string{dir, "--framework", name})
+			testutil.CaptureStdout(func() { testutil.MustExecute(t, cmd) })
+
+			readme := readStarter(t, filepath.Join(dir, starterReadmeFile))
+			for _, setting := range want {
+				if !strings.Contains(readme, setting) {
+					t.Errorf("README does not mention %s: %q", setting, readme)
+				}
 			}
 		})
 	}

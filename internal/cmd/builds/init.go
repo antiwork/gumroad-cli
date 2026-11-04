@@ -244,8 +244,7 @@ const phaserIndexHTML = `<!doctype html>
 </html>
 `
 
-const phaserMainJS = `// Phaser 4 has named exports only, so there is no default import.
-import { AUTO, Game, Scene, Scale } from "phaser";
+const phaserMainJS = `import { AUTO, Game, Scene, Scale } from "phaser";
 
 // In the player, localStorage is the purchase's own save store, so this keeps
 // working in production and in a local browser.
@@ -339,9 +338,6 @@ Keep vendor/ in the folder you deploy.
 - vendor/ holds Phaser. The import map in index.html points "phaser" at it.
 - Files and folders starting with a dot are skipped on deploy.
 
-Phaser 4 exports names, not a default, so main.js imports { AUTO, Game, Scene,
-Scale }. A default import of "phaser" would be undefined at runtime.
-
 ## Saves
 
 In the player, localStorage is backed by a key-value store for each purchase,
@@ -364,7 +360,9 @@ purpose: the exporter writes one, and init never overwrites a file.
 1. In Godot: Project > Export, add a Web preset.
 2. Turn thread support off. The player runs a build in a frame that is not
    cross-origin isolated, so a threaded export cannot start (no
-   SharedArrayBuffer) and the page stays blank.
+   SharedArrayBuffer) and the page stays blank. The option is in Godot 4.3
+   and later; Godot 4.0 to 4.2 can only export with threads, so use 4.3 or
+   later (or Godot 3).
 3. Export into this folder. index.html has to land at the top level, next to
    index.wasm and index.pck.
 4. ./deploy.sh
@@ -396,9 +394,13 @@ purpose: the exporter writes one, and init never overwrites a file.
    that is not cross-origin isolated, so a build that needs SharedArrayBuffer
    cannot start and the page stays blank. If your build reports that error,
    re-export with threading off.
-3. Set the build's output folder to this one. index.html has to land at the top
+3. In Player Settings > Publishing Settings, set Compression Format to
+   Disabled, or keep compression and turn on Decompression Fallback. The
+   player serves a build's files without a Content-Encoding header, so a
+   compressed build without the fallback fails to load.
+4. Set the build's output folder to this one. index.html has to land at the top
    level, next to the Build folder.
-4. ./deploy.sh
+5. ./deploy.sh
 
 ## Saves
 
@@ -431,7 +433,10 @@ type frameworkStarter struct {
 	// setup is the script to run before the first deploy, empty when the
 	// starter is deployable as written.
 	setup string
-	files func(product string) []starterFile
+	// exporter is the engine whose web export writes index.html, empty when
+	// init writes it: there is nothing to deploy until the seller exports.
+	exporter string
+	files    func(product string) []starterFile
 }
 
 // A slice, not the map, so --help and the unknown-framework error list the
@@ -475,7 +480,8 @@ var frameworkStarters = map[string]frameworkStarter{
 		},
 	},
 	"godot": {
-		summary: "the deploy script for a single-threaded Godot web export",
+		summary:  "the deploy script for a single-threaded Godot web export",
+		exporter: "Godot",
 		files: func(product string) []starterFile {
 			return []starterFile{
 				{name: starterDeployFile, content: deployScript(product), mode: 0o755},
@@ -484,7 +490,8 @@ var frameworkStarters = map[string]frameworkStarter{
 		},
 	},
 	"unity": {
-		summary: "the deploy script for a single-threaded Unity WebGL export",
+		summary:  "the deploy script for a single-threaded Unity WebGL export",
+		exporter: "Unity",
 		files: func(product string) []starterFile {
 			return []starterFile{
 				{name: starterDeployFile, content: deployScript(product), mode: 0o755},
@@ -554,7 +561,7 @@ func newInitCmd() *cobra.Command {
 			if err := writeStarter(dir, files, force); err != nil {
 				return err
 			}
-			return printStarterResult(opts, dir, paths, product, starter.setup)
+			return printStarterResult(opts, dir, paths, product, starter)
 		},
 	}
 	c.Flags().StringVar(&product, "product", "", "Product ID or permalink to deploy to (written into deploy.sh)")
@@ -660,15 +667,26 @@ func writeStarter(dir string, files []starterFile, force bool) error {
 	return nil
 }
 
-func printStarterResult(opts cmdutil.Options, dir string, paths []string, product string, setup string) error {
+func printStarterResult(opts cmdutil.Options, dir string, paths []string, product string, starter frameworkStarter) error {
 	productArg := "<product-id>"
 	if product != "" {
 		productArg = shellQuote(product)
 	}
 	next := strings.Join([]string{"gumroad builds deploy", shellQuote(dir), "--product", productArg, "--promote"}, " ")
-	setupPath := starterSetupPath(dir, setup)
+	setupPath := starterSetupPath(dir, starter.setup)
+	exportGuide := ""
+	if starter.exporter != "" {
+		exportGuide = filepath.Join(dir, starterReadmeFile)
+	}
 	if opts.UsesJSONOutput() {
-		payload, err := json.Marshal(map[string]any{"success": true, "files": paths, "next": next, "setup": setupPath})
+		result := map[string]any{"success": true, "files": paths, "next": next}
+		if setupPath != "" {
+			result["setup"] = setupPath
+		}
+		if exportGuide != "" {
+			result["export"] = exportGuide
+		}
+		payload, err := json.Marshal(result)
 		if err != nil {
 			return err
 		}
@@ -686,6 +704,11 @@ func printStarterResult(opts cmdutil.Options, dir string, paths []string, produc
 	}
 	if setupPath != "" {
 		if err := cmdutil.PrintInfo(opts, "First: "+shellQuote(setupPath)+" to download the framework into vendor/"); err != nil {
+			return err
+		}
+	}
+	if exportGuide != "" {
+		if err := cmdutil.PrintInfo(opts, "First: export your "+starter.exporter+" web build into "+shellQuote(dir)+" with the settings in "+exportGuide); err != nil {
 			return err
 		}
 	}
