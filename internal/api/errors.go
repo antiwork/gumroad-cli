@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 )
 
 const HintRunAuthLogin = "Run: gumroad auth login. For CI/agents with an existing token, set GUMROAD_ACCESS_TOKEN or run: gumroad auth login --with-token < token.txt"
@@ -24,6 +25,7 @@ type APIError struct {
 	StatusCode int
 	Message    string
 	Hint       string
+	RetryAfter time.Duration
 }
 
 func (e *APIError) Error() string {

@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -456,6 +457,37 @@ func TestClient_PostDoesNotRetryTransientStatus(t *testing.T) {
 	assertAPIError(t, err, http.StatusServiceUnavailable, "Try again")
 	if attempts != 1 {
 		t.Fatalf("got %d attempts, want 1", attempts)
+	}
+}
+
+func TestClient_ErrorResponseRecordsRetryAfter(t *testing.T) {
+	retryAfter := 4 * time.Minute
+	for _, tt := range []struct {
+		name   string
+		header string
+		want   time.Duration
+	}{
+		{name: "seconds header", header: strconv.Itoa(int(retryAfter / time.Second)), want: retryAfter},
+		{name: "no header", want: 0},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := setupTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+				if tt.header != "" {
+					w.Header().Set("Retry-After", tt.header)
+				}
+				w.WriteHeader(http.StatusTooManyRequests)
+			})
+			c := newTestClient(srv)
+
+			_, err := c.Post("/media", nil)
+			var apiErr *APIError
+			if !errors.As(err, &apiErr) {
+				t.Fatalf("expected *APIError, got %T", err)
+			}
+			if apiErr.RetryAfter != tt.want {
+				t.Fatalf("got RetryAfter %s, want %s", apiErr.RetryAfter, tt.want)
+			}
+		})
 	}
 }
 

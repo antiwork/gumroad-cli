@@ -253,6 +253,10 @@ func (c *Client) doPreparedWithContext(
 
 		if resp.StatusCode >= 400 {
 			err := parseAPIError(resp.StatusCode, data)
+			var apiErr *APIError
+			if errors.As(err, &apiErr) {
+				apiErr.RetryAfter, _ = ParseRetryAfter(resp.Header.Get("Retry-After"))
+			}
 			logResponse(resp.StatusCode, len(data), err, start)
 			return nil, err
 		}
