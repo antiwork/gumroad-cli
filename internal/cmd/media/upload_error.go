@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/antiwork/gumroad-cli/internal/api"
 )
@@ -13,6 +14,11 @@ type MediaUploadStage string
 const (
 	MediaUploadStageDirectUpload MediaUploadStage = "direct_upload"
 	MediaUploadStageCommit       MediaUploadStage = "commit"
+)
+
+const (
+	mediaUploadRateLimit  = 20
+	mediaUploadRateWindow = 10 * time.Minute
 )
 
 // UnknownMediaUploadError means the CLI cannot prove whether an upload stage
@@ -71,16 +77,45 @@ func mediaDirectUploadError(err error, reservation directUploadResponse, plan pl
 func mediaCommitError(err error, reservation directUploadResponse, plan plannedMediaUpload, name string) error {
 	var apiErr *api.APIError
 	if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusTooManyRequests {
-		return &api.APIError{
-			StatusCode: apiErr.StatusCode,
-			Message:    "media upload was rate limited. Nothing was created in your media library.",
-			Hint:       "Gumroad allows 20 media uploads per 10 minutes per token. Wait about 10 minutes, then run the upload again. To upload many images, send up to 20, then pause 10 minutes (or leave about 30 seconds between uploads).",
-		}
+		return mediaRateLimitError(apiErr)
 	}
 	if errors.As(err, &apiErr) && isDefinitiveMediaMutationRejection(apiErr.StatusCode) {
 		return err
 	}
 	return newUnknownMediaUploadError(err, MediaUploadStageCommit, reservation, plan, name)
+}
+
+func mediaRateLimitError(apiErr *api.APIError) error {
+	wait := apiErr.RetryAfter
+	if wait <= 0 {
+		wait = mediaUploadRateWindow
+	}
+	return &api.APIError{
+		StatusCode: apiErr.StatusCode,
+		Message:    "media upload was rate limited. Nothing was created in your media library.",
+		Hint: fmt.Sprintf(
+			"Wait about %s, then run the upload again. Gumroad allows %d media uploads per %s for each token and for each IP address, so tokens on the same network share one budget. To upload many images, leave at least %s between uploads.",
+			humanWait(wait),
+			mediaUploadRateLimit,
+			humanWait(mediaUploadRateWindow),
+			humanWait(mediaUploadRateWindow/mediaUploadRateLimit),
+		),
+		RetryAfter: wait,
+	}
+}
+
+func humanWait(d time.Duration) string {
+	if d >= time.Minute {
+		return pluralize(int((d+time.Minute-1)/time.Minute), "minute")
+	}
+	return pluralize(int((d+time.Second-1)/time.Second), "second")
+}
+
+func pluralize(n int, unit string) string {
+	if n == 1 {
+		return fmt.Sprintf("%d %s", n, unit)
+	}
+	return fmt.Sprintf("%d %ss", n, unit)
 }
 
 func mediaCommitResponseError(err error, reservation directUploadResponse, plan plannedMediaUpload, name string) error {

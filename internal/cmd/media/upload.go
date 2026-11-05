@@ -60,10 +60,11 @@ The CLI detects JPEG, PNG, GIF, WebP, BMP, and ICO images up to 10 MB. It
 rejects SVG and image formats it cannot identify locally. Gumroad checks the
 image again and runs content moderation before it hosts the file.
 
-Rate limit: Gumroad accepts 20 media uploads per 10 minutes per token. To
-upload more, send up to 20, then wait about 10 minutes, or leave about 30
+Rate limit: Gumroad accepts 20 media uploads per 10 minutes for each token
+and for each IP address, so tokens on the same network share one budget. To
+upload more, send up to 20 and then wait 10 minutes, or leave at least 30
 seconds between uploads. Listing media does not count. A rate-limited upload
-creates nothing, so it is safe to retry after the wait.`,
+creates nothing. The error says how long to wait before retrying.`,
 		Args: cmdutil.ExactArgs(1),
 		Example: `  gumroad media upload ./logo.png
   gumroad media upload ./logo.png --name "Store logo"

@@ -15,6 +15,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -928,29 +929,65 @@ func TestMediaUpload_ServerRejectionSurfaced(t *testing.T) {
 }
 
 func TestMediaUpload_RateLimitIsDefiniteRejection(t *testing.T) {
-	srv := newMediaServers(t)
-	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/media" {
-			w.Header().Set("Retry-After", "600")
-			http.Error(w, "Too Many Requests", http.StatusTooManyRequests)
-			return
-		}
-		srv.dispatch(t)(w, r)
-	})
+	minutesLeft := 4 * time.Minute
+	secondsLeft := 45 * time.Second
+	for _, tt := range []struct {
+		name       string
+		retryAfter func() string
+		wantWait   string
+	}{
+		{
+			name:       "retry after seconds",
+			retryAfter: func() string { return strconv.Itoa(int(minutesLeft / time.Second)) },
+			wantWait:   "Wait about 4 minutes",
+		},
+		{
+			name:       "retry after under a minute",
+			retryAfter: func() string { return strconv.Itoa(int(secondsLeft / time.Second)) },
+			wantWait:   "Wait about 45 seconds",
+		},
+		{
+			name:       "retry after HTTP date",
+			retryAfter: func() string { return time.Now().Add(minutesLeft).UTC().Format(http.TimeFormat) },
+			wantWait:   "Wait about 4 minutes",
+		},
+		{
+			name:       "no retry after",
+			retryAfter: func() string { return "" },
+			wantWait:   "Wait about 10 minutes",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := newMediaServers(t)
+			testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/media" {
+					if value := tt.retryAfter(); value != "" {
+						w.Header().Set("Retry-After", value)
+					}
+					http.Error(w, "Too Many Requests", http.StatusTooManyRequests)
+					return
+				}
+				srv.dispatch(t)(w, r)
+			})
 
-	cmd := testutil.Command(newUploadCmd())
-	cmd.SetArgs([]string{writePNGFixture(t)})
-	err := cmd.Execute()
-	var unknown *UnknownMediaUploadError
-	if errors.As(err, &unknown) {
-		t.Fatalf("429 must not be an unknown state: %v", err)
-	}
-	var apiErr *api.APIError
-	if !errors.As(err, &apiErr) || apiErr.StatusCode != http.StatusTooManyRequests {
-		t.Fatalf("err = %v, want 429 APIError", err)
-	}
-	if !strings.Contains(apiErr.Message, "Nothing was created") || !strings.Contains(apiErr.Hint, "10 minutes") {
-		t.Fatalf("error = %#v", apiErr)
+			cmd := testutil.Command(newUploadCmd())
+			cmd.SetArgs([]string{writePNGFixture(t)})
+			err := cmd.Execute()
+			var unknown *UnknownMediaUploadError
+			if errors.As(err, &unknown) {
+				t.Fatalf("429 must not be an unknown state: %v", err)
+			}
+			var apiErr *api.APIError
+			if !errors.As(err, &apiErr) || apiErr.StatusCode != http.StatusTooManyRequests {
+				t.Fatalf("err = %v, want 429 APIError", err)
+			}
+			if !strings.Contains(apiErr.Message, "Nothing was created") {
+				t.Fatalf("message = %q", apiErr.Message)
+			}
+			if !strings.Contains(apiErr.Hint, tt.wantWait) || !strings.Contains(apiErr.Hint, "for each token and for each IP address") {
+				t.Fatalf("hint = %q, want %q", apiErr.Hint, tt.wantWait)
+			}
+		})
 	}
 }
 
