@@ -3,6 +3,7 @@ package media
 import (
 	"errors"
 	"fmt"
+	"net/http"
 
 	"github.com/antiwork/gumroad-cli/internal/api"
 )
@@ -69,6 +70,13 @@ func mediaDirectUploadError(err error, reservation directUploadResponse, plan pl
 
 func mediaCommitError(err error, reservation directUploadResponse, plan plannedMediaUpload, name string) error {
 	var apiErr *api.APIError
+	if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusTooManyRequests {
+		return &api.APIError{
+			StatusCode: apiErr.StatusCode,
+			Message:    "media upload was rate limited. Nothing was created in your media library.",
+			Hint:       "Gumroad allows 20 media uploads per 10 minutes per token. Wait about 10 minutes, then run the upload again. To upload many images, send up to 20, then pause 10 minutes (or leave about 30 seconds between uploads).",
+		}
+	}
 	if errors.As(err, &apiErr) && isDefinitiveMediaMutationRejection(apiErr.StatusCode) {
 		return err
 	}

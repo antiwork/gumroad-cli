@@ -21,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/antiwork/gumroad-cli/internal/api"
 	"github.com/antiwork/gumroad-cli/internal/cmdutil"
 	"github.com/antiwork/gumroad-cli/internal/config"
 	"github.com/antiwork/gumroad-cli/internal/testutil"
@@ -926,12 +927,38 @@ func TestMediaUpload_ServerRejectionSurfaced(t *testing.T) {
 	}
 }
 
+func TestMediaUpload_RateLimitIsDefiniteRejection(t *testing.T) {
+	srv := newMediaServers(t)
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/media" {
+			w.Header().Set("Retry-After", "600")
+			http.Error(w, "Too Many Requests", http.StatusTooManyRequests)
+			return
+		}
+		srv.dispatch(t)(w, r)
+	})
+
+	cmd := testutil.Command(newUploadCmd())
+	cmd.SetArgs([]string{writePNGFixture(t)})
+	err := cmd.Execute()
+	var unknown *UnknownMediaUploadError
+	if errors.As(err, &unknown) {
+		t.Fatalf("429 must not be an unknown state: %v", err)
+	}
+	var apiErr *api.APIError
+	if !errors.As(err, &apiErr) || apiErr.StatusCode != http.StatusTooManyRequests {
+		t.Fatalf("err = %v, want 429 APIError", err)
+	}
+	if !strings.Contains(apiErr.Message, "Nothing was created") || !strings.Contains(apiErr.Hint, "10 minutes") {
+		t.Fatalf("error = %#v", apiErr)
+	}
+}
+
 func TestMediaUpload_TransientFinalStatePreservesRecovery(t *testing.T) {
 	for _, status := range []int{
 		http.StatusRequestTimeout,
 		http.StatusConflict,
 		http.StatusTooEarly,
-		http.StatusTooManyRequests,
 		http.StatusBadGateway,
 	} {
 		t.Run(http.StatusText(status), func(t *testing.T) {
