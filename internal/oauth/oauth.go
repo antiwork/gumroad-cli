@@ -11,12 +11,13 @@ const (
 	TokenURL      = "https://app.gumroad.com/oauth/token" //nolint:gosec // G101: not a credential
 	DeviceCodeURL = "https://app.gumroad.com/oauth/device/code"
 
-	// The broad legacy `account` scope covers most of the public API, but the
-	// storefront pages write endpoints additionally require the narrower
-	// `edit_profile` scope on the token itself (they deliberately refuse the
-	// `account` fallback), so login requests both. `view_profile` is needed by
-	// the media library list endpoint, which refuses the fallback the same way.
-	Scopes = "account edit_profile view_profile"
+	// The public API gates each endpoint on a scope, falling back to the broad
+	// legacy `account` scope — but a token authorized for a team store never
+	// carries `account`: it keeps only what the requested scopes intersect with
+	// the member's role, so login asks for the scopes the command surface needs
+	// instead of relying on that fallback. `edit_profile` and `view_profile`
+	// additionally satisfy the endpoints that refuse the fallback outright.
+	Scopes = "account edit_products edit_profile view_profile view_sales edit_sales mark_sales_as_shipped view_payouts edit_emails"
 
 	DeviceGrantType = "urn:ietf:params:oauth:grant-type:device_code"
 

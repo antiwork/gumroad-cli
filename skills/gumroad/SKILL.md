@@ -207,6 +207,8 @@ gumroad auth logout --yes --no-input
 
 Both login paths retry a token endpoint that answers `408`, `429`, `500`, `502`, `503` or `504`, waiting at least as long as `Retry-After` asks. Device login prints one line to stderr when Gumroad starts rate limiting its polls, and keeps polling while the code can still be collected; if the code expires while its polls are rate limited (the last answer was a `429`), or a `Retry-After` runs past the code's expiry, the login ends with the rate limit named rather than a bare `authorization expired`. With `--web`, the CLI prints a line to stderr before each wait and keeps retrying until shortly before the authorization code expires; a throttle that outlasts that ends the login with the throttle named rather than a bare `HTTP 429`. Nothing was stored, so the remedy is to wait and run the login again. Approve promptly, run one login at a time, and never put `gumroad auth login` in a retry loop: every attempt counts against the same rate limit.
 
+A login requests the scopes the commands need: `account edit_products edit_profile view_profile view_sales edit_sales mark_sales_as_shipped view_payouts edit_emails`. A token keeps the scopes it was minted with, so re-run `gumroad auth login` after the CLI starts asking for a scope yours lacks. When the approval happens on a team store rather than your own account, the token keeps only the scopes that store role allows and never carries `account`, so a command the role does not permit fails with a 403 — authorize as the account that owns the store for the full set.
+
 ### user — Account info
 
 ```sh

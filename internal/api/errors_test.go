@@ -152,7 +152,8 @@ func TestAPIError_Hints(t *testing.T) {
 		wantHint   string
 	}{
 		{"401", 401, `{"success":false}`, HintRunAuthLogin},
-		{"403", 403, `{"success":false}`, "Check that your token has the required scope."},
+		{"403", 403, `{"success":false}`, HintMissingScope},
+		{"403 with an endpoint message", 403, `{"success":false,"message":"Custom HTML pages are not enabled for your account."}`, "Check that your token has the required scope."},
 		{"404", 404, `{"success":false}`, "Check the resource ID and try again."},
 		{"429", 429, `{"success":false,"message":"Rate limited"}`, "Wait a moment and retry."},
 		{"500", 500, `{"success":false}`, ""},

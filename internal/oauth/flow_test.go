@@ -717,9 +717,13 @@ func TestDefaultFlowConfig(t *testing.T) {
 	}
 }
 
-func TestDefaultScopesRequestAccountAndEditProfile(t *testing.T) {
-	if Scopes != "account edit_profile view_profile" {
-		t.Fatalf("Scopes = %q, want account edit_profile view_profile", Scopes)
+func TestDefaultScopesCoverTheCommandSurface(t *testing.T) {
+	// A token authorized for a team store keeps only the requested scopes the
+	// member's role allows and never carries `account`, so every scope the
+	// commands target has to be asked for by name here.
+	want := "account edit_products edit_profile view_profile view_sales edit_sales mark_sales_as_shipped view_payouts edit_emails"
+	if Scopes != want {
+		t.Fatalf("Scopes = %q, want %q", Scopes, want)
 	}
 }
 
