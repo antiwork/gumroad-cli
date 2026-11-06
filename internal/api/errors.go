@@ -9,6 +9,11 @@ import (
 
 const HintRunAuthLogin = "Run: gumroad auth login. For CI/agents with an existing token, set GUMROAD_ACCESS_TOKEN or run: gumroad auth login --with-token < token.txt"
 
+// A v2 endpoint that the token's scopes do not satisfy is refused by Doorkeeper
+// with an empty 403 body, so the caller cannot tell which scope is missing. The
+// endpoint's own scope refusal carries a message and is left untouched.
+const HintMissingScope = "Check that your token has the required scope. A token authorized for a team store keeps only the scopes that member's role allows; run: gumroad auth login (as the store's own account for the full set)"
+
 var (
 	ErrNotAuthenticated = errors.New("not authenticated")
 	ErrAccessDenied     = errors.New("access denied")
@@ -85,7 +90,7 @@ func rewriteError(statusCode int, msg string) (message, hint string) {
 		if msg != "" {
 			return fmt.Sprintf("Access denied: %s", msg), "Check that your token has the required scope."
 		}
-		return "Access denied.", "Check that your token has the required scope."
+		return "Access denied.", HintMissingScope
 	case 404:
 		if msg != "" {
 			return msg, "Check the resource ID and try again."
