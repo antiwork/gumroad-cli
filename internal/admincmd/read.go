@@ -59,6 +59,15 @@ func RunGetDecoded[T any](opts cmdutil.Options, spinnerMessage, path string, par
 	}, render)
 }
 
+// FetchGet fetches a GET endpoint and returns the raw response without printing it, so a caller
+// can inspect the payload (and warn on it) before any output shape prints it — the JSON shape
+// never reaches a renderer.
+func FetchGet(opts cmdutil.Options, spinnerMessage, path string, params url.Values) (json.RawMessage, error) {
+	return runAuthenticatedData(opts, spinnerMessage, func(client *adminapi.Client) (json.RawMessage, error) {
+		return client.Get(path, params)
+	})
+}
+
 // FetchGetDecoded fetches a GET endpoint and decodes the response without
 // rendering it. Use it when chaining requests where only the data is needed.
 func FetchGetDecoded[T any](opts cmdutil.Options, spinnerMessage, path string, params url.Values) (T, error) {
