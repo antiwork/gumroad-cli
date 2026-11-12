@@ -12,6 +12,7 @@ func newPagePublishCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "publish <product_id> [path]",
 		Short: "Publish custom HTML for a product landing page",
+		Long:  "Publish custom HTML as a product's landing page, replacing whatever the product page showed before.\n\n" + pageutil.CustomHTMLLimitHelp,
 		Args:  productPageHTMLArgs,
 		RunE: func(c *cobra.Command, args []string) error {
 			opts := cmdutil.OptionsFrom(c)
@@ -19,7 +20,8 @@ func newPagePublishCmd() *cobra.Command {
 			if err != nil {
 				return cmdutil.UsageErrorf(c, "%s", err)
 			}
-			if err := pageutil.ValidateCustomHTML(input); err != nil {
+			params := pageutil.HTMLParams(input.HTML)
+			if err := pageutil.ValidateCustomHTML(input, params); err != nil {
 				return cmdutil.InvalidInputErrorf("%s", err)
 			}
 
@@ -29,7 +31,7 @@ func newPagePublishCmd() *cobra.Command {
 				"Publishing page...",
 				http.MethodPut,
 				target.Path,
-				pageutil.HTMLParams(input.HTML),
+				params,
 				func(resp pageutil.UpdateResponse) error {
 					return pageutil.RenderSanitizationResult(opts, pageutil.RenderResult{
 						Action:     "Published page",

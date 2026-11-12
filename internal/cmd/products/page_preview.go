@@ -12,6 +12,7 @@ func newPagePreviewCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "preview <product_id> [path]",
 		Short: "Preview server sanitization for a product landing page",
+		Long:  "Preview what a product landing page's HTML looks like after server sanitization, without publishing anything.\n\n" + pageutil.CustomHTMLLimitHelp,
 		Args:  productPageHTMLArgs,
 		RunE: func(c *cobra.Command, args []string) error {
 			opts := cmdutil.OptionsFrom(c)
@@ -19,7 +20,8 @@ func newPagePreviewCmd() *cobra.Command {
 			if err != nil {
 				return cmdutil.UsageErrorf(c, "%s", err)
 			}
-			if err := pageutil.ValidateCustomHTML(input); err != nil {
+			params := pageutil.HTMLParams(input.HTML)
+			if err := pageutil.ValidateCustomHTML(input, params); err != nil {
 				return cmdutil.InvalidInputErrorf("%s", err)
 			}
 
@@ -29,7 +31,7 @@ func newPagePreviewCmd() *cobra.Command {
 				"Previewing page...",
 				http.MethodPost,
 				target.PreviewPath,
-				pageutil.HTMLParams(input.HTML),
+				params,
 				func(resp pageutil.PreviewResponse) error {
 					return pageutil.RenderSanitizationResult(opts, pageutil.RenderResult{
 						Action:     "Previewed page",

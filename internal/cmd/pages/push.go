@@ -12,7 +12,7 @@ func newPushCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "push <slug> <path>",
 		Short: "Publish custom HTML to a storefront page",
-		Long:  "Publish custom HTML to a storefront page, replacing whatever the page had before.\n\nUse the slug \"profile\" to replace your profile landing page (your store's home page) — that goes through the profile endpoints, same as `gumroad user page publish`.",
+		Long:  "Publish custom HTML to a storefront page, replacing whatever the page had before.\n\nUse the slug \"profile\" to replace your profile landing page (your store's home page) — that goes through the profile endpoints, same as `gumroad user page publish`.\n\n" + pageutil.CustomHTMLLimitHelp,
 		Args:  pushArgs,
 		Example: `  gumroad pages push about ./about.html
   gumroad pages push about - < about.html
@@ -24,7 +24,8 @@ func newPushCmd() *cobra.Command {
 			if err != nil {
 				return cmdutil.UsageErrorf(c, "%s", err)
 			}
-			if err := pageutil.ValidateCustomHTML(input); err != nil {
+			params := pageutil.HTMLParams(input.HTML)
+			if err := pageutil.ValidateCustomHTML(input, params); err != nil {
 				return cmdutil.InvalidInputErrorf("%s", err)
 			}
 
@@ -38,7 +39,7 @@ func newPushCmd() *cobra.Command {
 					"Publishing page...",
 					http.MethodPut,
 					target.Path,
-					pageutil.HTMLParams(input.HTML),
+					params,
 					func(resp pageutil.ProfileUpdateResponse) error {
 						return pageutil.RenderSanitizationResult(opts, pageutil.RenderResult{
 							Action:     "Published page",
@@ -58,7 +59,7 @@ func newPushCmd() *cobra.Command {
 				"Publishing page...",
 				http.MethodPut,
 				pagePath(slug),
-				pageutil.HTMLParams(input.HTML),
+				params,
 				func(resp pageResponse) error {
 					return renderPageResult(opts, resp.Page, "Published page")
 				},

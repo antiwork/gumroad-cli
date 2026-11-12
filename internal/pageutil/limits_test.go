@@ -8,7 +8,7 @@ import (
 func TestValidateCustomHTMLAcceptsAPageAtTheLimit(t *testing.T) {
 	input := HTMLInput{Source: "landing.html", HTML: strings.Repeat("a", MaxCustomHTMLLength)}
 
-	if err := ValidateCustomHTML(input); err != nil {
+	if err := ValidateCustomHTML(input, HTMLParams(input.HTML)); err != nil {
 		t.Fatalf("a page exactly at the character limit should pass, got %v", err)
 	}
 }
@@ -18,7 +18,7 @@ func TestValidateCustomHTMLCountsCharactersNotBytes(t *testing.T) {
 	// page of multi-byte characters must be measured the same way here.
 	input := HTMLInput{Source: "landing.html", HTML: strings.Repeat("é", MaxCustomHTMLLength)}
 
-	if err := ValidateCustomHTML(input); err != nil {
+	if err := ValidateCustomHTML(input, HTMLParams(input.HTML)); err != nil {
 		t.Fatalf("a page of %d characters should pass however many bytes it takes, got %v", MaxCustomHTMLLength, err)
 	}
 }
@@ -26,7 +26,7 @@ func TestValidateCustomHTMLCountsCharactersNotBytes(t *testing.T) {
 func TestValidateCustomHTMLRejectsAPageOverTheCharacterLimit(t *testing.T) {
 	input := HTMLInput{Source: "/tmp/landing.html", HTML: strings.Repeat("a", MaxCustomHTMLLength+1)}
 
-	err := ValidateCustomHTML(input)
+	err := ValidateCustomHTML(input, HTMLParams(input.HTML))
 	if err == nil {
 		t.Fatal("want an error for a page over the character limit")
 	}
@@ -42,11 +42,28 @@ func TestValidateCustomHTMLRejectsAPageThatEncodesPastTheBodyLimit(t *testing.T)
 	// encoded body, so the request would be refused at ingress with no message.
 	input := HTMLInput{Source: "landing.html", HTML: strings.Repeat("😀", MaxCustomHTMLLength)}
 
-	err := ValidateCustomHTML(input)
+	err := ValidateCustomHTML(input, HTMLParams(input.HTML))
 	if err == nil {
 		t.Fatal("want an error when the encoded body is past the API's request limit")
 	}
 	if !strings.Contains(err.Error(), "form data") {
 		t.Errorf("error %q should name the encoded body size", err)
+	}
+}
+
+func TestValidateCustomHTMLChecksTheWholeRequestNotJustThePage(t *testing.T) {
+	// 349,524 escaped four-byte characters encode to 4,194,300 bytes, which
+	// fits; the fields sent beside the page — here `pages create --title` — are
+	// enough to push the same request over the limit.
+	input := HTMLInput{Source: "about.html", HTML: strings.Repeat("😀", 349_524)}
+
+	if err := ValidateCustomHTML(input, HTMLParams(input.HTML)); err != nil {
+		t.Fatalf("the page on its own fits, got %v", err)
+	}
+
+	params := HTMLParams(input.HTML)
+	params.Set("title", "About")
+	if err := ValidateCustomHTML(input, params); err == nil {
+		t.Fatal("want an error once the fields sent with the page push the body past the limit")
 	}
 }

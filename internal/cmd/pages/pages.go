@@ -2,6 +2,7 @@ package pages
 
 import (
 	"github.com/antiwork/gumroad-cli/internal/cmdutil"
+	"github.com/antiwork/gumroad-cli/internal/pageutil"
 	"github.com/spf13/cobra"
 )
 
@@ -29,7 +30,7 @@ func NewPagesCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "pages",
 		Short: "Manage your storefront pages",
-		Long:  "Manage your storefront pages: the slugged pages that serve under your store at /<slug>.\n\nThe special slug \"profile\" is your profile landing page (your store's home page); `pages push profile` replaces it with custom HTML the same way `user page publish` does.",
+		Long:  "Manage your storefront pages: the slugged pages that serve under your store at /<slug>.\n\nThe special slug \"profile\" is your profile landing page (your store's home page); `pages push profile` replaces it with custom HTML the same way `user page publish` does.\n\n" + pageutil.CustomHTMLLimitHelp,
 		Example: `  gumroad pages list
   gumroad pages create --title "About" --slug about
   gumroad pages create --title "About" ./about.html

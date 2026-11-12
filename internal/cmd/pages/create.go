@@ -17,7 +17,7 @@ func newCreateCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "create [path]",
 		Short: "Create a storefront page",
-		Long:  "Create a storefront page. Without a path the page starts empty (edit it in the dashboard); with an HTML file (or `-` for stdin) it is created as a custom HTML page.",
+		Long:  "Create a storefront page. Without a path the page starts empty (edit it in the dashboard); with an HTML file (or `-` for stdin) it is created as a custom HTML page.\n\n" + pageutil.CustomHTMLLimitHelp,
 		Args:  pageHTMLArgs,
 		Example: `  gumroad pages create --title "About"
   gumroad pages create --title "About" --slug about
@@ -41,10 +41,10 @@ func newCreateCmd() *cobra.Command {
 				if err != nil {
 					return cmdutil.UsageErrorf(c, "%s", err)
 				}
-				if err := pageutil.ValidateCustomHTML(input); err != nil {
+				params.Set("custom_html", input.HTML)
+				if err := pageutil.ValidateCustomHTML(input, params); err != nil {
 					return cmdutil.InvalidInputErrorf("%s", err)
 				}
-				params.Set("custom_html", input.HTML)
 			}
 
 			err := cmdutil.RunRequestDecoded[pageResponse](opts, "Creating page...", http.MethodPost, pagesPath, params, func(resp pageResponse) error {
