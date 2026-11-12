@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/antiwork/gumroad-cli/internal/pageutil"
 	"github.com/antiwork/gumroad-cli/internal/testutil"
 )
 
@@ -143,5 +144,28 @@ func TestPagePublishRateLimitMessage(t *testing.T) {
 		if strings.Contains(msg, banned) {
 			t.Fatalf("rate limit message reintroduced %q, got %v", banned, err)
 		}
+	}
+}
+
+func TestPagePublishRejectsAnOversizePageWithoutCallingTheAPI(t *testing.T) {
+	htmlPath := writePageHTML(t, strings.Repeat("a", pageutil.MaxCustomHTMLLength+1))
+
+	var calls atomic.Int32
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		t.Errorf("an oversize page should be rejected before the request, not sent")
+	})
+
+	cmd := testutil.Command(newPagePublishCmd())
+	cmd.SetArgs([]string{"prod1", htmlPath})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("want a local error for a page over the limit")
+	}
+	if calls.Load() != 0 {
+		t.Fatalf("API was called %d times", calls.Load())
+	}
+	if !strings.Contains(err.Error(), "500000") {
+		t.Fatalf("error should name the limit, got %q", err)
 	}
 }

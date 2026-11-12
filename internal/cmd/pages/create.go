@@ -41,6 +41,9 @@ func newCreateCmd() *cobra.Command {
 				if err != nil {
 					return cmdutil.UsageErrorf(c, "%s", err)
 				}
+				if err := pageutil.ValidateCustomHTML(input); err != nil {
+					return cmdutil.InvalidInputErrorf("%s", err)
+				}
 				params.Set("custom_html", input.HTML)
 			}
 

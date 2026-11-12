@@ -24,6 +24,9 @@ func newPushCmd() *cobra.Command {
 			if err != nil {
 				return cmdutil.UsageErrorf(c, "%s", err)
 			}
+			if err := pageutil.ValidateCustomHTML(input); err != nil {
+				return cmdutil.InvalidInputErrorf("%s", err)
+			}
 
 			// The profile landing page is not addressable on the /pages API;
 			// it keeps its dedicated custom HTML endpoints, which also return

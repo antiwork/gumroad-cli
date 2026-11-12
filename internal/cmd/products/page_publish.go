@@ -19,6 +19,9 @@ func newPagePublishCmd() *cobra.Command {
 			if err != nil {
 				return cmdutil.UsageErrorf(c, "%s", err)
 			}
+			if err := pageutil.ValidateCustomHTML(input); err != nil {
+				return cmdutil.InvalidInputErrorf("%s", err)
+			}
 
 			target := pageutil.ProductTarget(args[0])
 			err = cmdutil.RunRequestDecoded[pageutil.UpdateResponse](

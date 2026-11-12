@@ -26,6 +26,9 @@ func newPreviewCmd() *cobra.Command {
 			if err != nil {
 				return cmdutil.UsageErrorf(c, "%s", err)
 			}
+			if err := pageutil.ValidateCustomHTML(input); err != nil {
+				return cmdutil.InvalidInputErrorf("%s", err)
+			}
 
 			target := pageutil.ProfileTarget()
 			err = cmdutil.RunRequestDecoded[pageutil.PreviewResponse](
