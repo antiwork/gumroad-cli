@@ -8,6 +8,7 @@ import (
 
 	"github.com/antiwork/gumroad-cli/internal/cmdutil"
 	"github.com/antiwork/gumroad-cli/internal/config"
+	"github.com/antiwork/gumroad-cli/internal/pageutil"
 	"github.com/antiwork/gumroad-cli/internal/richcontent"
 	"github.com/spf13/cobra"
 )
@@ -137,6 +138,7 @@ func newUpdateCmd() *cobra.Command {
 			if flags.Changed("taxonomy-id") {
 				params.Set("taxonomy_id", taxonomyID)
 			}
+			var customHTMLInput *pageutil.HTMLInput
 			if flags.Changed("custom-html") {
 				if customHTML == "" {
 					params.Set("custom_html", "")
@@ -145,20 +147,32 @@ func newUpdateCmd() *cobra.Command {
 					if err != nil {
 						return cmdutil.UsageErrorf(c, "--custom-html: cannot read %s: %v", customHTML, err)
 					}
-					params.Set("custom_html", string(html))
+					customHTMLInput = &pageutil.HTMLInput{Source: customHTML, HTML: string(html)}
+					params.Set("custom_html", customHTMLInput.HTML)
 				}
 			}
 			for _, t := range tags {
 				params.Add("tags[]", t)
 			}
 			setProductRefundPolicyParams(c, params, refundPeriod, refundFinePrint)
-
-			path := cmdutil.JoinPath("products", args[0])
-			productFieldsChanged := productUpdateFieldFlagsChanged(c)
 			fileFlagsChanged := flags.Changed("file") ||
 				flags.Changed("file-name") ||
 				flags.Changed("file-description") ||
 				flags.Changed("page")
+			if customHTMLInput != nil {
+				var err error
+				if fileFlagsChanged {
+					err = pageutil.ValidateCustomHTMLLength(*customHTMLInput)
+				} else {
+					err = pageutil.ValidateCustomHTML(*customHTMLInput, params)
+				}
+				if err != nil {
+					return cmdutil.InvalidInputErrorf("%s", err)
+				}
+			}
+
+			path := cmdutil.JoinPath("products", args[0])
+			productFieldsChanged := productUpdateFieldFlagsChanged(c)
 			if !fileFlagsChanged {
 				if len(media) > 0 {
 					if opts.DryRun {
@@ -306,7 +320,7 @@ func newUpdateCmd() *cobra.Command {
 	cmd.Flags().StringArrayVar(&previewImages, "preview-image", nil, "Additional local JPEG, PNG, or GIF preview image to upload as a product cover (repeatable)")
 	cmd.Flags().StringArrayVar(&previewVideos, "preview-video", nil, "Local MP4, MOV, M4V, MPEG, WMV, or WebM preview video to upload as a product cover (repeatable)")
 	cmd.Flags().StringVar(&thumbnail, "thumbnail", "", "Local JPEG, PNG, or GIF thumbnail image to upload")
-	cmd.Flags().StringVar(&customHTML, "custom-html", "", "Path to an HTML file for the product's custom landing page (empty string clears it)")
+	cmd.Flags().StringVar(&customHTML, "custom-html", "", "Path to an HTML file for the product's custom landing page, up to 500,000 characters (empty string clears it)")
 	registerProductRefundPolicyFlags(cmd, &refundPeriod, &refundFinePrint)
 
 	return cmd

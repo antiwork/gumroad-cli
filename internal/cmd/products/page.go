@@ -10,6 +10,7 @@ func newPageCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "page",
 		Short: "Manage a product landing page",
+		Long:  "Manage a product's custom landing page: `preview` runs the server sanitizer without writing, `publish` stores the page, `clear` removes it, and `url` prints where it serves.\n\n" + pageutil.CustomHTMLLimitHelp,
 		Example: `  gumroad products page preview <product_id> ./landing.html
   gumroad products page publish <product_id> ./landing.html
   gumroad products page publish <product_id> - < landing.html

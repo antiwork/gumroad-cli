@@ -10,6 +10,7 @@ func newPageCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "page",
 		Short: "Manage your profile landing page",
+		Long:  "Manage your profile landing page, the custom HTML that replaces your store's home page: `preview` runs the server sanitizer without writing, `publish` stores the page, `clear` removes it, and `url` prints where it serves.\n\n" + pageutil.CustomHTMLLimitHelp,
 		Example: `  gumroad user page preview ./landing.html
   gumroad user page publish ./landing.html
   gumroad user page publish - < landing.html

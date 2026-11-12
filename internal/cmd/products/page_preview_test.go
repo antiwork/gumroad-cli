@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/antiwork/gumroad-cli/internal/pageutil"
 	"github.com/antiwork/gumroad-cli/internal/testutil"
 )
 
@@ -94,6 +95,31 @@ func TestPagePreviewSuccessFalseReturnsMessage(t *testing.T) {
 	err := cmd.Execute()
 	if err == nil || !strings.Contains(err.Error(), "Custom html is too long") {
 		t.Fatalf("expected validation message, got %v", err)
+	}
+}
+
+func TestPagePreviewRejectsAnOversizePageWithoutCallingTheAPI(t *testing.T) {
+	htmlPath := writePageHTML(t, strings.Repeat("a", pageutil.MaxCustomHTMLLength+1))
+
+	var calls atomic.Int32
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		t.Errorf("an oversize page should be rejected before the request, not sent")
+	})
+
+	cmd := testutil.Command(newPagePreviewCmd())
+	cmd.SetArgs([]string{"prod1", htmlPath})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("want a local error for a page over the limit")
+	}
+	if calls.Load() != 0 {
+		t.Fatalf("API was called %d times", calls.Load())
+	}
+	for _, want := range []string{htmlPath, "500000", "data: URI"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("error %q should mention %q", err, want)
+		}
 	}
 }
 
