@@ -12,11 +12,11 @@ const (
 	// profile page and a storefront page alike.
 	MaxCustomHTMLLength = 500_000
 
-	// maxEncodedBodyBytes is where Gumroad's ingress refuses a request body
-	// before Rails sees it. Measured against the custom HTML endpoint: a body of
-	// 4,190,048 bytes reached the app, which answered with its own validation
-	// message, and 4,210,048 bytes was refused with an empty body, so the cap
-	// sits just under 4 MiB.
+	// maxEncodedBodyBytes is Rack's cap on a form-encoded request body:
+	// RACK_QUERY_PARSER_BYTESIZE_LIMIT, 4,194,304 bytes by default. It applies
+	// only to application/x-www-form-urlencoded bodies, not JSON, and a larger
+	// body comes back as a 400 with an empty body. Measured against the custom
+	// HTML endpoint: 4,190,048 bytes were accepted and 4,210,048 refused.
 	maxEncodedBodyBytes = 4 << 20
 
 	// CustomHTMLLimitHelp is the limit note every command that writes a custom
@@ -33,7 +33,7 @@ const (
 // Both of the API's refusals are confusing from the outside, which is why the
 // check lives here rather than being left to the response. Past the character
 // cap the API answers with a validation message about a limit the seller never
-// chose, and past the ingress body cap — which a page carrying an inlined image
+// chose, and past Rack's form body cap — which a page carrying an inlined image
 // reaches easily, because base64 inflates the file — the request is refused with
 // a bare "API error (HTTP 400)" carrying no message at all, which reads as a
 // broken CLI or a disabled feature. Naming the size, the limit and the usual

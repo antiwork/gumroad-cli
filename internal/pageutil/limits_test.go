@@ -39,7 +39,7 @@ func TestValidateCustomHTMLRejectsAPageOverTheCharacterLimit(t *testing.T) {
 
 func TestValidateCustomHTMLRejectsAPageThatEncodesPastTheBodyLimit(t *testing.T) {
 	// Under the character cap, but every byte of the page escapes in the
-	// encoded body, so the request would be refused at ingress with no message.
+	// encoded body, so the request would be refused by Rack with no message.
 	input := HTMLInput{Source: "landing.html", HTML: strings.Repeat("😀", MaxCustomHTMLLength)}
 
 	err := ValidateCustomHTML(input, HTMLParams(input.HTML))
@@ -65,5 +65,23 @@ func TestValidateCustomHTMLChecksTheWholeRequestNotJustThePage(t *testing.T) {
 	params.Set("title", "About")
 	if err := ValidateCustomHTML(input, params); err == nil {
 		t.Fatal("want an error once the fields sent with the page push the body past the limit")
+	}
+}
+
+func TestValidateCustomHTMLAcceptsABodyExactlyAtTheLimit(t *testing.T) {
+	input := HTMLInput{Source: "about.html", HTML: strings.Repeat("😀", 349_524)}
+	params := HTMLParams(input.HTML)
+	params.Set("a", "b")
+	if encoded := len(params.Encode()); encoded != maxEncodedBodyBytes {
+		t.Fatalf("encoded body is %d bytes, want exactly %d", encoded, maxEncodedBodyBytes)
+	}
+
+	if err := ValidateCustomHTML(input, params); err != nil {
+		t.Fatalf("a body exactly at the limit should pass, got %v", err)
+	}
+
+	params.Set("a", "bc")
+	if err := ValidateCustomHTML(input, params); err == nil {
+		t.Fatal("want an error for a body one byte past the limit")
 	}
 }
