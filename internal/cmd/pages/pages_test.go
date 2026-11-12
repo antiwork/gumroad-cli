@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/antiwork/gumroad-cli/internal/pageutil"
 	"github.com/antiwork/gumroad-cli/internal/testutil"
 )
 
@@ -341,6 +342,52 @@ func TestPush_MissingFileIsUsageError(t *testing.T) {
 	}
 }
 
+func TestPush_RejectsAnOversizePageWithoutCallingTheAPI(t *testing.T) {
+	htmlPath := writePageHTML(t, strings.Repeat("a", pageutil.MaxCustomHTMLLength+1))
+
+	var calls atomic.Int32
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		t.Errorf("an oversize page should be rejected before the request, not sent")
+	})
+
+	cmd := testutil.Command(newPushCmd())
+	cmd.SetArgs([]string{"about", htmlPath})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("want a local error for a page over the limit")
+	}
+	if calls.Load() != 0 {
+		t.Fatalf("API was called %d times", calls.Load())
+	}
+	if !strings.Contains(err.Error(), "500000") {
+		t.Fatalf("error should name the limit, got %q", err)
+	}
+}
+
+func TestPush_RejectsAnOversizeProfilePageWithoutCallingTheAPI(t *testing.T) {
+	htmlPath := writePageHTML(t, strings.Repeat("a", pageutil.MaxCustomHTMLLength+1))
+
+	var calls atomic.Int32
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		t.Errorf("an oversize page should be rejected before the request, not sent")
+	})
+
+	cmd := testutil.Command(newPushCmd())
+	cmd.SetArgs([]string{"profile", htmlPath})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("want a local error for a page over the limit")
+	}
+	if calls.Load() != 0 {
+		t.Fatalf("API was called %d times", calls.Load())
+	}
+	if !strings.Contains(err.Error(), "500000") {
+		t.Fatalf("error should name the limit, got %q", err)
+	}
+}
+
 func TestPush_MissingScopeGetsReauthHint(t *testing.T) {
 	htmlPath := writePageHTML(t, "<h1>About</h1>")
 
@@ -428,5 +475,28 @@ func TestPreview_MissingFileIsUsageError(t *testing.T) {
 	err := cmd.Execute()
 	if err == nil || !strings.Contains(err.Error(), "cannot read") {
 		t.Fatalf("expected cannot-read usage error, got: %v", err)
+	}
+}
+
+func TestPreview_RejectsAnOversizePageWithoutCallingTheAPI(t *testing.T) {
+	htmlPath := writePageHTML(t, strings.Repeat("a", pageutil.MaxCustomHTMLLength+1))
+
+	var calls atomic.Int32
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		t.Errorf("an oversize page should be rejected before the request, not sent")
+	})
+
+	cmd := testutil.Command(newPreviewCmd())
+	cmd.SetArgs([]string{htmlPath})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("want a local error for a page over the limit")
+	}
+	if calls.Load() != 0 {
+		t.Fatalf("API was called %d times", calls.Load())
+	}
+	if !strings.Contains(err.Error(), "500000") {
+		t.Fatalf("error should name the limit, got %q", err)
 	}
 }
