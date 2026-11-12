@@ -155,18 +155,24 @@ func newUpdateCmd() *cobra.Command {
 				params.Add("tags[]", t)
 			}
 			setProductRefundPolicyParams(c, params, refundPeriod, refundFinePrint)
+			fileFlagsChanged := flags.Changed("file") ||
+				flags.Changed("file-name") ||
+				flags.Changed("file-description") ||
+				flags.Changed("page")
 			if customHTMLInput != nil {
-				if err := pageutil.ValidateCustomHTML(*customHTMLInput, params); err != nil {
+				var err error
+				if fileFlagsChanged {
+					err = pageutil.ValidateCustomHTMLLength(*customHTMLInput)
+				} else {
+					err = pageutil.ValidateCustomHTML(*customHTMLInput, params)
+				}
+				if err != nil {
 					return cmdutil.InvalidInputErrorf("%s", err)
 				}
 			}
 
 			path := cmdutil.JoinPath("products", args[0])
 			productFieldsChanged := productUpdateFieldFlagsChanged(c)
-			fileFlagsChanged := flags.Changed("file") ||
-				flags.Changed("file-name") ||
-				flags.Changed("file-description") ||
-				flags.Changed("page")
 			if !fileFlagsChanged {
 				if len(media) > 0 {
 					if opts.DryRun {

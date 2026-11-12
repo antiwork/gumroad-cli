@@ -39,6 +39,23 @@ const (
 // broken CLI or a disabled feature. Naming the size, the limit and the usual
 // cause locally turns that into something a seller can act on.
 func ValidateCustomHTML(input HTMLInput, params url.Values) error {
+	if err := ValidateCustomHTMLLength(input); err != nil {
+		return err
+	}
+
+	if encoded := len(params.Encode()); encoded > maxEncodedBodyBytes {
+		return fmt.Errorf(
+			"%s is %s (%d characters) and sends %s of form data, over the %s the API accepts in one request. An inlined image (a data: URI) is the usual cause: reference the image by URL instead",
+			input.Source, humanBytes(len(input.HTML)), utf8.RuneCountInString(input.HTML), humanBytes(encoded), humanBytes(maxEncodedBodyBytes),
+		)
+	}
+
+	return nil
+}
+
+// ValidateCustomHTMLLength checks only the character cap. It is for a page sent
+// in a JSON body, which Rack's form body limit does not apply to.
+func ValidateCustomHTMLLength(input HTMLInput) error {
 	characters := utf8.RuneCountInString(input.HTML)
 	if characters > MaxCustomHTMLLength {
 		return fmt.Errorf(
@@ -46,14 +63,6 @@ func ValidateCustomHTML(input HTMLInput, params url.Values) error {
 			input.Source, humanBytes(len(input.HTML)), characters, MaxCustomHTMLLength,
 		)
 	}
-
-	if encoded := len(params.Encode()); encoded > maxEncodedBodyBytes {
-		return fmt.Errorf(
-			"%s is %s (%d characters) and sends %s of form data, over the %s the API accepts in one request. An inlined image (a data: URI) is the usual cause: reference the image by URL instead",
-			input.Source, humanBytes(len(input.HTML)), characters, humanBytes(encoded), humanBytes(maxEncodedBodyBytes),
-		)
-	}
-
 	return nil
 }
 
