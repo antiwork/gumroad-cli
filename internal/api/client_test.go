@@ -435,6 +435,58 @@ func TestClient_GetRetriesTransientStatus(t *testing.T) {
 	}
 }
 
+func TestClient_GetStopsOnRateLimitThatNamesALongWait(t *testing.T) {
+	attempts := 0
+	srv := setupTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		w.Header().Set("Retry-After", "120")
+		w.WriteHeader(http.StatusTooManyRequests)
+	})
+	c := newTestClient(srv)
+	c.sleep = func(context.Context, time.Duration) error {
+		t.Fatal("unexpected retry sleep inside an exhausted request budget")
+		return nil
+	}
+
+	_, err := c.Get("/sales", nil)
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("expected *APIError, got %T", err)
+	}
+	if apiErr.RetryAfter != 2*time.Minute {
+		t.Fatalf("got RetryAfter %s, want 2m", apiErr.RetryAfter)
+	}
+	if apiErr.GetHint() != HintRateLimited {
+		t.Fatalf("got hint %q, want the rate-limit hint", apiErr.GetHint())
+	}
+	if attempts != 1 {
+		t.Fatalf("got %d attempts, want 1", attempts)
+	}
+}
+
+func TestClient_GetBacksOffInSecondsOnRateLimitWithoutAWait(t *testing.T) {
+	attempts := 0
+	srv := setupTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		w.WriteHeader(http.StatusTooManyRequests)
+	})
+	c := newTestClient(srv)
+	var slept []time.Duration
+	c.sleep = func(_ context.Context, d time.Duration) error {
+		slept = append(slept, d)
+		return nil
+	}
+
+	_, err := c.Get("/sales", nil)
+	assertAPIError(t, err, http.StatusTooManyRequests, "Rate limited.")
+	if attempts != 3 {
+		t.Fatalf("got %d attempts, want 3", attempts)
+	}
+	if len(slept) != 2 || slept[0] != time.Second || slept[1] != 2*time.Second {
+		t.Fatalf("got retry sleeps %v, want [1s 2s]", slept)
+	}
+}
+
 func TestClient_PostDoesNotRetryTransientStatus(t *testing.T) {
 	attempts := 0
 	srv := setupTestServer(t, func(w http.ResponseWriter, r *http.Request) {

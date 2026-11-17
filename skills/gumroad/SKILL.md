@@ -36,7 +36,7 @@ Always follow these rules:
 - For operations that can prompt for confirmation (delete, refund, workflow step adds, workflow delay changes, mutating admin actions, `files abort`, `files complete` replay, product updates that remove files, or `products content set` when omitted page IDs will be deleted), add `--yes` to skip confirmation.
 - Pass `--quiet` to suppress spinners and status messages.
 - Pass `--dry-run` to preview mutating requests without executing them.
-- Use `--page-delay 200ms` with `--all` to avoid rate limits on large datasets.
+- Use `--all` deliberately: it costs one request per page (100 sales per page, so a 60,000-sale history is about 600 requests), and both the API (500 requests per 10 seconds per token) and gumroad.com (6,000 requests per hour per IP) count them. `--page-delay 200ms` spaces requests out but does not reduce how many there are; to read a whole history, prefer `sales export` (one request, CSV delivered by email) and analyze the file locally.
 - Prices are in whole currency units (e.g. `--price 10.00` for $10), not cents. The CLI converts internally. Use `--currency eur` to change currency.
 - Products are published immediately on create. Pass `--draft` to save an unpublished draft instead, then `gumroad products publish <id>` to make it live; `gumroad products unpublish <id>` takes a published product down. If the account cannot publish yet (unconfirmed email, no payout method), create still succeeds but saves a draft and prints the reason.
 - Product cover and thumbnail uploads support JPEG, PNG, and GIF. WebP is not supported by the API and the CLI rejects it before upload.
@@ -836,5 +836,6 @@ gumroad webhooks delete <id> --yes --json --no-input
 ## Tips
 
 - Use `--all` with `products list`, `sales list`, `subscribers list`, `payouts list` to fetch every page automatically.
+- A `429` means a request budget is spent, not that the request was wrong: the CLI backs off in seconds and then stops with both limits named instead of retrying into the block. Wait for the window, narrow the range with `--after`/`--before`, or use `sales export` for the whole history in one request.
 - Use `--plain` for tab-separated output suitable for `cut`, `awk`, and other Unix tools.
 - Run `gumroad <command> --help` for full flag details on any command.
