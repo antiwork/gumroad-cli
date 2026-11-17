@@ -14,6 +14,11 @@ const HintRunAuthLogin = "Run: gumroad auth login. For CI/agents with an existin
 // endpoint's own scope refusal carries a message and is left untouched.
 const HintMissingScope = "Check that your token has the required scope. A token authorized for a team store keeps only the scopes that member's role allows; run: gumroad auth login (as the store's own account for the full set)"
 
+// A 429 is a spent budget, not a hiccup: every page of a walk is another request, and both the
+// public API (per token) and gumroad.com's edge (per IP) count them, so a full history walk can
+// exhaust a budget on its own. Name the budgets and the one-request alternative.
+const HintRateLimited = "Rate limits count every page: the public API allows 500 requests per 10 seconds per token and gumroad.com allows 6,000 requests per hour per IP. Wait for the window to reset, narrow the range with --after/--before, or run `gumroad sales export` to fetch the whole history in one request."
+
 var (
 	ErrNotAuthenticated = errors.New("not authenticated")
 	ErrAccessDenied     = errors.New("access denied")
@@ -98,9 +103,9 @@ func rewriteError(statusCode int, msg string) (message, hint string) {
 		return "Resource not found.", "Check the resource ID and try again."
 	case 429:
 		if msg != "" {
-			return msg, "Wait a moment and retry."
+			return msg, HintRateLimited
 		}
-		return "Rate limited.", "Wait a moment and retry."
+		return "Rate limited.", HintRateLimited
 	default:
 		if msg != "" {
 			return msg, ""

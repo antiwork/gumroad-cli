@@ -23,6 +23,15 @@ const (
 	maxRetryBackoff     = 2 * time.Second
 	maxResponseBodySize = 10 * 1024 * 1024
 	defaultAPIBaseURL   = "https://api.gumroad.com/v2"
+
+	// A 429 is a budget, not a hiccup: the public API allows 500 requests per 10 seconds per
+	// token, and gumroad.com allows 6,000 requests per hour per IP, so a paginated walk can spend
+	// a whole budget by itself. Back off far enough that a retry does not just spend more of it,
+	// and give up with an explanation when the server names a wait longer than this — retrying
+	// inside an edge block only keeps the caller's IP in it.
+	initialRateLimitBackoff = 1 * time.Second
+	maxRateLimitBackoff     = 4 * time.Second
+	maxRateLimitWait        = 5 * time.Second
 )
 
 func defaultBaseURL() string {
@@ -244,6 +253,19 @@ func (c *Client) doPreparedWithContext(
 
 		if shouldRetry(method, attempt, resp.StatusCode) {
 			delay := retryDelay(attempt, resp.Header.Get("Retry-After"))
+			if resp.StatusCode == http.StatusTooManyRequests {
+				wait, ok := ParseRetryAfter(resp.Header.Get("Retry-After"))
+				if ok && wait > maxRateLimitWait {
+					err := parseAPIError(resp.StatusCode, data)
+					var apiErr *APIError
+					if errors.As(err, &apiErr) {
+						apiErr.RetryAfter = wait
+					}
+					logResponse(resp.StatusCode, len(data), err, start)
+					return nil, err
+				}
+				delay = rateLimitRetryDelay(attempt, wait, ok)
+			}
 			c.debugf("retry method=%s url=%s attempt=%d wait=%s reason=%q", method, logURL, attempt+1, delay, resp.Status)
 			if err := c.snoozeCtx(ctx, delay); err != nil {
 				return nil, fmt.Errorf("request failed: %w", err)
@@ -365,6 +387,20 @@ func retryDelay(attempt int, retryAfter string) time.Duration {
 	backoff := float64(initialRetryBackoff) * math.Pow(2, float64(attempt))
 	if backoff > float64(maxRetryBackoff) {
 		backoff = float64(maxRetryBackoff)
+	}
+	return time.Duration(backoff)
+}
+
+// rateLimitRetryDelay backs off in whole seconds for a 429 that names no wait, so a retry does not
+// spend more of a budget that is already exhausted.
+func rateLimitRetryDelay(attempt int, retryAfter time.Duration, hasRetryAfter bool) time.Duration {
+	if hasRetryAfter {
+		return retryAfter
+	}
+
+	backoff := float64(initialRateLimitBackoff) * math.Pow(2, float64(attempt))
+	if backoff > float64(maxRateLimitBackoff) {
+		backoff = float64(maxRateLimitBackoff)
 	}
 	return time.Duration(backoff)
 }
