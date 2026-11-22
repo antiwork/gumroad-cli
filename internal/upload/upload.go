@@ -303,10 +303,12 @@ func Upload(ctx context.Context, client *api.Client, path string, opts Options) 
 	fileURL, err := completeUpload(ctx, client, presignResp.UploadID, presignResp.Key, presignResp.Parts, etags)
 	if err != nil {
 		var apiErr *api.APIError
-		if errors.As(err, &apiErr) && isDefinitiveCompleteRejection(apiErr.StatusCode) {
+		if errors.As(err, &apiErr) && isDefinitiveCompleteRejection(apiErr.StatusCode) &&
+			(apiErr.StatusCode != http.StatusBadRequest || apiErr.Code != "multipart_upload_not_found") {
 			return "", joinAbort(err, presignResp.UploadID, presignResp.Key, safeAbort(client, presignResp.UploadID, presignResp.Key))
 		}
-		// Ambiguous (5xx, 408, 409, 429, transport/write/read failures):
+		// Ambiguous (5xx, 408, 409, 429, HTTP 400 with
+		// error_code=multipart_upload_not_found, transport/write/read failures):
 		// the server may have committed. Skip abort so we don't race the
 		// commit or tear down a successful upload.
 		completed := make([]CompletedPart, len(presignResp.Parts))

@@ -643,6 +643,173 @@ func TestUpload_CompleteFailure(t *testing.T) {
 	}
 }
 
+func TestUpload_StructuredNoSuchUploadSuppressesAutoAbort(t *testing.T) {
+	cases := []struct {
+		name        string
+		status      int
+		body        string
+		wantUnknown bool
+		wantCode    string
+		wantAborts  int32
+	}{
+		{
+			name:        "exact structured HTTP 400",
+			status:      http.StatusBadRequest,
+			body:        `{"status":400,"error":"The specified upload does not exist.","error_code":"multipart_upload_not_found"}`,
+			wantUnknown: true,
+			wantCode:    "multipart_upload_not_found",
+		},
+		{
+			name:       "legacy HTTP 400 without code",
+			status:     http.StatusBadRequest,
+			body:       `{"error":"The specified upload does not exist."}`,
+			wantAborts: 1,
+		},
+		{
+			name:       "unrelated structured HTTP 400",
+			status:     http.StatusBadRequest,
+			body:       `{"error":"invalid key","error_code":"invalid_key"}`,
+			wantCode:   "invalid_key",
+			wantAborts: 1,
+		},
+		{
+			name:       "case-mismatched code",
+			status:     http.StatusBadRequest,
+			body:       `{"error":"invalid key","error_code":"Multipart_Upload_Not_Found"}`,
+			wantCode:   "Multipart_Upload_Not_Found",
+			wantAborts: 1,
+		},
+		{
+			name:       "non-string code",
+			status:     http.StatusBadRequest,
+			body:       `{"error":"invalid key","error_code":42}`,
+			wantAborts: 1,
+		},
+		{
+			name:       "matching code on HTTP 403",
+			status:     http.StatusForbidden,
+			body:       `{"error":"forbidden","error_code":"multipart_upload_not_found"}`,
+			wantCode:   "multipart_upload_not_found",
+			wantAborts: 1,
+		},
+		{
+			name:        "matching code on HTTP 500",
+			status:      http.StatusInternalServerError,
+			body:        `{"error":"S3 unavailable","error_code":"multipart_upload_not_found"}`,
+			wantUnknown: true,
+			wantCode:    "multipart_upload_not_found",
+		},
+		{
+			name:       "HTTP 200 explicit rejection remains definitive",
+			status:     http.StatusOK,
+			body:       `{"success":false,"message":"invalid etag","error_code":"multipart_upload_not_found"}`,
+			wantAborts: 1,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			setTestPartSize(t, 100)
+			path := writeFile(t, 50)
+
+			s3Handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				_, _ = io.Copy(io.Discard, r.Body)
+				w.Header().Set("ETag", `"etag-one"`)
+			})
+
+			mock := &railsMock{}
+			client, s3URL := setupServers(t, mock, s3Handler)
+
+			mock.presign = func(w http.ResponseWriter, _ *http.Request) {
+				writePresignResponse(
+					t, w,
+					"up-structured",
+					"attachments/u/k/original/p.bin",
+					"https://example.com/maybe-committed",
+					[]string{s3URL + partPath(1)},
+				)
+			}
+
+			mock.complete = func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(tc.status)
+				_, _ = io.WriteString(w, tc.body)
+			}
+
+			mock.abortH = func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = io.WriteString(w, `{"success":true}`)
+			}
+
+			fileURL, err := Upload(
+				context.Background(), client, path, Options{},
+			)
+			if err == nil {
+				t.Fatal("expected completion error")
+			}
+			if fileURL != "" {
+				t.Fatalf("fileURL = %q, want empty", fileURL)
+			}
+
+			if got := mock.presignCalls.Load(); got != 1 {
+				t.Errorf("presign calls = %d, want 1", got)
+			}
+			if got := mock.completeCalls.Load(); got != 1 {
+				t.Errorf("complete calls = %d, want 1", got)
+			}
+			if got := mock.abortCalls.Load(); got != tc.wantAborts {
+				t.Errorf("abort calls = %d, want %d", got, tc.wantAborts)
+			}
+
+			var apiErr *api.APIError
+			if !errors.As(err, &apiErr) {
+				t.Fatalf("underlying APIError missing: %T: %v", err, err)
+			}
+			if apiErr.StatusCode != tc.status || apiErr.Code != tc.wantCode {
+				t.Errorf(
+					"APIError = %+v, want status=%d code=%q",
+					apiErr, tc.status, tc.wantCode,
+				)
+			}
+
+			var unknown *UnknownStateError
+			if tc.wantUnknown {
+				if !errors.As(err, &unknown) {
+					t.Fatalf("expected UnknownStateError: %T: %v", err, err)
+				}
+				if !errors.Is(err, ErrCompleteStateUnknown) {
+					t.Fatal("unknown-state sentinel missing")
+				}
+				if unknown.FileURL != "https://example.com/maybe-committed" ||
+					unknown.UploadID != "up-structured" ||
+					unknown.Key != "attachments/u/k/original/p.bin" {
+					t.Errorf("recovery handles not preserved: %+v", unknown)
+				}
+				if len(unknown.CompletedParts) != 1 {
+					t.Fatalf("completed parts = %+v", unknown.CompletedParts)
+				}
+				if unknown.CompletedParts[0].PartNumber != 1 ||
+					unknown.CompletedParts[0].ETag != "etag-one" {
+					t.Errorf("completed part not preserved: %+v", unknown.CompletedParts[0])
+				}
+				if unknown.Cause == nil {
+					t.Fatal("underlying cause missing")
+				}
+				var nested *api.APIError
+				if !errors.As(unknown.Cause, &nested) ||
+					nested.StatusCode != tc.status ||
+					nested.Code != tc.wantCode {
+					t.Errorf("nested API error not preserved: %v", unknown.Cause)
+				}
+			} else {
+				if errors.As(err, &unknown) ||
+					errors.Is(err, ErrCompleteStateUnknown) {
+					t.Fatalf("definitive rejection classified unknown: %v", err)
+				}
+			}
+		})
+	}
+}
+
 func TestUpload_CompleteAmbiguousResponse(t *testing.T) {
 	// success:true but file_url missing: the server may or may not have
 	// committed. Must surface as UnknownStateError (matching

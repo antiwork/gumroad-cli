@@ -241,8 +241,9 @@ func runComplete(opts cmdutil.Options, manifest completeManifest, body map[strin
 
 // handleCompleteFailure wraps a /files/complete failure with the recovery
 // manifest so the caller retains actionable state:
-//   - Ambiguous (5xx, 408, 409, 429, transport, parse): *upload.UnknownStateError
-//     — a retry with the same manifest can still succeed.
+//   - Ambiguous (5xx, 408, 409, 429, transport, parse, or HTTP 400 with
+//     error_code=multipart_upload_not_found): *upload.UnknownStateError.
+//     The manifest remains available for reconciliation.
 //   - Definitive (other 4xx, or HTTP-200-with-success-false): *CompleteRejectedError
 //     — preserves upload_id/key so the caller can run `gumroad files abort`
 //     after verifying that abort is actually the right next step. Unlike
@@ -256,7 +257,8 @@ func handleCompleteFailure(err error, manifest completeManifest) error {
 		parts[i] = upload.CompletedPart{PartNumber: p.PartNumber, ETag: p.ETag}
 	}
 	var apiErr *api.APIError
-	if errors.As(err, &apiErr) && isDefinitiveCompleteRejection(apiErr.StatusCode) {
+	if errors.As(err, &apiErr) && isDefinitiveCompleteRejection(apiErr.StatusCode) &&
+		(apiErr.StatusCode != http.StatusBadRequest || apiErr.Code != "multipart_upload_not_found") {
 		return &CompleteRejectedError{
 			FileURL:        manifest.FileURL,
 			UploadID:       manifest.UploadID,

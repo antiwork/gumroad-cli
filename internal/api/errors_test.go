@@ -187,3 +187,100 @@ func TestAPIError_GetHint_Nil(t *testing.T) {
 		t.Errorf("expected empty hint from nil receiver")
 	}
 }
+
+func TestParseAPIError_StructuredErrorCode(t *testing.T) {
+	tests := []struct {
+		name        string
+		status      int
+		body        string
+		wantMessage string
+		wantCode    string
+	}{
+		{
+			name:        "NoSuchUpload structured response",
+			status:      400,
+			body:        `{"status":400,"error":"The specified upload does not exist.","error_code":"multipart_upload_not_found"}`,
+			wantMessage: "The specified upload does not exist.",
+			wantCode:    "multipart_upload_not_found",
+		},
+		{
+			name:        "legacy response without code",
+			status:      400,
+			body:        `{"status":400,"error":"The specified upload does not exist."}`,
+			wantMessage: "The specified upload does not exist.",
+			wantCode:    "",
+		},
+		{
+			name:        "unrelated structured code",
+			status:      400,
+			body:        `{"error":"invalid key","error_code":"unrelated_error"}`,
+			wantMessage: "invalid key",
+			wantCode:    "unrelated_error",
+		},
+		{
+			name:        "code without message",
+			status:      400,
+			body:        `{"error_code":"multipart_upload_not_found"}`,
+			wantMessage: "API error (HTTP 400)",
+			wantCode:    "multipart_upload_not_found",
+		},
+		{
+			name:        "message takes precedence over error",
+			status:      400,
+			body:        `{"message":"preferred","error":"fallback","error_code":"multipart_upload_not_found"}`,
+			wantMessage: "preferred",
+			wantCode:    "multipart_upload_not_found",
+		},
+		{
+			name:        "numeric code preserves legacy error",
+			status:      400,
+			body:        `{"error":"invalid key","error_code":42}`,
+			wantMessage: "invalid key",
+			wantCode:    "",
+		},
+		{
+			name:        "object code preserves legacy error",
+			status:      400,
+			body:        `{"error":"invalid key","error_code":{"unexpected":true}}`,
+			wantMessage: "invalid key",
+			wantCode:    "",
+		},
+		{
+			name:        "null code preserves legacy error",
+			status:      400,
+			body:        `{"error":"invalid key","error_code":null}`,
+			wantMessage: "invalid key",
+			wantCode:    "",
+		},
+		{
+			name:        "malformed JSON cannot supply a code",
+			status:      400,
+			body:        `{"error":"invalid key","error_code":"multipart_upload_not_found"`,
+			wantMessage: "API error (HTTP 400)",
+			wantCode:    "",
+		},
+		{
+			name:        "code parsing does not change HTTP status",
+			status:      500,
+			body:        `{"error":"S3 unavailable","error_code":"multipart_upload_not_found"}`,
+			wantMessage: "S3 unavailable",
+			wantCode:    "multipart_upload_not_found",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			apiErr := mustAPIError(t, parseAPIError(tt.status, []byte(tt.body)))
+
+			if apiErr.StatusCode != tt.status {
+				t.Errorf("StatusCode = %d, want %d", apiErr.StatusCode, tt.status)
+			}
+			if apiErr.Message != tt.wantMessage {
+				t.Errorf("Message = %q, want %q", apiErr.Message, tt.wantMessage)
+			}
+			if apiErr.Code != tt.wantCode {
+				t.Errorf("Code = %q, want %q", apiErr.Code, tt.wantCode)
+			}
+		})
+	}
+}

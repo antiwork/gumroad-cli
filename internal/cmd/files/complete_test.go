@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/antiwork/gumroad-cli/internal/api"
 	"github.com/antiwork/gumroad-cli/internal/testutil"
 	"github.com/antiwork/gumroad-cli/internal/upload"
 )
@@ -292,6 +293,175 @@ func TestComplete_AmbiguousReplayFailure_PreservesManifest(t *testing.T) {
 	}
 	if len(state.CompletedParts) != 1 || state.CompletedParts[0].ETag != "e1" {
 		t.Errorf("completed_parts not preserved: %+v", state.CompletedParts)
+	}
+}
+
+func TestComplete_StructuredNoSuchUploadClassification(t *testing.T) {
+	tests := []struct {
+		name        string
+		status      int
+		body        string
+		wantUnknown bool
+		wantCode    string
+	}{
+		{
+			name:        "exact structured HTTP 400",
+			status:      http.StatusBadRequest,
+			body:        `{"status":400,"error":"The specified upload does not exist.","error_code":"multipart_upload_not_found"}`,
+			wantUnknown: true,
+			wantCode:    "multipart_upload_not_found",
+		},
+		{
+			name:   "legacy HTTP 400 without code",
+			status: http.StatusBadRequest,
+			body:   `{"status":400,"error":"The specified upload does not exist."}`,
+		},
+		{
+			name:     "different code on HTTP 400",
+			status:   http.StatusBadRequest,
+			body:     `{"error":"invalid key","error_code":"invalid_key"}`,
+			wantCode: "invalid_key",
+		},
+		{
+			name:     "case-sensitive error code",
+			status:   http.StatusBadRequest,
+			body:     `{"error":"invalid key","error_code":"Multipart_Upload_Not_Found"}`,
+			wantCode: "Multipart_Upload_Not_Found",
+		},
+		{
+			name:   "non-string code on HTTP 400",
+			status: http.StatusBadRequest,
+			body:   `{"error":"invalid key","error_code":42}`,
+		},
+		{
+			name:     "matching code on HTTP 403 is definitive",
+			status:   http.StatusForbidden,
+			body:     `{"error":"forbidden","error_code":"multipart_upload_not_found"}`,
+			wantCode: "multipart_upload_not_found",
+		},
+		{
+			name:        "HTTP 500 remains ambiguous",
+			status:      http.StatusInternalServerError,
+			body:        `{"error":"server error","error_code":"multipart_upload_not_found"}`,
+			wantUnknown: true,
+			wantCode:    "multipart_upload_not_found",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			completeCalls := 0
+			abortCalls := 0
+
+			testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+				switch r.URL.Path {
+				case "/files/complete":
+					completeCalls++
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(tt.status)
+					if _, err := fmt.Fprint(w, tt.body); err != nil {
+						t.Errorf("write response: %v", err)
+					}
+				case "/files/abort":
+					abortCalls++
+					t.Error("recovery command must never automatically abort")
+				default:
+					t.Errorf("unexpected request path: %s", r.URL.Path)
+				}
+			})
+
+			manifest := map[string]any{
+				"file_url":  "https://example.com/maybe-committed",
+				"upload_id": "up-structured",
+				"key":       "attachments/u/k/original/p.bin",
+				"completed_parts": []map[string]any{
+					{"part_number": 1, "etag": "etag-one"},
+					{"part_number": 2, "etag": "etag-two"},
+				},
+			}
+
+			path := writeRecovery(t, manifest)
+			cmd := testutil.Command(newCompleteCmd(), testutil.Yes(true))
+			cmd.SetArgs([]string{"--recovery", path})
+
+			err := cmd.Execute()
+			if err == nil {
+				t.Fatal("expected completion error")
+			}
+			if completeCalls != 1 {
+				t.Fatalf("complete calls = %d, want 1", completeCalls)
+			}
+			if abortCalls != 0 {
+				t.Fatalf("abort calls = %d, want 0", abortCalls)
+			}
+
+			var apiErr *api.APIError
+			if !errors.As(err, &apiErr) {
+				t.Fatalf("underlying APIError not preserved: %T: %v", err, err)
+			}
+			if apiErr.StatusCode != tt.status || apiErr.Code != tt.wantCode {
+				t.Errorf("APIError = %+v, want status=%d code=%q",
+					apiErr, tt.status, tt.wantCode)
+			}
+
+			if tt.wantUnknown {
+				var unknown *upload.UnknownStateError
+				if !errors.As(err, &unknown) {
+					t.Fatalf("expected UnknownStateError, got %T: %v", err, err)
+				}
+				if !errors.Is(err, upload.ErrCompleteStateUnknown) {
+					t.Fatal("missing ErrCompleteStateUnknown sentinel")
+				}
+				var rejected *CompleteRejectedError
+				if errors.As(err, &rejected) {
+					t.Fatal("ambiguous result incorrectly classified as rejected")
+				}
+				if unknown.FileURL != "https://example.com/maybe-committed" ||
+					unknown.UploadID != "up-structured" ||
+					unknown.Key != "attachments/u/k/original/p.bin" {
+					t.Errorf("unknown-state handles not preserved: %+v", unknown)
+				}
+				if len(unknown.CompletedParts) != 2 {
+					t.Fatalf("unknown-state parts = %+v", unknown.CompletedParts)
+				}
+				if unknown.CompletedParts[0].PartNumber != 1 ||
+					unknown.CompletedParts[0].ETag != "etag-one" ||
+					unknown.CompletedParts[1].PartNumber != 2 ||
+					unknown.CompletedParts[1].ETag != "etag-two" {
+					t.Errorf("unknown-state parts not preserved: %+v", unknown.CompletedParts)
+				}
+				if unknown.Cause == nil {
+					t.Fatal("unknown-state cause missing")
+				}
+			} else {
+				var rejected *CompleteRejectedError
+				if !errors.As(err, &rejected) {
+					t.Fatalf("expected CompleteRejectedError, got %T: %v", err, err)
+				}
+				var unknown *upload.UnknownStateError
+				if errors.As(err, &unknown) ||
+					errors.Is(err, upload.ErrCompleteStateUnknown) {
+					t.Fatal("definitive response classified as unknown")
+				}
+				if rejected.FileURL != "https://example.com/maybe-committed" ||
+					rejected.UploadID != "up-structured" ||
+					rejected.Key != "attachments/u/k/original/p.bin" {
+					t.Errorf("rejected-state handles not preserved: %+v", rejected)
+				}
+				if len(rejected.CompletedParts) != 2 {
+					t.Fatalf("rejected-state parts = %+v", rejected.CompletedParts)
+				}
+				if rejected.CompletedParts[0].PartNumber != 1 ||
+					rejected.CompletedParts[0].ETag != "etag-one" ||
+					rejected.CompletedParts[1].PartNumber != 2 ||
+					rejected.CompletedParts[1].ETag != "etag-two" {
+					t.Errorf("rejected-state parts not preserved: %+v", rejected.CompletedParts)
+				}
+				if rejected.Cause == nil {
+					t.Fatal("rejected-state cause missing")
+				}
+			}
+		})
 	}
 }
 
