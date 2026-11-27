@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/antiwork/gumroad-cli/internal/api"
@@ -78,6 +79,10 @@ func buildProductJSONBody(params url.Values, files []map[string]any) map[string]
 	sort.Strings(keys)
 
 	for _, key := range keys {
+		if additionalDetailParamPattern.MatchString(key) {
+			// Gathered into rows below, so the body carries the objects, not the form keys.
+			continue
+		}
 		values := append([]string(nil), params[key]...)
 		switch key {
 		case "tags[]":
@@ -91,8 +96,33 @@ func buildProductJSONBody(params url.Values, files []map[string]any) map[string]
 		}
 	}
 
+	if rows := additionalDetailRows(params); rows != nil {
+		body["additional_details"] = rows
+	}
+
 	if files != nil {
 		body["files"] = files
 	}
 	return body
+}
+
+// The form carries a row under its own index (setAdditionalDetailParams); a JSON body needs them
+// gathered back into objects, in index order.
+func additionalDetailRows(params url.Values) []map[string]any {
+	var rows []map[string]any
+	for key, values := range params {
+		match := additionalDetailParamPattern.FindStringSubmatch(key)
+		if match == nil || len(values) == 0 {
+			continue
+		}
+		index, err := strconv.Atoi(match[1])
+		if err != nil {
+			continue
+		}
+		for len(rows) <= index {
+			rows = append(rows, map[string]any{})
+		}
+		rows[index][match[2]] = values[0]
+	}
+	return rows
 }

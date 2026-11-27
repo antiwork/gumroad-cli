@@ -29,6 +29,7 @@ func newUpdateCmd() *cobra.Command {
 	var previewVideos []string
 	var customHTML string
 	var refundPeriod, refundFinePrint string
+	var additionalDetails []string
 
 	cmd := &cobra.Command{
 		Use:   "update <product_id>",
@@ -45,7 +46,9 @@ func newUpdateCmd() *cobra.Command {
   gumroad products update <id> --custom-html ./landing.html
   gumroad products update <id> --custom-html ''
   gumroad products update <id> --refund-period none --refund-fine-print "No refunds once downloaded."
-  gumroad products update <id> --refund-period inherit`,
+  gumroad products update <id> --refund-period inherit
+  gumroad products update <id> --additional-detail "Pages: 40" --additional-detail "Format: PDF"
+  gumroad products update <id> --additional-detail ''`,
 		Args: cmdutil.ExactArgs(1),
 		RunE: func(c *cobra.Command, args []string) error {
 			opts := cmdutil.OptionsFrom(c)
@@ -54,6 +57,7 @@ func newUpdateCmd() *cobra.Command {
 			if err := cmdutil.RequireAnyFlagChanged(c,
 				"name", "price", "currency", "description",
 				"custom-permalink", "custom-summary", "custom-receipt",
+				"additional-detail",
 				"pay-what-you-want", "suggested-price", "max-purchase-count",
 				"category", "taxonomy-id", "tag",
 				"file", "file-name", "file-description", "page",
@@ -65,6 +69,10 @@ func newUpdateCmd() *cobra.Command {
 			}
 
 			if err := validateProductRefundPolicyFlags(c, refundPeriod); err != nil {
+				return err
+			}
+			additionalDetailList, err := parseAdditionalDetailFlags(c, additionalDetails)
+			if err != nil {
 				return err
 			}
 
@@ -155,6 +163,9 @@ func newUpdateCmd() *cobra.Command {
 				params.Add("tags[]", t)
 			}
 			setProductRefundPolicyParams(c, params, refundPeriod, refundFinePrint)
+			if flags.Changed("additional-detail") {
+				setAdditionalDetailParams(params, additionalDetailList)
+			}
 			fileFlagsChanged := flags.Changed("file") ||
 				flags.Changed("file-name") ||
 				flags.Changed("file-description") ||
@@ -322,6 +333,7 @@ func newUpdateCmd() *cobra.Command {
 	cmd.Flags().StringVar(&thumbnail, "thumbnail", "", "Local JPEG, PNG, or GIF thumbnail image to upload")
 	cmd.Flags().StringVar(&customHTML, "custom-html", "", "Path to an HTML file for the product's custom landing page, up to 500,000 characters (empty string clears it)")
 	registerProductRefundPolicyFlags(cmd, &refundPeriod, &refundFinePrint)
+	registerAdditionalDetailFlags(cmd, &additionalDetails)
 
 	return cmd
 }
@@ -330,6 +342,7 @@ func productUpdateFieldFlagsChanged(cmd *cobra.Command) bool {
 	for _, flag := range []string{
 		"name", "price", "currency", "description",
 		"custom-permalink", "custom-summary", "custom-receipt",
+		"additional-detail",
 		"pay-what-you-want", "suggested-price", "max-purchase-count",
 		"category", "taxonomy-id", "tag", "custom-html",
 		"refund-period", "refund-fine-print",
