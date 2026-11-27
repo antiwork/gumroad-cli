@@ -34,6 +34,7 @@ type HintedError interface {
 type APIError struct {
 	StatusCode int
 	Message    string
+	Code       string
 	Hint       string
 	RetryAfter time.Duration
 }
@@ -68,23 +69,28 @@ func (e *APIError) Is(target error) bool {
 
 func parseAPIError(statusCode int, body []byte) error {
 	var resp struct {
-		Success bool   `json:"success"`
-		Message string `json:"message"`
-		Error   string `json:"error"`
+		Success bool            `json:"success"`
+		Message string          `json:"message"`
+		Error   string          `json:"error"`
+		Code    json.RawMessage `json:"error_code"`
 	}
+	code := ""
 	if err := json.Unmarshal(body, &resp); err == nil {
+		if len(resp.Code) > 0 {
+			_ = json.Unmarshal(resp.Code, &code)
+		}
 		message := resp.Message
 		if message == "" {
 			message = resp.Error
 		}
 		if message != "" {
 			msg, hint := rewriteError(statusCode, message)
-			return &APIError{StatusCode: statusCode, Message: msg, Hint: hint}
+			return &APIError{StatusCode: statusCode, Message: msg, Code: code, Hint: hint}
 		}
 	}
 
 	msg, hint := rewriteError(statusCode, "")
-	return &APIError{StatusCode: statusCode, Message: msg, Hint: hint}
+	return &APIError{StatusCode: statusCode, Message: msg, Code: code, Hint: hint}
 }
 
 func rewriteError(statusCode int, msg string) (message, hint string) {

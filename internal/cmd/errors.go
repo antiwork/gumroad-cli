@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"strconv"
 	"strings"
@@ -367,6 +368,11 @@ func mergeCleanupRecovery(recovery *commandRecoveryInfo, cleanup *upload.Cleanup
 	return recovery
 }
 
+func missingMultipartUpload(state *upload.UnknownStateError) bool {
+	var apiErr *api.APIError
+	return errors.As(state.Cause, &apiErr) && apiErr.StatusCode == http.StatusBadRequest && apiErr.Code == "multipart_upload_not_found"
+}
+
 func uploadIncompleteDetail(err error, state *upload.UnknownStateError) commandErrorDetail {
 	recovery := &commandRecoveryInfo{
 		FileURL:  state.FileURL,
@@ -382,10 +388,11 @@ func uploadIncompleteDetail(err error, state *upload.UnknownStateError) commandE
 	// The recovery's file_url is a non-authoritative hint from the presign
 	// response: the upload package documents the authoritative URL as the
 	// one returned by /files/complete, so a matching file_url is not
-	// proof of commit. Speak in terms of the actions the caller has: use
-	// `files complete` to replay finalize (safe — the same parts remain),
-	// or `files abort` to reclaim storage if they decide to give up.
+	// proof of commit.
 	hint := "Do not retry blindly — a retry may create a duplicate. Finalize with `gumroad files complete --recovery <manifest>` to commit without re-uploading, or reclaim storage with `gumroad files abort --upload-id <id> --key <key>`."
+	if missingMultipartUpload(state) {
+		hint = "The upload ID is no longer available. The earlier completion may have succeeded. Keep the recovery manifest and verify the original upload's outcome before taking further action."
+	}
 	return commandErrorDetail{
 		Type:     "upload_error",
 		Code:     "complete_state_unknown",
@@ -478,7 +485,11 @@ func printUploadRecovery(w io.Writer, style output.Styler, err error) {
 	}
 	parts := resolveRecoveryParts(state, rejected, hasState, hasRejected)
 	if n := len(parts); n > 0 {
-		fmt.Fprintln(w, style.Dim(fmt.Sprintf("  completed_parts: %d uploaded (re-finalize with `gumroad files complete --recovery <manifest>` to avoid re-uploading):", n)))
+		description := "uploaded (re-finalize with `gumroad files complete --recovery <manifest>` to avoid re-uploading)"
+		if hasState && missingMultipartUpload(state) {
+			description = "recorded"
+		}
+		fmt.Fprintln(w, style.Dim(fmt.Sprintf("  completed_parts: %d %s:", n, description)))
 		for _, p := range parts {
 			fmt.Fprintln(w, style.Dim(fmt.Sprintf("    part_number=%d etag=%s", p.PartNumber, p.ETag)))
 		}
