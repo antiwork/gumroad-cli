@@ -1731,6 +1731,29 @@ func TestView_WithDescription(t *testing.T) {
 	}
 }
 
+func TestView_AdditionalDetails(t *testing.T) {
+	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
+		testutil.JSON(t, w, map[string]any{
+			"product": map[string]any{
+				"id": "p1", "name": "Book", "published": true,
+				"formatted_price": "$20", "sales_count": 5, "sales_usd_cents": 10000,
+				"additional_details": []map[string]any{
+					{"name": "Pages", "value": "40"},
+					{"name": "Format", "value": "PDF"},
+				},
+			},
+		})
+	})
+
+	cmd := newViewCmd()
+	out := testutil.CaptureStdout(func() { _ = cmd.RunE(cmd, []string{"p1"}) })
+	for _, want := range []string{"Additional details", "Pages: 40", "Format: PDF"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q: %q", want, out)
+		}
+	}
+}
+
 func TestList_DraftStatus(t *testing.T) {
 	testutil.Setup(t, func(w http.ResponseWriter, r *http.Request) {
 		testutil.JSON(t, w, map[string]any{

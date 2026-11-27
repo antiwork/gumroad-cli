@@ -56,6 +56,10 @@ func newViewCmd() *cobra.Command {
 						ThumbnailURL       *string     `json:"thumbnail_url"`
 						PreviewURL         *string     `json:"preview_url"`
 						IsTieredMembership bool        `json:"is_tiered_membership"`
+						AdditionalDetails  []struct {
+							Name  string `json:"name"`
+							Value string `json:"value"`
+						} `json:"additional_details"`
 					} `json:"product"`
 				}
 				if err := json.Unmarshal(data, &resp); err != nil {
@@ -106,6 +110,16 @@ func newViewCmd() *cobra.Command {
 				if p.Description != "" {
 					if err := output.Writeln(opts.Out(), style.Dim("\n"+p.Description)); err != nil {
 						return err
+					}
+				}
+				if len(p.AdditionalDetails) > 0 {
+					if err := output.Writeln(opts.Out(), style.Dim("\nAdditional details")); err != nil {
+						return err
+					}
+					for _, row := range p.AdditionalDetails {
+						if err := output.Writef(opts.Out(), "%s: %s\n", row.Name, row.Value); err != nil {
+							return err
+						}
 					}
 				}
 				return nil
